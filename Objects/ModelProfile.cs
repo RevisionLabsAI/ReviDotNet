@@ -1,0 +1,143 @@
+// =================================================================================
+//   Copyright © 2024 Revision Labs, Inc. - All Rights Reserved
+// =================================================================================
+//   This is proprietary and confidential source code of Revision Labs, Inc., and
+//   is safeguarded by international copyright laws. Unauthorized use, copying, 
+//   modification, or distribution is strictly forbidden.
+//
+//   If you are not authorized and have this file, notify Revision Labs at 
+//   contact@rlab.ai and delete it immediately.
+//
+//   See LICENSE.txt in the project root for full license information.
+// =================================================================================
+
+using System.ComponentModel.DataAnnotations;
+using System.Runtime.InteropServices.ObjectiveC;
+using Newtonsoft.Json;
+using Revi;
+
+namespace Revi;
+
+public class ModelProfile
+{
+    // ================================
+    //  ModelProfile Object Definition
+    // ================================
+    
+    // Identifier
+    [RConfigProperty("general_name")]
+    public string Name { get; set; } 
+    
+    [RConfigProperty("general_enabled")]
+    public bool Enabled { get; set; } 
+    
+    
+    // Model and Provider
+    [RConfigProperty("general_model-string")]
+    public string ModelString { get; set; }
+
+    [RConfigProperty("general_provider-name")]
+    public string ProviderName { get; set; }
+    
+    public ProviderProfile Provider { get; set; } 
+    
+    
+    // Overall Options
+    [RConfigProperty("settings_tier")]
+    public ModelTier Tier { get; set; } 
+    
+    [RConfigProperty("settings_token-limit")]
+    public int TokenLimit { get; set; } 
+    
+    [RConfigProperty("settings_stop-sequences")]
+    public string? StopSequences { get; set; }
+    
+    
+    // Input Options
+    [RConfigProperty("input_system-input-type")]
+    public InputType SystemInputType { get; set; }
+    
+    [RConfigProperty("input_instruction-input-type")]
+    public InputType InstructionInputType { get; set; }
+    
+    [RConfigProperty("input_single-item")]
+    public string? InputItem { get; set; } 
+    
+    [RConfigProperty("input_multi-item")]
+    public string? InputItemMulti { get; set; } 
+    
+    
+    // Chat Options
+    [RConfigProperty("chat-completion_system-message")]
+    public bool SystemMessage { get; set; } = true;
+    
+    [RConfigProperty("chat-completion_prompt-in-system")]
+    public bool PromptInSystem { get; set; } = false;
+    
+    [RConfigProperty("chat-completion_system-in-user")]
+    public bool SystemInUser { get; set; } = true;
+    
+    [RConfigProperty("chat-completion_prompt-in-user")]
+    public bool PromptInUser { get; set; } = true;
+    
+    
+    // Completion Template & Options
+    [RConfigProperty("prompt-completion_structure")]
+    public string? Structure { get; set; }
+    
+    [RConfigProperty("prompt-completion_system-section")]
+    public string? SystemSection { get; set; } 
+    
+    [RConfigProperty("prompt-completion_instruction-section")]
+    public string? InstructionSection { get; set; } 
+    
+    [RConfigProperty("prompt-completion_input-section")]
+    public string? InputSection { get; set; } 
+    
+    [RConfigProperty("prompt-completion_example-section")]
+    public string? ExampleSection { get; set; } 
+    
+    [RConfigProperty("prompt-completion_example-structure")]
+    public string? ExampleStructure { get; set; } 
+    
+    [RConfigProperty("prompt-completion_example-sub-system")]
+    public string? ExampleSubSystem { get; set; } 
+    
+    [RConfigProperty("prompt-completion_example-sub-instruction")]
+    public string? ExampleSubInstruction { get; set; } 
+    
+    [RConfigProperty("prompt-completion_example-sub-input")]
+    public string? ExampleSubInput { get; set; } 
+    
+    [RConfigProperty("prompt-completion_example-sub-output")]
+    public string? ExampleSubOutput { get; set; } 
+    
+    [RConfigProperty("prompt-completion_output-section")]
+    public string? OutputSection { get; set; } 
+    
+    
+    // ==============
+    //  Constructors
+    // ==============
+    
+    // Called by "CallInitIfExists" in the "Read()" function of the RConfigParser class
+    public void Init()
+    {
+        if (string.IsNullOrEmpty(ProviderName))
+        {
+            Enabled = false;
+            throw new ArgumentNullException(ProviderName, "ProviderName is empty or null!");
+        }
+
+        var foundProvider = ProviderManager.Get(ProviderName);
+        if (foundProvider is null || foundProvider.Enabled is false)
+        {
+            Enabled = false;
+            RUtil.Log($"Provider '{ProviderName}' could not be found or is not enabled");
+            throw new ValidationException($"Provider '{ProviderName}' could not be found or is not enabled");
+            
+        }
+
+        Provider = foundProvider;
+    }
+}
