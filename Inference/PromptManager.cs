@@ -58,23 +58,34 @@ public static class PromptManager
         _prompts.Clear();
         
         // Collect the list of files
-        string path = AppDomain.CurrentDomain.BaseDirectory + "RConfigs/Prompts/";
-        List<string> files = Directory
-            .EnumerateFiles(path, "*.pmt", SearchOption.AllDirectories)
-            .ToList();
-
-        // Load in the files
-        Util.Log($"Attempting to load prompts from {path}");
-        foreach (var file in files)
+        try
         {
-            Dictionary<string, string> promptDictionary = RConfigParser.Read(file);
-            string folder = Util.ExtractSubDirectories(path, file).ToLower();
-            Prompt? prompt = Prompt.ToObject(promptDictionary, folder);
-            
-            if (prompt.Name is null)
-                continue;
-            
-            CheckAdd(prompt);
+            string path = AppDomain.CurrentDomain.BaseDirectory + "RConfigs/Prompts/";
+            Util.Log($"Attempting to load prompts from {path}");
+            List<string> files = Directory
+                .EnumerateFiles(path, "*.pmt", SearchOption.AllDirectories)
+                .ToList();
+
+            // Load in the files
+            foreach (var file in files)
+            {
+                Dictionary<string, string> promptDictionary = RConfigParser.Read(file);
+                string folder = Util.ExtractSubDirectories(path, file).ToLower();
+                Prompt? prompt = Prompt.ToObject(promptDictionary, folder);
+                
+                if (prompt.Name is null)
+                    continue;
+                
+                CheckAdd(prompt);
+            }
+        }
+        catch (DirectoryNotFoundException e)
+        {
+            Util.Log($"Directory not found: {e.Message}");
+        }
+        catch (Exception e)
+        {
+            Util.Log($"Error loading prompts: {e.Message}");
         }
     }
 }

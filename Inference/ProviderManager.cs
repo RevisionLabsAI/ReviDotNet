@@ -47,23 +47,35 @@ public static class ProviderManager
         _providers.Clear();
         
         // Collect the list of files
-        string path = AppDomain.CurrentDomain.BaseDirectory + "RConfigs/Providers/";
-        List<string> files = Directory
-            .EnumerateFiles(path, "*.rcfg", SearchOption.AllDirectories)
-            .ToList();
-
-        // Load in the files
-        Util.Log($"Attempting to load providers from {path}");
-        foreach (var file in files)
+        try
         {
-            Dictionary<string, string> providerDictionary = RConfigParser.Read(file);
-            string folder = Util.ExtractSubDirectories(path, file).ToLower();
-            ProviderProfile? provider = RConfigParser.ToObject<ProviderProfile>(providerDictionary, folder);
-            
-            if (provider?.Name is null)
-                continue;
-            
-            CheckAdd(provider);
+            string path = AppDomain.CurrentDomain.BaseDirectory + "RConfigs/Providers/";
+            Util.Log($"Attempting to load providers from {path}");
+            List<string> files = Directory
+                .EnumerateFiles(path, "*.rcfg", SearchOption.AllDirectories)
+                .ToList();
+
+            // Load in the files
+
+            foreach (var file in files)
+            {
+                Dictionary<string, string> providerDictionary = RConfigParser.Read(file);
+                string folder = Util.ExtractSubDirectories(path, file).ToLower();
+                ProviderProfile? provider = RConfigParser.ToObject<ProviderProfile>(providerDictionary, folder);
+
+                if (provider?.Name is null)
+                    continue;
+
+                CheckAdd(provider);
+            }
+        }
+        catch (DirectoryNotFoundException e)
+        {
+            Util.Log($"Directory not found: {e.Message}");
+        }
+        catch (Exception e)
+        {
+            Util.Log($"Error loading providers: {e.Message}");
         }
     }
 

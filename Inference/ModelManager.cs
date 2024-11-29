@@ -92,23 +92,34 @@ public static class ModelManager
         _models.Clear();
         
         // Collect the list of files
-        string path = AppDomain.CurrentDomain.BaseDirectory + "RConfigs/Models/";
-        List<string> files = Directory
-            .EnumerateFiles(path, "*.rcfg", SearchOption.AllDirectories)
-            .ToList();
-
-        // Load in the files
-        Util.Log($"Attempting to load models from {path}");
-        foreach (var file in files)
+        try
         {
-            Dictionary<string, string> modelDictionary = RConfigParser.Read(file);
-            string folder = Util.ExtractSubDirectories(path, file).ToLower();
-            ModelProfile? model = RConfigParser.ToObject<ModelProfile>(modelDictionary, folder);
-            
-            if (model?.Name is null)
-                continue;
-            
-            CheckAdd(model);
+            string path = AppDomain.CurrentDomain.BaseDirectory + "RConfigs/Models/";
+            Util.Log($"Attempting to load models from {path}");
+            List<string> files = Directory
+                .EnumerateFiles(path, "*.rcfg", SearchOption.AllDirectories)
+                .ToList();
+
+            // Load in the files
+            foreach (var file in files)
+            {
+                Dictionary<string, string> modelDictionary = RConfigParser.Read(file);
+                string folder = Util.ExtractSubDirectories(path, file).ToLower();
+                ModelProfile? model = RConfigParser.ToObject<ModelProfile>(modelDictionary, folder);
+
+                if (model?.Name is null)
+                    continue;
+
+                CheckAdd(model);
+            }
+        }
+        catch (DirectoryNotFoundException e)
+        {
+            Util.Log($"Directory not found: {e.Message}");
+        }
+        catch (Exception e)
+        {
+            Util.Log($"Error loading models: {e.Message}");
         }
     }
 }
