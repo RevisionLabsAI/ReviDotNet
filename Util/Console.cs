@@ -39,6 +39,77 @@ public static partial class Util
 		Console.WriteLine();
 	}
 
+	public static string ReadOpenEnded(string prompt, bool required = false)
+	{
+		string input;
+		
+		while (true)
+		{
+			Console.WriteLine(prompt);
+			input = System.Console.ReadLine();
+			if (!string.IsNullOrEmpty(input) || !required)
+				return input;
+		}
+	}
+
+	public static bool ReadYesNo(string prompt, bool? recommendation)
+	{
+		string input;
+		
+		// (Y/n) for true, (y/N) for false, (y/n) for no recommendation
+		string defaultString;
+		if (recommendation.HasValue)
+			defaultString = recommendation.Value ? " (Y/n):" : " (y/N):";
+		else
+			defaultString = " (y/n):";
+		
+		while (true)
+		{
+			Console.WriteLine(prompt + defaultString);
+			input = Console.ReadLine();
+			switch (input.ToLower())
+			{
+				case "yes":
+				case "y":
+				case "true":
+					return true;
+				
+				case "no":
+				case "n":
+				case "false":
+					return false;
+			}
+		}
+	}
+	
+	public static int ReadInt(string prompt, int defaultValue = 0)
+	{
+		string input;
+    
+		while (true)
+		{
+			Console.WriteLine(prompt);
+			input = Console.ReadLine();
+
+			// Check if input is blank or represents "No"
+			if (string.IsNullOrWhiteSpace(input) || 
+			    input.Equals("n", StringComparison.OrdinalIgnoreCase) || 
+			    input.Equals("no", StringComparison.OrdinalIgnoreCase))
+			{
+				return defaultValue;
+			}
+
+			// Try to parse the input as an integer
+			if (int.TryParse(input, out int result))
+			{
+				return result;
+			}
+
+			// If input is invalid, prompt again
+			Console.WriteLine("Invalid input. Please enter a valid number, or leave blank for the default.");
+		}
+	}
+
 	public static string ReadHintedLine(
 		List<string> list,
 		List<string> history,

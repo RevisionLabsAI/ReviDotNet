@@ -37,6 +37,19 @@ public static partial class Util
 		return input.Trim().Replace(' ', '-');
 	}
 	
+	// Split by either a comma or a space, treating consecutive delimiters as one.
+	public static List<string> SplitByCommaOrSpace(string input)
+	{
+		if (string.IsNullOrWhiteSpace(input))
+		{
+			return new List<string>();
+		}
+		
+		return input
+			.Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+			.ToList();
+	}
+	
 	// Helper for getting a string value safely
 	public static string? GetDictionaryString(Dictionary<string, string> dictionary, string key, string? defaultValue = "")
 	{
