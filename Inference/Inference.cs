@@ -57,7 +57,7 @@ public class Inference
 			if (modelProfile.Enabled)
 				return modelProfile;
 
-			RUtil.Log("modelProfile");
+			Util.Log("modelProfile");
 			throw new Exception($"Specified modelProfile but the model '{modelProfile.Name}' was not enabled.");
 		}
 
@@ -68,7 +68,7 @@ public class Inference
 			if ((foundModel is not null) && foundModel.Enabled)
 				return foundModel;
 
-			RUtil.Log("modelString");
+			Util.Log("modelString");
 			throw new Exception($"Specified modelString but an enabled model named '{modelName}' could not be found.");
 		}
 		
@@ -196,7 +196,7 @@ public class Inference
 
 		if (!model.Provider.SupportsGuidance ?? false)
 		{
-			RUtil.Log($"GetGuidance: Provider {model.Provider.SupportsGuidance} does not support guidance");
+			Util.Log($"GetGuidance: Provider {model.Provider.SupportsGuidance} does not support guidance");
 			return;
 		}
 
@@ -221,7 +221,7 @@ public class Inference
 
 				case GuidanceSchemaType.JsonAuto:
 					guidanceType = GuidanceType.Json;
-					guidanceString = RUtil.JsonStringFromType(outputType);
+					guidanceString = Util.JsonStringFromType(outputType);
 					//Util.Log($"Generated schema: \n'''\n{guidanceString}\n'''\n");
 					//RegexGenerator.FromObject(outputType, prompt.ChainOfThought ?? false);
 						//JsonConvert.SerializeObject(RegexGenerator.GenerateJsonSchemaFromType(outputType));
@@ -241,7 +241,7 @@ public class Inference
 		}
 		catch (Exception e)
 		{
-			RUtil.Log($"Guidance Exception: {e.Message}");
+			Util.Log($"Guidance Exception: {e.Message}");
 		}
 	}
 	#endregion
@@ -267,7 +267,7 @@ public class Inference
 		Type? outputType = null)
 	{
 		// Debug
-		RUtil.Log($"CallInference(prompt: '{prompt.Name}', model: '{model.Name}');");
+		Util.Log($"CallInference(prompt: '{prompt.Name}', model: '{model.Name}');");
 		
 		CompletionResponse? response = null;
 		try
@@ -304,7 +304,7 @@ public class Inference
 
 					// Prompt specific checks
 					totalLength = promptString.Length;
-					if (RUtil.EstTokenCountFromCharCount(totalLength) > model.TokenLimit)
+					if (Util.EstTokenCountFromCharCount(totalLength) > model.TokenLimit)
 						throw new Exception("Too many tokens!");
 
 					// Prompt completion
@@ -330,7 +330,7 @@ public class Inference
 
 					// Chat specific checks
 					totalLength = messages.Sum(msg => msg.Role.Length + msg.Content.Length);
-					if (RUtil.EstTokenCountFromCharCount(totalLength) > model.TokenLimit)
+					if (Util.EstTokenCountFromCharCount(totalLength) > model.TokenLimit)
 						throw new Exception("Too many tokens!");
 
 					// Chat completion
@@ -353,7 +353,7 @@ public class Inference
 		}
 		catch (Exception e)
 		{
-			RUtil.Log($"CallInference Exception: \"{e.Message}\"");
+			Util.Log($"CallInference Exception: \"{e.Message}\"");
 		}
 		
 		// Logging and Observability
@@ -361,7 +361,7 @@ public class Inference
 		var providerString = ""; //= JsonConvert.SerializeObject(providerInfo, Formatting.Indented);
 		var dump =
 			$"CallInference:\n\nProviderInfo:\n{providerString}\n\nMessages:\n{prompt}\n\nOutput:\n";
-		await RUtil.DumpLog(dump, "inference");
+		await Util.DumpLog(dump, "inference");
 
 		return response;
 	}
@@ -606,7 +606,7 @@ public class Inference
 		try
 		{
 			//Util.Log($"CompletionResponse: \n'''\n{JsonConvert.SerializeObject(result, Formatting.Indented)}\n'''\n");
-			json = RUtil.ExtractJson(result?.Selected, prompt.ChainOfThought);
+			json = Util.ExtractJson(result?.Selected, prompt.ChainOfThought);
 			
 			if (string.IsNullOrEmpty(json) is false)
 			{
@@ -627,21 +627,21 @@ public class Inference
 			// Check whether we had any text to work with
 			if (string.IsNullOrEmpty(json))
 			{
-				RUtil.Log($"WARNING: Missing JSON from InferToObject output: \n{e.Message}\n");
+				Util.Log($"WARNING: Missing JSON from InferToObject output: \n{e.Message}\n");
 				return default;
 			}
 
 			// Debugging
-			RUtil.Log($"WARNING: Caught faulty JSON output:\n'''{json}\n'''");
+			Util.Log($"WARNING: Caught faulty JSON output:\n'''{json}\n'''");
 			var dump = $"Faulty JSON!\nPrompt: {prompt.Name}\nFull Prompt: {result?.FullPrompt}\nOutput: {result?.Selected}";
-			await RUtil.DumpLog(dump, "faultyjson");
+			await Util.DumpLog(dump, "faultyjson");
 			
 			// Run the json-fixer prompt to see if we can make this work
 			result = await Completion(
 				FindPrompt("json-fixer"),
 				new List<Input>()
 				{
-					new Input("Schema", RUtil.JsonStringFromType(outputType)), 
+					new Input("Schema", Util.JsonStringFromType(outputType)), 
 					new Input("Bad JSON", json)
 				},
 				null, 
@@ -649,7 +649,7 @@ public class Inference
 				outputType);
 
 			// Extract json from the new output
-			json = RUtil.ExtractJson(result?.Selected, prompt.ChainOfThought);
+			json = Util.ExtractJson(result?.Selected, prompt.ChainOfThought);
 
 			// 
 			try
@@ -665,11 +665,11 @@ public class Inference
 			}
 			catch
 			{
-				RUtil.Log($"JSON remediation FAILED with output:\n {json}\n\n");
+				Util.Log($"JSON remediation FAILED with output:\n {json}\n\n");
 			}
 			finally
 			{
-				RUtil.Log($"JSON remediation {((newObject is not null) ? "SUCCEEDED!" : "FAILED")}");
+				Util.Log($"JSON remediation {((newObject is not null) ? "SUCCEEDED!" : "FAILED")}");
 			}
 		}
 		

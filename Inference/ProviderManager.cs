@@ -37,7 +37,7 @@ public static class ProviderManager
         if (existingProvider == null)
         {
             _providers.Add(newProvider);
-            RUtil.Log($"Loading provider named \"{newProvider.Name}\"");
+            Util.Log($"Loading provider named \"{newProvider.Name}\"");
         }
     }
     
@@ -53,11 +53,11 @@ public static class ProviderManager
             .ToList();
 
         // Load in the files
-        RUtil.Log($"Attempting to load providers from {path}");
+        Util.Log($"Attempting to load providers from {path}");
         foreach (var file in files)
         {
             Dictionary<string, string> providerDictionary = RConfigParser.Read(file);
-            string folder = RUtil.ExtractSubDirectories(path, file).ToLower();
+            string folder = Util.ExtractSubDirectories(path, file).ToLower();
             ProviderProfile? provider = RConfigParser.ToObject<ProviderProfile>(providerDictionary, folder);
             
             if (provider?.Name is null)

@@ -49,12 +49,12 @@ public class TestTicket
     public void Analyze()
     {
         // TODO: This is wrong
-        ExtractedOutput = RUtil.ExtractJson(
+        ExtractedOutput = Util.ExtractJson(
             FullOutput, 
             PromptToTest.ChainOfThought);
 
         // TODO: Validate to schema
         //SchemaFail = Inference.ValidateToSchema(ExtractedOutput, PromptToTest.Schema);
-        Closeness = RUtil.CosineSimilarity(ExtractedOutput, ExampleToTest.Output);
+        Closeness = Util.CosineSimilarity(ExtractedOutput, ExampleToTest.Output);
     }
 }

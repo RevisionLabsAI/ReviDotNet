@@ -65,10 +65,10 @@ public class RegexGenerator
         bool matches2 = RegexGenerator.MatchesSchema(input, longerList, true);
         bool matches3 = RegexGenerator.MatchesSchema(input + "broken", person, true);
 
-        RUtil.Log($"String:\n{input}\n\nShould be true: {matches1}, should be true: {matches2}, should be false: {matches3}");
+        Util.Log($"String:\n{input}\n\nShould be true: {matches1}, should be true: {matches2}, should be false: {matches3}");
         
         string regex = FromObject(persons, true);
-        RUtil.Log($"Regex: {regex}");
+        Util.Log($"Regex: {regex}");
     }
     
     public static string FromObject(Type type, bool chainOfThought, string? stopToken = null)

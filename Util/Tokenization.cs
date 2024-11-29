@@ -24,7 +24,7 @@ namespace Revi;
 
 // This file is bleh, please ignore how bleh this file is. Thank you. :) 
 
-public static partial class RUtil
+public static partial class Util
 {
     public static int EstTokenCountFromCharCount(int characterCount)
     {
@@ -71,7 +71,7 @@ public static partial class RUtil
     {
 	    //var tokens = await Tokenize(inputText);
 	    //return tokens.Count;
-	    return RUtil.EstTokenCountFromCharCount(inputText.Length);
+	    return Util.EstTokenCountFromCharCount(inputText.Length);
     }
 
     public static bool MayExceedTokenLimit(string text, int maxTokens)

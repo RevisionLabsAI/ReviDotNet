@@ -25,7 +25,7 @@ namespace Revi;
 
 // This file is bleh, please ignore how bleh this file is. Thank you. :) 
 
-public static partial class RUtil
+public static partial class Util
 {
 	public static string Identifierize(string input)
 	{

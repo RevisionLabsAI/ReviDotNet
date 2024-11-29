@@ -71,7 +71,7 @@ public class Evaluation
 
             if (response is null)
             {
-                RUtil.Log("Null response...");
+                Util.Log("Null response...");
                 return;
             }
 
@@ -158,7 +158,7 @@ public class Evaluation
         catch (AggregateException ae)
         {
             foreach (var exception in ae.InnerExceptions)
-                RUtil.Log($"Exception: {exception.Message}");
+                Util.Log($"Exception: {exception.Message}");
         }
     }
 }

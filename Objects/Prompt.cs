@@ -373,7 +373,7 @@ public class Prompt
         {
             List<Input> exin = ExtractInputs(pair.Key);
             string exout =
-                RUtil.JsonifyExample(pair.Value, requestJson); //string exout = RlonConverter.ToJson(pair.Value);
+                Util.JsonifyExample(pair.Value, requestJson); //string exout = RlonConverter.ToJson(pair.Value);
             output.Add(new Example(exin, exout));
             
             //Util.Log($"Example Output:\nOriginal:\n'''\n{pair.Value}\n'''\n\nJsonified:\n'''\n{exout}\n'''\n");
@@ -548,7 +548,7 @@ public class Prompt
         }
         catch (Exception e)
         {
-            RUtil.Log($"Init exists but failed! Message: {e.Message}");
+            Util.Log($"Init exists but failed! Message: {e.Message}");
         }
 
         return prompt;

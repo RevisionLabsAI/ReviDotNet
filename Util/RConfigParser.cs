@@ -385,7 +385,7 @@ public static class RConfigParser
         }
         catch (Exception e)
         {
-            RUtil.Log($"Init exists but failed! Message: {e.Message}");
+            Util.Log($"Init exists but failed! Message: {e.Message}");
         }
 
         return obj;

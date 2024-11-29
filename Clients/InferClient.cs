@@ -321,8 +321,8 @@ public class AsyncInferenceClient : IDisposable
                                $" - Reason: {response.ReasonPhrase} ({(int)response.StatusCode})\n" +
                                $" - Message: '{responseContent}'\n";
                 
-                RUtil.Log(errorMessage);
-                await RUtil.DumpLog(
+                Util.Log(errorMessage);
+                await Util.DumpLog(
                     errorMessage +
                     $" - Response:\n'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''\n",
                     "ic-api-failure");
@@ -337,7 +337,7 @@ public class AsyncInferenceClient : IDisposable
                            $" - Reason: {response.ReasonPhrase} ({(int)response.StatusCode})\n" +
                            $" - Message: '{responseContent}'\n";
 
-            RUtil.Log(errorMessage);
+            Util.Log(errorMessage);
             
             // Delay the next attempt
             await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
@@ -480,7 +480,7 @@ public class AsyncInferenceClient : IDisposable
                              $"# Payload\n{payloadDebug}\n\n" +
                              $"# Response\n{responseDebug}\n\n";
         
-        await RUtil.DumpLog(dumpMessage, "ic-generate-prompt");
+        await Util.DumpLog(dumpMessage, "ic-generate-prompt");
         return response;
     }
 
@@ -547,7 +547,7 @@ public class AsyncInferenceClient : IDisposable
                              $"# Payload\n{payloadDebug}\n\n" +
                              $"# Response\n{responseDebug}\n\n";
         
-        await RUtil.DumpLog(dumpMessage, "ic-generate-chat");
+        await Util.DumpLog(dumpMessage, "ic-generate-chat");
         return response;
     }
 

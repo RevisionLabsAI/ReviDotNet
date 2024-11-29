@@ -178,7 +178,7 @@ public class AsyncEmbeddingsClient : IDisposable
 
         GuidanceType? chosenType = guidanceType ?? _defaultGuidanceType;
         string? chosenString = guidanceString ?? _defaultGuidanceString;
-        RUtil.Log($"guidanceString: {guidanceString}, _protocol: {_protocol}");
+        Util.Log($"guidanceString: {guidanceString}, _protocol: {_protocol}");
         
         switch (_protocol)
         {
@@ -194,7 +194,7 @@ public class AsyncEmbeddingsClient : IDisposable
                 // vLLM Guidance
                 if (!_supportsGuidance || string.IsNullOrEmpty(chosenString))
                 {
-                    RUtil.Log($"{_supportsGuidance} : {chosenString}");
+                    Util.Log($"{_supportsGuidance} : {chosenString}");
                     return;
                 }
 
@@ -263,7 +263,7 @@ public class AsyncEmbeddingsClient : IDisposable
     private static Dictionary<string, string> ProcessHttpResponse(HttpResponseMessage response)
     {
         var data = response.Content.ReadFromJsonAsync<Dictionary<string, JsonElement>>().Result;
-        RUtil.Log($"Response: {System.Text.Json.JsonSerializer.Serialize(data)}");
+        Util.Log($"Response: {System.Text.Json.JsonSerializer.Serialize(data)}");
         if (data == null || !data.TryGetValue("choices", out var choices))
             throw new Exception("Invalid server response.");
 
@@ -319,7 +319,7 @@ public class AsyncEmbeddingsClient : IDisposable
             
             // Calculate the delay using exponential back-off
             double delaySeconds = _retryInitialDelaySeconds * Math.Pow(2, retryAttempt);
-            RUtil.Log($"API request failed: {response.StatusCode}: {errorMessage}\nTrying again in {delaySeconds} seconds.");
+            Util.Log($"API request failed: {response.StatusCode}: {errorMessage}\nTrying again in {delaySeconds} seconds.");
 
             // Delay the next attempt
             await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);

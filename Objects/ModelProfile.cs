@@ -133,7 +133,7 @@ public class ModelProfile
         if (foundProvider is null || foundProvider.Enabled is false)
         {
             Enabled = false;
-            RUtil.Log($"Provider '{ProviderName}' could not be found or is not enabled");
+            Util.Log($"Provider '{ProviderName}' could not be found or is not enabled");
             throw new ValidationException($"Provider '{ProviderName}' could not be found or is not enabled");
             
         }

@@ -43,12 +43,12 @@ public static class PromptManager
         if (existingPrompt == null)
         {
             _prompts.Add(newPrompt);
-            RUtil.Log($"Loading prompt named \"{newPrompt.Name}\"");
+            Util.Log($"Loading prompt named \"{newPrompt.Name}\"");
         }
         else if (IsNewerVersionOrUpdatedLater(existingPrompt, newPrompt))
         {
             _prompts[_prompts.IndexOf(existingPrompt)] = newPrompt;
-            RUtil.Log($"Updating to newer prompt named \"{newPrompt.Name}\"");
+            Util.Log($"Updating to newer prompt named \"{newPrompt.Name}\"");
         }
     }
     
@@ -64,11 +64,11 @@ public static class PromptManager
             .ToList();
 
         // Load in the files
-        RUtil.Log($"Attempting to load prompts from {path}");
+        Util.Log($"Attempting to load prompts from {path}");
         foreach (var file in files)
         {
             Dictionary<string, string> promptDictionary = RConfigParser.Read(file);
-            string folder = RUtil.ExtractSubDirectories(path, file).ToLower();
+            string folder = Util.ExtractSubDirectories(path, file).ToLower();
             Prompt? prompt = Prompt.ToObject(promptDictionary, folder);
             
             if (prompt.Name is null)

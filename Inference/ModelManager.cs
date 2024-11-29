@@ -82,7 +82,7 @@ public static class ModelManager
         if (existingModel == null)
         {
             _models.Add(newModel);
-            RUtil.Log($"Loading model named \"{newModel.Name}\"");
+            Util.Log($"Loading model named \"{newModel.Name}\"");
         }
     }
     
@@ -98,11 +98,11 @@ public static class ModelManager
             .ToList();
 
         // Load in the files
-        RUtil.Log($"Attempting to load models from {path}");
+        Util.Log($"Attempting to load models from {path}");
         foreach (var file in files)
         {
             Dictionary<string, string> modelDictionary = RConfigParser.Read(file);
-            string folder = RUtil.ExtractSubDirectories(path, file).ToLower();
+            string folder = Util.ExtractSubDirectories(path, file).ToLower();
             ModelProfile? model = RConfigParser.ToObject<ModelProfile>(modelDictionary, folder);
             
             if (model?.Name is null)
