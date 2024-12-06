@@ -20,7 +20,11 @@ public static class ProviderManager
     // ==============
     //  Declarations
     // ==============
-    
+
+    /// <summary>
+    /// A private, static, readonly list that stores instances of <see cref="ProviderProfile"/>.
+    /// It is used to manage the collection of provider profiles within the <see cref="ProviderManager"/>.
+    /// </summary>
     private static readonly List<ProviderProfile> _providers = new();
 
     
@@ -29,6 +33,16 @@ public static class ProviderManager
     // ==================
     
     #region Provider Loading
+
+    /// <summary>
+    /// Loads provider profiles from the specified directory path.
+    /// If the directory is not found, it attempts to load providers from embedded resources.
+    /// Logs operations and errors encountered during the loading process.
+    /// </summary>
+    /// <remarks>
+    /// This method will clear the existing provider profiles before loading new ones.
+    /// It handles exceptions related to directory access and general loading errors.
+    /// </remarks>
     public static void Load()
     {
         _providers.Clear();
@@ -51,6 +65,12 @@ public static class ProviderManager
         }
     }
 
+    /// <summary>
+    /// Loads provider profiles from the file system at the specified path.
+    /// Reads configuration files and parses them into provider profiles.
+    /// Verifies and adds valid provider profiles to the collection.
+    /// </summary>
+    /// <param name="path">The directory path from which provider profiles are to be loaded.</param>
     private static void LoadFromFileSystem(string path)
     {
         List<string> files = Directory
@@ -70,6 +90,14 @@ public static class ProviderManager
         }
     }
 
+    /// <summary>
+    /// Loads provider profiles from embedded resources when the directory path is not available.
+    /// Parses and converts embedded provider files into provider profiles.
+    /// </summary>
+    /// <remarks>
+    /// This method handles exceptions related to resource access and parsing errors.
+    /// Successfully loaded provider profiles are added to the existing collection.
+    /// </remarks>
     private static void LoadFromEmbeddedResources()
     {
         try
@@ -106,7 +134,12 @@ public static class ProviderManager
     // ======================
     //  Supporting Functions
     // ======================
-    
+
+    /// <summary>
+    /// Adds a new provider profile to the internal collection if it does not already exist.
+    /// Logs the addition if the provider is successfully added.
+    /// </summary>
+    /// <param name="newProvider">The provider profile to be added to the collection.</param>
     private static void CheckAdd(ProviderProfile newProvider)
     {
         var existingProvider = _providers.FirstOrDefault(p => p.Name == newProvider.Name);
@@ -121,12 +154,23 @@ public static class ProviderManager
     // ===============
     //  Accessibility
     // ===============
-    
+
+    /// <summary>
+    /// Retrieves a provider profile by its name from the list of loaded providers.
+    /// </summary>
+    /// <param name="name">The name of the provider profile to retrieve.</param>
+    /// <returns>
+    /// The <see cref="ProviderProfile"/> associated with the specified name, or <c>null</c> if no profile matches the provided name.
+    /// </returns>
     public static ProviderProfile? Get(string name)
     {
         return _providers.FirstOrDefault(provider => provider.Name == name);
     }
 
+    /// <summary>
+    /// Adds a new provider profile to the collection of provider profiles.
+    /// </summary>
+    /// <param name="model">The provider profile to be added.</param>
     public static void Add(ProviderProfile model)
     {
         _providers.Add(model);
