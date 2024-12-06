@@ -85,7 +85,7 @@ public static class CompletionChat
 		// Generate the inputList if we're going to need it
 		string? inputList = "";
 		if (model.SystemInputType == InputType.Listed || model.InstructionInputType == InputType.Listed)
-			inputList = Inference.ListInputs(model, inputs);
+			inputList = Infer.ListInputs(model, inputs);
 		
 		// Add the inputList or fill the inputs for the system prompt
 		system = AddOrFillInput(model.SystemInputType, inputList, inputs, system);

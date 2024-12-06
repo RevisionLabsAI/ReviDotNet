@@ -67,7 +67,7 @@ public class Evaluation
         // Form the task function
         return Task.Run(async () =>
         {
-            var response = await Inference.Completion(ticket.PromptToTest, ticket.ExampleToTest.Inputs);
+            var response = await Infer.Completion(ticket.PromptToTest, ticket.ExampleToTest.Inputs);
 
             if (response is null)
             {

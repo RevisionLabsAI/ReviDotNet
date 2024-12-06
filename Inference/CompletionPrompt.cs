@@ -185,7 +185,7 @@ public static class CompletionPrompt
 		if (model.SystemInputType == InputType.Listed || model.InstructionInputType == InputType.Listed)
 		{
 			
-			inputList = Inference.ListInputs(model, inputs);
+			inputList = Infer.ListInputs(model, inputs);
 			inputSection = AddOrFillInput(InputType.Listed, inputList, inputs, "");
 		}
 		
