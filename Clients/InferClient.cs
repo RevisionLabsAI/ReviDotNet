@@ -129,6 +129,383 @@ public class AsyncInferenceClient : IDisposable
     #endregion
 
     
+    // ===================
+    //  Prompt Completion
+    // ===================
+    
+    #region Prompt Completion
+    /// <summary>
+    /// Generates predictions based on a single prompt with various optional parameters.
+    /// </summary>
+    /// <param name="prompt">The prompt to generate text from.</param>
+    /// <param name="model">The model identifier to use for the request.</param>
+    /// <param name="temperature">Control randomness. Lower values make responses more deterministic.</param>
+    /// <param name="topP">Nucleus sampling: higher values cause more randomness.</param>
+    /// <param name="topK">Limits the generated predictions to the top-k likely next words.</param>
+    /// <param name="bestOf">Generates multiple outputs and selects the best one.</param>
+    /// <param name="maxTokens">Maximum number of tokens to generate.</param>
+    /// <param name="frequencyPenalty">Penalizes new tokens based on their frequency.</param>
+    /// <param name="presencePenalty">Penalizes new tokens based on their presence.</param>
+    /// <param name="stopSequences">Sequences where the model should stop generating further tokens.</param>
+    /// <param name="cancellationToken">Cancellation token to cancel the request.</param>
+    /// <returns>A task that represents the asynchronous operation. The task result contains the <see cref="CompletionResponse"/> object.</returns>
+    public async Task<CompletionResponse> GenerateAsync(
+        string prompt, 
+        string model = "default", 
+        double? temperature = null,
+        double? topP = null, 
+        int? topK = null, 
+        int? bestOf = null,
+        int? maxTokens = null, 
+        double? frequencyPenalty = null,
+        double? presencePenalty = null, 
+        string[]? stopSequences = null,
+        GuidanceType? guidanceType = GuidanceType.Disabled,
+        string? guidanceString = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (_supportsCompletion is false)
+            throw new Exception("Attempting prompt completion on provider that does not support it");
+        
+        model = model == "default" ? _defaultModel : model;
+        var parameters = new Dictionary<string, object>
+        {
+            {"model", model},
+            {"prompt", prompt}
+        };
+
+        AddOptionalParameters(
+            parameters, 
+            temperature, 
+            topP, 
+            topK,
+            bestOf,
+            maxTokens, 
+            frequencyPenalty, 
+            presencePenalty, 
+            stopSequences,
+            guidanceType,
+            guidanceString);
+        
+        string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
+        //Util.Log($"Payload:\n{payloadDebug}");
+        
+        Dictionary<string, string> serverResponse = await ExecuteRequest("v1/completions", parameters, cancellationToken);
+        CompletionResponse response = BuildResponse(prompt, serverResponse);
+        
+        string responseDebug = $"'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''";
+        string dumpMessage = $"### ReviDotNet.GenerateAsync() Prompt Completion\n" +
+                             $"# URL\n{_client.BaseAddress + "v1/completions"}\n\n" +
+                             $"# Payload\n{payloadDebug}\n\n" +
+                             $"# Response\n{responseDebug}\n\n";
+        
+        await Util.DumpLog(dumpMessage, "ic-generate-prompt");
+        return response;
+    }
+    
+    /// <summary>
+    /// This method processes the server response and creates a Response object.
+    /// </summary>
+    /// <param name="prompt">The prompt used as input to the inference.</param>
+    /// <param name="serverResponse">The response received from the server.</param>
+    /// <returns>A CompletionResponse object containing the processed response.</returns>
+    private CompletionResponse BuildResponse(string prompt, Dictionary<string, string> serverResponse)
+    {
+        // This method processes the server response and creates a Response object
+        var outputs = new List<string>();
+        string selected = serverResponse.GetValueOrDefault("text", "");
+        string finishReason = serverResponse.GetValueOrDefault("finish_reason", "");
+
+        outputs.Add(selected); // Simulating multiple outputs; adjust based on actual API capabilities
+
+        return new CompletionResponse { FullPrompt = prompt, Outputs = outputs, Selected = selected, FinishReason = finishReason };
+    }
+    #endregion
+    
+    
+    // =================
+    //  Chat Completion
+    // =================
+    
+    #region Chat Completion
+    /// <summary>
+    /// Generates an inference response asynchronously.
+    /// </summary>
+    /// <param name="messages">The list of messages to generate the response from.</param>
+    /// <param name="model">The model identifier to use for the request.</param>
+    /// <param name="temperature">Control randomness. Lower values make responses more deterministic.</param>
+    /// <param name="topP">Nucleus sampling: higher values cause more randomness.</param>
+    /// <param name="topK">Limits the generated predictions to the top-k likely next words.</param>
+    /// <param name="bestOf">Generates multiple outputs and selects the best one.</param>
+    /// <param name="maxTokens">Maximum number of tokens to generate.</param>
+    /// <param name="frequencyPenalty">Penalizes new tokens based on their frequency.</param>
+    /// <param name="presencePenalty">Penalizes new tokens based on their presence.</param>
+    /// <param name="stopSequences">Sequences where the model should stop generating further tokens.</param>
+    /// <param name="cancellationToken">Cancellation token to cancel the request.</param>
+    /// <returns>A task that represents the asynchronous operation. The task result contains the <see cref="CompletionResponse"/> object.</returns>
+    public async Task<CompletionResponse> GenerateAsync(
+        List<Message> messages, 
+        string model = "default",
+        double? temperature = null,
+        double? topP = null, 
+        int? topK = null, 
+        int? bestOf = null,
+        int? maxTokens = null, 
+        double? frequencyPenalty = null,
+        double? presencePenalty = null, 
+        string[]? stopSequences = null,
+        GuidanceType? guidanceType = GuidanceType.Disabled,
+        string? guidanceString = null,
+        CancellationToken cancellationToken = default)
+    {
+        model = model == "default" ? _defaultModel : model;
+        var parameters = new Dictionary<string, object>
+        {
+            {"model", model},
+            {"messages", messages}
+        };
+
+        // Add optional parameters if they are not null
+        AddOptionalParameters(
+            parameters, 
+            temperature, 
+            topP, 
+            topK,
+            bestOf,
+            maxTokens, 
+            frequencyPenalty, 
+            presencePenalty, 
+            stopSequences,
+            guidanceType,
+            guidanceString);
+
+        string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
+        //Util.Log($"Payload:\n{payloadDebug}");
+        
+        Dictionary<string, string> serverResponse = await ExecuteRequest("v1/chat/completions", parameters, cancellationToken);
+        CompletionResponse response = BuildResponse(messages, serverResponse);
+        
+        string responseDebug = $"'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''";
+        string dumpMessage = $"### ReviDotNet.GenerateAsync() Chat Completion\n" +
+                             $"# URL\n{_client.BaseAddress + "v1/chat/completions"}\n\n" +
+                             $"# Payload\n{payloadDebug}\n\n" +
+                             $"# Response\n{responseDebug}\n\n";
+        
+        await Util.DumpLog(dumpMessage, "ic-generate-chat");
+        return response;
+    }
+    
+    /// <summary>
+    /// This method processes the server response and creates a Response object.
+    /// </summary>
+    /// <param name="messages">The list of messages.</param>
+    /// <param name="serverResponse">The response received from the server.</param>
+    /// <returns>A Response object containing the processed response.</returns>
+    private CompletionResponse BuildResponse(List<Message> messages, Dictionary<string, string> serverResponse)
+    {
+        string fullPrompt = JsonConvert.SerializeObject(messages, Formatting.Indented);
+        return BuildResponse(fullPrompt, serverResponse);
+    }
+    #endregion
+
+
+    #region Streaming Function
+        /*
+    public async IAsyncEnumerable<IList<string>> Stream(
+        string systemPrompt,
+        string userPrompt,
+        string model,
+        Dictionary<string, object>? paramaters = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var payload = FormatRequestData(systemPrompt, userPrompt, model:model, _apiKey, _useApiKey, false, @params, extraBody);
+        
+        var response = await client.PostAsJsonAsync("/v1/completions", payload, cancellationToken: cancellationToken);
+        var content = await response.Content.ReadAsStreamAsync(cancellationToken); // TODO: code below not functional currently
+
+        var buffer = new byte[32768];
+        var filled = 0;
+
+        for(;;)
+        {
+            var bytesRead = await content.ReadAsync(buffer.AsMemory(filled), cancellationToken);
+            if (bytesRead == 0)
+            {
+                if (filled > 0)
+                {
+                    throw new VllmChatClient("Unexpected end of stream");
+                }
+
+                break;
+            }
+
+            filled += bytesRead;
+
+            for(;;)
+            {
+                var zero = Array.FindIndex(buffer, 0, filled, b => b == 0);
+                if (zero < 0)
+                {
+                    if (filled == buffer.Length)
+                    {
+                        Array.Resize(ref buffer, buffer.Length * 2);
+                    }
+
+                    break;
+                }
+
+                var jsonDoc = JsonDocument.Parse(buffer.AsMemory(0, zero));
+                var textItem = jsonDoc.RootElement.GetProperty("text");
+                if (textItem.ValueKind != JsonValueKind.Array)
+                {
+                    throw new VllmChatClient("Invalid server response");
+                }
+
+                var texts = textItem.EnumerateArray().Select(v => v.GetString() ?? "N/A").ToList();
+                yield return texts;
+
+                var consumed = zero + 1;
+                if (filled > consumed)
+                {
+                    buffer.AsSpan(consumed).CopyTo(buffer);
+                }
+
+                filled -= consumed;
+            }
+        }
+    }
+    */
+    #endregion
+    
+    
+    // =================
+    //  Http Requesting
+    // =================
+    
+    #region Http Requesting
+    /// <summary>
+    /// Executes a request to the AI inference service with the specified payload and cancellation token.
+    /// </summary>
+    /// <param name="endpoint">The endpoint of the AI inference service.</param>
+    /// <param name="payload">The payload to be sent to the AI inference service. It should contain the necessary parameters for the request.</param>
+    /// <param name="cancellationToken">A cancellation token that can be used to cancel the request.</param>
+    /// <returns>A task that represents the asynchronous operation. The task result contains a dictionary of the response parameters.</returns>
+    private async Task<Dictionary<string, string>> ExecuteRequest(
+        string endpoint,
+        Dictionary<string, object> payload,
+        CancellationToken cancellationToken)
+    {
+        await _clientSemaphore.WaitAsync(cancellationToken);
+        try
+        {
+            await EnsureRateLimit();
+            var content = new StringContent(JsonConvert.SerializeObject(payload), System.Text.Encoding.UTF8,
+                "application/json");
+            return await MakeRequestAsync(endpoint, content, cancellationToken);
+        }
+        finally
+        {
+            _clientSemaphore.Release();
+        }
+    }
+    
+    /// <summary>
+    /// Makes an asynchronous HTTP POST request with the provided content to the API.
+    /// </summary>
+    /// <param name="content">The HTTP content to send with the request.</param>
+    /// <param name="cancellationToken">A token to cancel the request.</param>
+    /// <returns>A dictionary containing the response from the API.</returns>
+    private async Task<Dictionary<string, string>> MakeRequestAsync(
+        string endpoint,
+        StringContent content, 
+        CancellationToken cancellationToken)
+    {
+        int retryAttempt = 0; // Counter for the current attempt number
+
+        https://api.runpod.ai/v2/vllm-jeg2tuagjkdldx/openai/
+        HttpResponseMessage response = await _client.PostAsync(endpoint, content, cancellationToken);
+        
+        // We got an unsuccessful response back... try again? 
+        while (!response.IsSuccessStatusCode)
+        {
+            // Get the error message
+            string responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            string errorMessage;
+            
+            // End if we're at our retry attempt limit
+            if (retryAttempt >= _retryAttemptLimit)
+            {
+                errorMessage = $"API request failed after {retryAttempt} retries: \n" +
+                               $" - Reason: {response.ReasonPhrase} ({(int)response.StatusCode})\n" +
+                               $" - Message: '{responseContent}'\n";
+                
+                Util.Log(errorMessage);
+                await Util.DumpLog(
+                    errorMessage +
+                    $" - Response:\n'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''\n",
+                    "ic-api-failure");
+                
+                throw new Exception(errorMessage);
+            }
+            
+            // Calculate the delay using exponential back-off
+            double delaySeconds = _retryInitialDelaySeconds * Math.Pow(2, retryAttempt);
+            errorMessage = $"API request failed, trying again in {delaySeconds} seconds:\n" +
+                           $" - URI: {_client.BaseAddress + endpoint}\n" +
+                           $" - Reason: {response.ReasonPhrase} ({(int)response.StatusCode})\n" +
+                           $" - Message: '{responseContent}'\n";
+
+            Util.Log(errorMessage);
+            
+            // Delay the next attempt
+            await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
+            
+            // Increase retry attempt
+            retryAttempt++;
+
+            // Try again
+            response = await _client.PostAsync(endpoint, content, cancellationToken);
+        }
+
+        return ProcessHttpResponse(response);
+    }
+
+    /// <summary>
+    /// Processes the HTTP response and extracts the required information.
+    /// </summary>
+    /// <param name="response">The HTTP response returned by the server.</param>
+    /// <returns>A dictionary containing the extracted information from the response.</returns>
+    private static Dictionary<string, string> ProcessHttpResponse(HttpResponseMessage response)
+    {
+        var data = response.Content.ReadFromJsonAsync<Dictionary<string, JsonElement>>().Result;
+        //Util.Log($"Response: {System.Text.Json.JsonSerializer.Serialize(data)}");
+        
+        if (data == null || !data.TryGetValue("choices", out var choices))
+            throw new Exception($"ProcessHttpResponse: Invalid response:\n'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''\n");
+
+        var result = new Dictionary<string, string>();
+        if (choices[0].TryGetProperty("text", out var textElement))
+        {
+            result.Add("text", textElement.GetString() ?? "");
+        }
+        else
+        {
+            // Extracting message content from the chat completion response
+            if (choices[0].TryGetProperty("message", out var messageElement) &&
+                messageElement.TryGetProperty("content", out var contentElement))
+            {
+                result.Add("text", contentElement.GetString() ?? "");
+            }
+        }
+        
+        if (choices[0].TryGetProperty("finish_reason", out var finishReason))
+            result.Add("finish_reason", finishReason.GetString() ?? string.Empty);
+
+        return result;
+    }
+    #endregion
+    
+    
     // ======================
     //  Supporting Functions
     // ======================
@@ -242,7 +619,7 @@ public class AsyncInferenceClient : IDisposable
             }
         }
     }
-
+    
     /// <summary>
     /// Ensures that the rate limit between requests is met before making a request.
     /// </summary>
@@ -256,366 +633,5 @@ public class AsyncInferenceClient : IDisposable
         }
         _lastExecutionTime = DateTime.Now;
     }
-
-    /// <summary>
-    /// Processes the HTTP response and extracts the required information.
-    /// </summary>
-    /// <param name="response">The HTTP response returned by the server.</param>
-    /// <returns>A dictionary containing the extracted information from the response.</returns>
-    private static Dictionary<string, string> ProcessHttpResponse(HttpResponseMessage response)
-    {
-        var data = response.Content.ReadFromJsonAsync<Dictionary<string, JsonElement>>().Result;
-        //Util.Log($"Response: {System.Text.Json.JsonSerializer.Serialize(data)}");
-        
-        if (data == null || !data.TryGetValue("choices", out var choices))
-            throw new Exception($"ProcessHttpResponse: Invalid response:\n'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''\n");
-
-        var result = new Dictionary<string, string>();
-        if (choices[0].TryGetProperty("text", out var textElement))
-        {
-            result.Add("text", textElement.GetString() ?? "");
-        }
-        else
-        {
-            // Extracting message content from the chat completion response
-            if (choices[0].TryGetProperty("message", out var messageElement) &&
-                messageElement.TryGetProperty("content", out var contentElement))
-            {
-                result.Add("text", contentElement.GetString() ?? "");
-            }
-        }
-        
-        if (choices[0].TryGetProperty("finish_reason", out var finishReason))
-            result.Add("finish_reason", finishReason.GetString() ?? string.Empty);
-
-        return result;
-    }
-    
-    /// <summary>
-    /// Makes an asynchronous HTTP POST request with the provided content to the API.
-    /// </summary>
-    /// <param name="content">The HTTP content to send with the request.</param>
-    /// <param name="cancellationToken">A token to cancel the request.</param>
-    /// <returns>A dictionary containing the response from the API.</returns>
-    private async Task<Dictionary<string, string>> MakeRequestAsync(
-        string endpoint,
-        StringContent content, 
-        CancellationToken cancellationToken)
-    {
-        int retryAttempt = 0; // Counter for the current attempt number
-
-        https://api.runpod.ai/v2/vllm-jeg2tuagjkdldx/openai/
-        HttpResponseMessage response = await _client.PostAsync(endpoint, content, cancellationToken);
-        
-        // We got an unsuccessful response back... try again? 
-        while (!response.IsSuccessStatusCode)
-        {
-            // Get the error message
-            string responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            string errorMessage;
-            
-            // End if we're at our retry attempt limit
-            if (retryAttempt >= _retryAttemptLimit)
-            {
-                errorMessage = $"API request failed after {retryAttempt} retries: \n" +
-                               $" - Reason: {response.ReasonPhrase} ({(int)response.StatusCode})\n" +
-                               $" - Message: '{responseContent}'\n";
-                
-                Util.Log(errorMessage);
-                await Util.DumpLog(
-                    errorMessage +
-                    $" - Response:\n'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''\n",
-                    "ic-api-failure");
-                
-                throw new Exception(errorMessage);
-            }
-            
-            // Calculate the delay using exponential back-off
-            double delaySeconds = _retryInitialDelaySeconds * Math.Pow(2, retryAttempt);
-            errorMessage = $"API request failed, trying again in {delaySeconds} seconds:\n" +
-                           $" - URI: {_client.BaseAddress + endpoint}\n" +
-                           $" - Reason: {response.ReasonPhrase} ({(int)response.StatusCode})\n" +
-                           $" - Message: '{responseContent}'\n";
-
-            Util.Log(errorMessage);
-            
-            // Delay the next attempt
-            await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
-            
-            // Increase retry attempt
-            retryAttempt++;
-
-            // Try again
-            response = await _client.PostAsync(endpoint, content, cancellationToken);
-        }
-
-        return ProcessHttpResponse(response);
-    }
-
-    /// <summary>
-    /// Executes a request to the AI inference service with the specified payload and cancellation token.
-    /// </summary>
-    /// <param name="endpoint">The endpoint of the AI inference service.</param>
-    /// <param name="payload">The payload to be sent to the AI inference service. It should contain the necessary parameters for the request.</param>
-    /// <param name="cancellationToken">A cancellation token that can be used to cancel the request.</param>
-    /// <returns>A task that represents the asynchronous operation. The task result contains a dictionary of the response parameters.</returns>
-    private async Task<Dictionary<string, string>> ExecuteRequest(
-        string endpoint,
-        Dictionary<string, object> payload,
-        CancellationToken cancellationToken)
-    {
-        await _clientSemaphore.WaitAsync(cancellationToken);
-        try
-        {
-            await EnsureRateLimit();
-            var content = new StringContent(JsonConvert.SerializeObject(payload), System.Text.Encoding.UTF8,
-                "application/json");
-            return await MakeRequestAsync(endpoint, content, cancellationToken);
-        }
-        finally
-        {
-            _clientSemaphore.Release();
-        }
-    }
-
-    /// <summary>
-    /// This method processes the server response and creates a Response object.
-    /// </summary>
-    /// <param name="messages">The list of messages.</param>
-    /// <param name="serverResponse">The response received from the server.</param>
-    /// <returns>A Response object containing the processed response.</returns>
-    private CompletionResponse BuildResponse(List<Message> messages, Dictionary<string, string> serverResponse)
-    {
-        string fullPrompt = JsonConvert.SerializeObject(messages, Formatting.Indented);
-        return BuildResponse(fullPrompt, serverResponse);
-    }
-
-    /// <summary>
-    /// This method processes the server response and creates a Response object.
-    /// </summary>
-    /// <param name="prompt">The prompt used as input to the inference.</param>
-    /// <param name="serverResponse">The response received from the server.</param>
-    /// <returns>A CompletionResponse object containing the processed response.</returns>
-    private CompletionResponse BuildResponse(string prompt, Dictionary<string, string> serverResponse)
-    {
-        // This method processes the server response and creates a Response object
-        var outputs = new List<string>();
-        string selected = serverResponse.GetValueOrDefault("text", "");
-        string finishReason = serverResponse.GetValueOrDefault("finish_reason", "");
-
-        outputs.Add(selected); // Simulating multiple outputs; adjust based on actual API capabilities
-
-        return new CompletionResponse { FullPrompt = prompt, Outputs = outputs, Selected = selected, FinishReason = finishReason };
-    }
-    #endregion
-    
-    
-    // ======================
-    //  Generation Functions 
-    // ======================
-    
-    #region Generation Functions
-    /// <summary>
-    /// Generates predictions based on a single prompt with various optional parameters.
-    /// </summary>
-    /// <param name="prompt">The prompt to generate text from.</param>
-    /// <param name="model">The model identifier to use for the request.</param>
-    /// <param name="temperature">Control randomness. Lower values make responses more deterministic.</param>
-    /// <param name="topP">Nucleus sampling: higher values cause more randomness.</param>
-    /// <param name="topK">Limits the generated predictions to the top-k likely next words.</param>
-    /// <param name="bestOf">Generates multiple outputs and selects the best one.</param>
-    /// <param name="maxTokens">Maximum number of tokens to generate.</param>
-    /// <param name="frequencyPenalty">Penalizes new tokens based on their frequency.</param>
-    /// <param name="presencePenalty">Penalizes new tokens based on their presence.</param>
-    /// <param name="stopSequences">Sequences where the model should stop generating further tokens.</param>
-    /// <param name="cancellationToken">Cancellation token to cancel the request.</param>
-    /// <returns>A task that represents the asynchronous operation. The task result contains the <see cref="CompletionResponse"/> object.</returns>
-    public async Task<CompletionResponse> GenerateAsync(
-        string prompt, 
-        string model = "default", 
-        double? temperature = null,
-        double? topP = null, 
-        int? topK = null, 
-        int? bestOf = null,
-        int? maxTokens = null, 
-        double? frequencyPenalty = null,
-        double? presencePenalty = null, 
-        string[]? stopSequences = null,
-        GuidanceType? guidanceType = GuidanceType.Disabled,
-        string? guidanceString = null,
-        CancellationToken cancellationToken = default)
-    {
-        if (_supportsCompletion is false)
-            throw new Exception("Attempting prompt completion on provider that does not support it");
-        
-        model = model == "default" ? _defaultModel : model;
-        var parameters = new Dictionary<string, object>
-        {
-            {"model", model},
-            {"prompt", prompt}
-        };
-
-        AddOptionalParameters(
-            parameters, 
-            temperature, 
-            topP, 
-            topK,
-            bestOf,
-            maxTokens, 
-            frequencyPenalty, 
-            presencePenalty, 
-            stopSequences,
-            guidanceType,
-            guidanceString);
-        
-        string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
-        //Util.Log($"Payload:\n{payloadDebug}");
-        
-        Dictionary<string, string> serverResponse = await ExecuteRequest("v1/completions", parameters, cancellationToken);
-        CompletionResponse response = BuildResponse(prompt, serverResponse);
-        
-        string responseDebug = $"'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''";
-        string dumpMessage = $"### ReviDotNet.GenerateAsync() Prompt Completion\n" +
-                             $"# URL\n{_client.BaseAddress + "v1/completions"}\n\n" +
-                             $"# Payload\n{payloadDebug}\n\n" +
-                             $"# Response\n{responseDebug}\n\n";
-        
-        await Util.DumpLog(dumpMessage, "ic-generate-prompt");
-        return response;
-    }
-
-    /// <summary>
-    /// Generates an inference response asynchronously.
-    /// </summary>
-    /// <param name="messages">The list of messages to generate the response from.</param>
-    /// <param name="model">The model identifier to use for the request.</param>
-    /// <param name="temperature">Control randomness. Lower values make responses more deterministic.</param>
-    /// <param name="topP">Nucleus sampling: higher values cause more randomness.</param>
-    /// <param name="topK">Limits the generated predictions to the top-k likely next words.</param>
-    /// <param name="bestOf">Generates multiple outputs and selects the best one.</param>
-    /// <param name="maxTokens">Maximum number of tokens to generate.</param>
-    /// <param name="frequencyPenalty">Penalizes new tokens based on their frequency.</param>
-    /// <param name="presencePenalty">Penalizes new tokens based on their presence.</param>
-    /// <param name="stopSequences">Sequences where the model should stop generating further tokens.</param>
-    /// <param name="cancellationToken">Cancellation token to cancel the request.</param>
-    /// <returns>A task that represents the asynchronous operation. The task result contains the <see cref="CompletionResponse"/> object.</returns>
-    public async Task<CompletionResponse> GenerateAsync(
-        List<Message> messages, 
-        string model = "default",
-        double? temperature = null,
-        double? topP = null, 
-        int? topK = null, 
-        int? bestOf = null,
-        int? maxTokens = null, 
-        double? frequencyPenalty = null,
-        double? presencePenalty = null, 
-        string[]? stopSequences = null,
-        GuidanceType? guidanceType = GuidanceType.Disabled,
-        string? guidanceString = null,
-        CancellationToken cancellationToken = default)
-    {
-        model = model == "default" ? _defaultModel : model;
-        var parameters = new Dictionary<string, object>
-        {
-            {"model", model},
-            {"messages", messages}
-        };
-
-        // Add optional parameters if they are not null
-        AddOptionalParameters(
-            parameters, 
-            temperature, 
-            topP, 
-            topK,
-            bestOf,
-            maxTokens, 
-            frequencyPenalty, 
-            presencePenalty, 
-            stopSequences,
-            guidanceType,
-            guidanceString);
-
-        string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
-        //Util.Log($"Payload:\n{payloadDebug}");
-        
-        Dictionary<string, string> serverResponse = await ExecuteRequest("v1/chat/completions", parameters, cancellationToken);
-        CompletionResponse response = BuildResponse(messages, serverResponse);
-        
-        string responseDebug = $"'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''";
-        string dumpMessage = $"### ReviDotNet.GenerateAsync() Chat Completion\n" +
-                             $"# URL\n{_client.BaseAddress + "v1/chat/completions"}\n\n" +
-                             $"# Payload\n{payloadDebug}\n\n" +
-                             $"# Response\n{responseDebug}\n\n";
-        
-        await Util.DumpLog(dumpMessage, "ic-generate-chat");
-        return response;
-    }
-
-    
-        /*
-    public async IAsyncEnumerable<IList<string>> Stream(
-        string systemPrompt,
-        string userPrompt,
-        string model,
-        Dictionary<string, object>? paramaters = null,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        var payload = FormatRequestData(systemPrompt, userPrompt, model:model, _apiKey, _useApiKey, false, @params, extraBody);
-        
-        var response = await client.PostAsJsonAsync("/v1/completions", payload, cancellationToken: cancellationToken);
-        var content = await response.Content.ReadAsStreamAsync(cancellationToken); // TODO: code below not functional currently
-
-        var buffer = new byte[32768];
-        var filled = 0;
-
-        for(;;)
-        {
-            var bytesRead = await content.ReadAsync(buffer.AsMemory(filled), cancellationToken);
-            if (bytesRead == 0)
-            {
-                if (filled > 0)
-                {
-                    throw new VllmChatClient("Unexpected end of stream");
-                }
-
-                break;
-            }
-
-            filled += bytesRead;
-
-            for(;;)
-            {
-                var zero = Array.FindIndex(buffer, 0, filled, b => b == 0);
-                if (zero < 0)
-                {
-                    if (filled == buffer.Length)
-                    {
-                        Array.Resize(ref buffer, buffer.Length * 2);
-                    }
-
-                    break;
-                }
-
-                var jsonDoc = JsonDocument.Parse(buffer.AsMemory(0, zero));
-                var textItem = jsonDoc.RootElement.GetProperty("text");
-                if (textItem.ValueKind != JsonValueKind.Array)
-                {
-                    throw new VllmChatClient("Invalid server response");
-                }
-
-                var texts = textItem.EnumerateArray().Select(v => v.GetString() ?? "N/A").ToList();
-                yield return texts;
-
-                var consumed = zero + 1;
-                if (filled > consumed)
-                {
-                    buffer.AsSpan(consumed).CopyTo(buffer);
-                }
-
-                filled -= consumed;
-            }
-        }
-    }
-    */
     #endregion
 }
