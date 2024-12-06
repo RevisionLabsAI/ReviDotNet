@@ -15,6 +15,44 @@ namespace Revi;
 
 public static class CompletionChat
 {
+	// =================
+	//  Message Builder
+	// =================
+
+	#region Message Builder
+	/// <summary>
+	/// Builds a list of messages for the completion chat.
+	/// </summary>
+	/// <param name="prompt">The prompt to use for the messages.</param>
+	/// <param name="model">The model profile to use for the messages.</param>
+	/// <param name="inputs">Optional list of inputs for the messages.</param>
+	/// <returns>A list of messages for the completion chat.</returns>
+	public static List<Message> BuildMessages(Prompt prompt, ModelProfile model, List<Input>? inputs = null)
+	{
+		// Process inputs
+		ProcessInputs(prompt, model, out string system, out string instruction, inputs);
+		
+		// Figure out whether we should do example messages first
+		//  - Are examples part of the user message, or are they separate user messages?
+		//  - Right now examples are separate messages... maybe support making them part of the prompt?
+		
+		// Form the prompt
+		List<Message> messages = new List<Message>();
+		InsertSystem(messages, model, system, instruction);
+		InsertExamples(messages, prompt, model);
+		InsertPrompt(messages, model, system, instruction);
+
+		// Check if something is screwy
+		if (messages.Count is 0)
+		{
+			// Something is indeed screwy
+			throw new Exception("No messages for inference");
+		}
+		
+		return messages;
+	}
+	#endregion
+
 	// ================
 	//  Input Handling
 	// ================
@@ -28,7 +66,7 @@ public static class CompletionChat
 	/// <param name="inputs">The list of inputs.</param>
 	/// <param name="originalText">The original text to add or fill the input into.</param>
 	/// <returns>The updated text after adding or filling the input.</returns>
-	public static string AddOrFillInput(
+	private static string AddOrFillInput(
 		InputType inputType, 
 		string? inputList, 
 		List<Input> inputs, 
@@ -105,7 +143,7 @@ public static class CompletionChat
 	/// <param name="messages">The list of messages to insert the examples into.</param>
 	/// <param name="prompt">The prompt object that contains the examples.</param>
 	/// <param name="model">The model profile.</param>
-	public static void InsertExamples(
+	private static void InsertExamples(
 		List<Message> messages, 
 		Prompt prompt, 
 		ModelProfile model)
@@ -156,7 +194,7 @@ public static class CompletionChat
 	/// <param name="model">The model profile that determines the behavior of the system message.</param>
 	/// <param name="system">The system message to insert (optional).</param>
 	/// <param name="instruction">The instruction message to insert (optional).</param>
-	public static void InsertSystem(
+	private static void InsertSystem(
 		List<Message> messages, 
 		ModelProfile model, 
 		string? system = null,
@@ -202,7 +240,7 @@ public static class CompletionChat
 	/// <param name="model">The model profile.</param>
 	/// <param name="system">The system prompt (optional).</param>
 	/// <param name="instruction">The user instruction (optional).</param>
-	public static void InsertPrompt(
+	private static void InsertPrompt(
 		List<Message> messages, 
 		ModelProfile model, 
 		string? system = null,
@@ -225,45 +263,6 @@ public static class CompletionChat
 		// Now add the message to the list of messages
 		if (!string.IsNullOrEmpty(prompt))
 			messages.Add(new Message("user", prompt));
-	}
-	#endregion
-	
-	
-	// =================
-	//  Message Builder
-	// =================
-
-	#region Message Builder
-	/// <summary>
-	/// Builds a list of messages for the completion chat.
-	/// </summary>
-	/// <param name="prompt">The prompt to use for the messages.</param>
-	/// <param name="model">The model profile to use for the messages.</param>
-	/// <param name="inputs">Optional list of inputs for the messages.</param>
-	/// <returns>A list of messages for the completion chat.</returns>
-	public static List<Message> BuildMessages(Prompt prompt, ModelProfile model, List<Input>? inputs = null)
-	{
-		// Process inputs
-		ProcessInputs(prompt, model, out string system, out string instruction, inputs);
-		
-		// Figure out whether we should do example messages first
-		//  - Are examples part of the user message, or are they separate user messages?
-		//  - Right now examples are separate messages... maybe support making them part of the prompt?
-		
-		// Form the prompt
-		List<Message> messages = new List<Message>();
-		InsertSystem(messages, model, system, instruction);
-		InsertExamples(messages, prompt, model);
-		InsertPrompt(messages, model, system, instruction);
-
-		// Check if something is screwy
-		if (messages.Count is 0)
-		{
-			// Something is indeed screwy
-			throw new Exception("No messages for inference");
-		}
-		
-		return messages;
 	}
 	#endregion
 }
