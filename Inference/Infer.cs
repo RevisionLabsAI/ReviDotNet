@@ -177,8 +177,8 @@ public class Infer
 		Type? outputType = null)
 	{
 		// Declarations 
-		CompletionResponse? result = null;
-		string promptString = "";
+		CompletionResponse? result;
+		string promptString;
 		List<Message> messages;
 
 		// Find the model
@@ -262,6 +262,7 @@ public class Infer
 		Prompt prompt = FindPrompt(promptName);
 
 		// Throw an exception if the prompt isn't requesting json output from the model
+		// TODO: Support markdown conversion
 		if (prompt.RequestJson is false)
 			throw new Exception($"Infer.ToObject: RequestJson is false for prompt '{prompt.Name}'");
 		

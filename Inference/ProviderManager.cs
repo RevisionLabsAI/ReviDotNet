@@ -11,25 +11,101 @@
 //   See LICENSE.txt in the project root for full license information.
 // =================================================================================
 
-using System.Runtime.InteropServices.ObjectiveC;
-using Newtonsoft.Json;
-using Revi;
+using System.Reflection;
 
 namespace Revi;
 
-public static class ProviderManager
+internal static class ProviderManager
 {
-    private static List<ProviderProfile> _providers = new();
+    // ==============
+    //  Declarations
+    // ==============
+    
+    private static readonly List<ProviderProfile> _providers = new();
 
-    public static ProviderProfile? Get(string name)
+    
+    // ==================
+    //  Provider Loading
+    // ==================
+    
+    #region Provider Loading
+    internal static void Load()
     {
-        return _providers.FirstOrDefault(provider => provider.Name == name);
+        _providers.Clear();
+
+        string path = AppDomain.CurrentDomain.BaseDirectory + "RConfigs/Providers/";
+        Util.Log($"Attempting to load providers from {path}");
+        
+        try
+        {
+            LoadFromFileSystem(path);
+        }
+        catch (DirectoryNotFoundException e)
+        {
+            Util.Log($"Directory not found: {e.Message}. Attempting to load from embedded resources.");
+            LoadFromEmbeddedResources();
+        }
+        catch (Exception e)
+        {
+            Util.Log($"Error loading providers: {e.Message}");
+        }
     }
 
-    public static void Add(ProviderProfile model)
+    private static void LoadFromFileSystem(string path)
     {
-        _providers.Add(model);
+        List<string> files = Directory
+            .EnumerateFiles(path, "*.rcfg", SearchOption.AllDirectories)
+            .ToList();
+
+        foreach (var file in files)
+        {
+            var providerDictionary = RConfigParser.Read(file);
+            string folder = Util.ExtractSubDirectories(path, file).ToLower();
+            ProviderProfile? provider = RConfigParser.ToObject<ProviderProfile>(providerDictionary, folder);
+
+            if (provider?.Name is null)
+                continue;
+
+            CheckAdd(provider);
+        }
     }
+
+    private static void LoadFromEmbeddedResources()
+    {
+        try
+        {
+            var assembly = Assembly.GetExecutingAssembly();
+            var resourceNames = assembly.GetManifestResourceNames()
+                .Where(name => name.Contains(".Providers.") && 
+                               name.EndsWith(".rcfg", StringComparison.InvariantCultureIgnoreCase));
+
+            foreach (var resourceName in resourceNames)
+            {
+                using var stream = assembly.GetManifestResourceStream(resourceName);
+                if (stream == null) continue;
+
+                using var reader = new StreamReader(stream);
+                var providerDictionary = RConfigParser.Read(reader.ReadToEnd());
+                const string folder = "embedded";
+                ProviderProfile? provider = RConfigParser.ToObject<ProviderProfile>(providerDictionary, folder);
+
+                if (provider?.Name is null)
+                    continue;
+
+                CheckAdd(provider);
+            }
+        }
+        catch (Exception e)
+        {
+            Util.Log($"Error loading from embedded resources: {e.Message}");
+        }
+    }
+    #endregion
+    
+    
+    // ======================
+    //  Supporting Functions
+    // ======================
     
     private static void CheckAdd(ProviderProfile newProvider)
     {
@@ -40,43 +116,19 @@ public static class ProviderManager
             Util.Log($"Loading provider named \"{newProvider.Name}\"");
         }
     }
+
     
-    public static void Load()
+    // ===============
+    //  Accessibility
+    // ===============
+    
+    internal static ProviderProfile? Get(string name)
     {
-        // Clear existing providers
-        _providers.Clear();
-        
-        // Collect the list of files
-        try
-        {
-            string path = AppDomain.CurrentDomain.BaseDirectory + "RConfigs/Providers/";
-            Util.Log($"Attempting to load providers from {path}");
-            List<string> files = Directory
-                .EnumerateFiles(path, "*.rcfg", SearchOption.AllDirectories)
-                .ToList();
-
-            // Load in the files
-
-            foreach (var file in files)
-            {
-                Dictionary<string, string> providerDictionary = RConfigParser.Read(file);
-                string folder = Util.ExtractSubDirectories(path, file).ToLower();
-                ProviderProfile? provider = RConfigParser.ToObject<ProviderProfile>(providerDictionary, folder);
-
-                if (provider?.Name is null)
-                    continue;
-
-                CheckAdd(provider);
-            }
-        }
-        catch (DirectoryNotFoundException e)
-        {
-            Util.Log($"Directory not found: {e.Message}");
-        }
-        catch (Exception e)
-        {
-            Util.Log($"Error loading providers: {e.Message}");
-        }
+        return _providers.FirstOrDefault(provider => provider.Name == name);
     }
 
+    internal static void Add(ProviderProfile model)
+    {
+        _providers.Add(model);
+    }
 }
