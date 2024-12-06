@@ -15,7 +15,7 @@ using System.Reflection;
 
 namespace Revi;
 
-internal static class ProviderManager
+public static class ProviderManager
 {
     // ==============
     //  Declarations
@@ -29,7 +29,7 @@ internal static class ProviderManager
     // ==================
     
     #region Provider Loading
-    internal static void Load()
+    public static void Load()
     {
         _providers.Clear();
 
@@ -122,12 +122,12 @@ internal static class ProviderManager
     //  Accessibility
     // ===============
     
-    internal static ProviderProfile? Get(string name)
+    public static ProviderProfile? Get(string name)
     {
         return _providers.FirstOrDefault(provider => provider.Name == name);
     }
 
-    internal static void Add(ProviderProfile model)
+    public static void Add(ProviderProfile model)
     {
         _providers.Add(model);
     }
