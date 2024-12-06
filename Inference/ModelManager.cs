@@ -11,16 +11,183 @@
 //   See LICENSE.txt in the project root for full license information.
 // =================================================================================
 
-using System.Runtime.InteropServices.ObjectiveC;
-using Newtonsoft.Json;
-using Revi;
+using System.Reflection;
 
 namespace Revi;
 
 public static class ModelManager
 {
-    
+    // ==============
+    //  Declarations
+    // ==============
+
+    /// <summary>
+    /// A private static list that holds instances of ModelProfile.
+    /// It is used to manage and store different model profiles within the application.
+    /// The list is utilized for operations such as loading models from a file system,
+    /// adding new models, and retrieving specific models by their names.
+    /// </summary>
     private static List<ModelProfile> _models = new();
+    
+    
+    // ==================
+    //  Model Loading
+    // ==================
+
+    #region Model Loading
+
+    /// <summary>
+    /// Clears existing models and loads model profiles from the default path.
+    /// If the specified directory is not found, it attempts to load models from embedded resources.
+    /// Logs the process of loading models and handles potential exceptions.
+    /// </summary>
+    public static void Load()
+    {
+        // Clear existing models
+        _models.Clear();
+
+        string path = AppDomain.CurrentDomain.BaseDirectory + "RConfigs/Models/";
+        Util.Log($"Attempting to load models from {path}");
+        
+        try
+        {
+            LoadFromFileSystem(path);
+        }
+        catch (DirectoryNotFoundException e)
+        {
+            Util.Log($"Directory not found: {e.Message}. Attempting to load from embedded resources.");
+            LoadFromEmbeddedResources();
+        }
+        catch (Exception e)
+        {
+            Util.Log($"Error loading models: {e.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Loads model profiles from the filesystem.
+    /// </summary>
+    /// <param name="path">The directory path where model profiles are located.</param>
+    private static void LoadFromFileSystem(string path)
+    {
+        List<string> files = Directory
+            .EnumerateFiles(path, "*.rcfg", SearchOption.AllDirectories)
+            .ToList();
+        
+        // Load and check each file
+        foreach (var file in files)
+        {
+            Dictionary<string, string> modelDictionary = RConfigParser.Read(file);
+            string folder = Util.ExtractSubDirectories(path, file).ToLower();
+            ModelProfile? model = RConfigParser.ToObject<ModelProfile>(modelDictionary, folder);
+
+            if (model?.Name is null)
+                continue;
+
+            CheckAdd(model);
+        }
+    }
+
+    /// <summary>
+    /// Loads model profiles from embedded resources present within the assembly,
+    /// and attempts to add them to the existing collection of models. It specifically
+    /// looks for resources with names containing ".Models." and ending with ".rcfg".
+    /// </summary>
+    private static void LoadFromEmbeddedResources()
+    {
+        try
+        {
+            var assembly = Assembly.GetExecutingAssembly();
+            var resourceNames = assembly.GetManifestResourceNames()
+                .Where(name => name.Contains(".Models.") && 
+                               name.EndsWith(".rcfg", StringComparison.InvariantCultureIgnoreCase));
+
+            foreach (var resourceName in resourceNames)
+            {
+                using var stream = assembly.GetManifestResourceStream(resourceName);
+                if (stream == null) continue;
+
+                using var reader = new StreamReader(stream);
+                var modelDictionary = RConfigParser.Read(reader.ReadToEnd());
+                const string folder = "embedded";
+                ModelProfile? model = RConfigParser.ToObject<ModelProfile>(modelDictionary, folder);
+
+                if (model?.Name is null)
+                    continue;
+
+                CheckAdd(model);
+            }
+        }
+        catch (Exception e)
+        {
+            Util.Log($"Error loading from embedded resources: {e.Message}");
+        }
+    }
+    #endregion
+    
+
+    // ======================
+    //  Supporting Functions
+    // ======================
+    
+    #region Supporting Functions
+    /// <summary>
+    /// Determines if a model is eligible based on the provided criteria.
+    /// </summary>
+    /// <param name="model">The model to check.</param>
+    /// <param name="minTier">The minimum required tier.</param>
+    /// <param name="needsPromptCompletion">Indicates whether the model's provider should support completions.</param>
+    /// <returns>True if the model meets all criteria, otherwise false.</returns>
+    private static bool IsEligibleModel(ModelProfile model, ModelTier minTier, bool needsPromptCompletion)
+    {
+        bool isTierSufficient = model.Tier >= minTier;
+        bool isCompletionSupported = !needsPromptCompletion || (model.Provider?.SupportsCompletion ?? false);
+        return model.Enabled && isTierSufficient && isCompletionSupported;
+    }
+
+    /// <summary>
+    /// Attempts to add a new model profile to the list of models.
+    /// If a model with the same name already exists, the new model is not added.
+    /// Logs the action of loading a new model.
+    /// </summary>
+    /// <param name="newModel">The new ModelProfile to consider adding to the existing models.</param>
+    private static void CheckAdd(ModelProfile newModel)
+    {
+        var existingModel = _models.FirstOrDefault(p => p.Name == newModel.Name);
+        if (existingModel == null)
+        {
+            _models.Add(newModel);
+            Util.Log($"Loading model named \"{newModel.Name}\"");
+        }
+    }
+    #endregion
+    
+    
+    // ===============
+    //  Accessibility
+    // ===============
+    
+    #region Accessibility
+    /// <summary>
+    /// Retrieves a model profile with the specified name from the collection of loaded models.
+    /// </summary>
+    /// <param name="name">The name of the model profile to retrieve.</param>
+    /// <returns>
+    /// The <see cref="ModelProfile"/> object matching the specified name, or null if no such model is found.
+    /// </returns>
+    public static ModelProfile? Get(string name)
+    {
+        return _models.FirstOrDefault(model => model.Name == name);
+    }
+
+    /// <summary>
+    /// Adds a new model profile to the list of currently loaded models.
+    /// </summary>
+    /// <param name="model">The model profile to be added.</param>
+    public static void Add(ModelProfile model)
+    {
+        _models.Add(model);
+    }
     
     /// <summary>
     /// Finds the highest-tier model that is enabled, meets or exceeds the specified minimum tier, and optionally checks if the provider supports completions.
@@ -51,75 +218,5 @@ public static class ModelManager
             .Where(model => IsEligibleModel(model, minTier.Value, needsPromptCompletion))
             .MinBy(model => model.Tier);
     }
-
-    /// <summary>
-    /// Determines if a model is eligible based on the provided criteria.
-    /// </summary>
-    /// <param name="model">The model to check.</param>
-    /// <param name="minTier">The minimum required tier.</param>
-    /// <param name="needsPromptCompletion">Indicates whether the model's provider should support completions.</param>
-    /// <returns>True if the model meets all criteria, otherwise false.</returns>
-    private static bool IsEligibleModel(ModelProfile model, ModelTier minTier, bool needsPromptCompletion)
-    {
-        bool isTierSufficient = model.Tier >= minTier;
-        bool isCompletionSupported = !needsPromptCompletion || (model.Provider?.SupportsCompletion ?? false);
-        return model.Enabled && isTierSufficient && isCompletionSupported;
-    }
-    
-    public static ModelProfile? Get(string name)
-    {
-        return _models.FirstOrDefault(model => model.Name == name);
-    }
-
-    public static void Add(ModelProfile model)
-    {
-        _models.Add(model);
-    }
-    
-    private static void CheckAdd(ModelProfile newModel)
-    {
-        var existingModel = _models.FirstOrDefault(p => p.Name == newModel.Name);
-        if (existingModel == null)
-        {
-            _models.Add(newModel);
-            Util.Log($"Loading model named \"{newModel.Name}\"");
-        }
-    }
-    
-    public static void Load()
-    {
-        // Clear existing models
-        _models.Clear();
-        
-        // Collect the list of files
-        try
-        {
-            string path = AppDomain.CurrentDomain.BaseDirectory + "RConfigs/Models/";
-            Util.Log($"Attempting to load models from {path}");
-            List<string> files = Directory
-                .EnumerateFiles(path, "*.rcfg", SearchOption.AllDirectories)
-                .ToList();
-
-            // Load in the files
-            foreach (var file in files)
-            {
-                Dictionary<string, string> modelDictionary = RConfigParser.Read(file);
-                string folder = Util.ExtractSubDirectories(path, file).ToLower();
-                ModelProfile? model = RConfigParser.ToObject<ModelProfile>(modelDictionary, folder);
-
-                if (model?.Name is null)
-                    continue;
-
-                CheckAdd(model);
-            }
-        }
-        catch (DirectoryNotFoundException e)
-        {
-            Util.Log($"Directory not found: {e.Message}");
-        }
-        catch (Exception e)
-        {
-            Util.Log($"Error loading models: {e.Message}");
-        }
-    }
+    #endregion
 }
