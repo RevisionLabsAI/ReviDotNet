@@ -48,7 +48,7 @@ public static class ProviderManager
         _providers.Clear();
 
         string path = AppDomain.CurrentDomain.BaseDirectory + "RConfigs/Providers/";
-        Util.Log($"Attempting to load providers from {path}");
+        //Util.Log($"Attempting to load providers from {path}");
         
         try
         {
@@ -56,7 +56,7 @@ public static class ProviderManager
         }
         catch (DirectoryNotFoundException e)
         {
-            Util.Log($"Directory not found: {e.Message}. Attempting to load from embedded resources.");
+            //Util.Log($"Directory not found: {e.Message}. Attempting to load from embedded resources.");
             LoadFromEmbeddedResources(assembly);
         }
         catch (Exception e)
@@ -86,7 +86,7 @@ public static class ProviderManager
             if (provider?.Name is null)
                 continue;
 
-            CheckAdd(provider);
+            CheckAdd(provider, false);
         }
     }
 
@@ -126,7 +126,7 @@ public static class ProviderManager
                 if (provider?.Name is null)
                     continue;
 
-                CheckAdd(provider);
+                CheckAdd(provider, true);
             }
         }
         catch (Exception e)
@@ -146,13 +146,16 @@ public static class ProviderManager
     /// Logs the addition if the provider is successfully added.
     /// </summary>
     /// <param name="newProvider">The provider profile to be added to the collection.</param>
-    private static void CheckAdd(ProviderProfile newProvider)
+    private static void CheckAdd(ProviderProfile newProvider, bool embedded)
     {
         var existingProvider = _providers.FirstOrDefault(p => p.Name == newProvider.Name);
         if (existingProvider == null)
         {
             _providers.Add(newProvider);
-            Util.Log($"Loading provider named \"{newProvider.Name}\"");
+            if (embedded)
+                Util.Log($"Loaded embedded provider \"{newProvider.Name}\"");
+            else
+                Util.Log($"Loaded provider \"{newProvider.Name}\" from file system");
         }
     }
 

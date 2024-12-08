@@ -47,7 +47,7 @@ public static class ModelManager
         _models.Clear();
 
         string path = AppDomain.CurrentDomain.BaseDirectory + "RConfigs/Models/";
-        Util.Log($"Attempting to load models from {path}");
+        //Util.Log($"Attempting to load models from {path}");
         
         try
         {
@@ -55,7 +55,7 @@ public static class ModelManager
         }
         catch (DirectoryNotFoundException e)
         {
-            Util.Log($"Directory not found: {e.Message}. Attempting to load from embedded resources.");
+            //Util.Log($"Directory not found: {e.Message}. Attempting to load from embedded resources.");
             LoadFromEmbeddedResources(assembly);
         }
         catch (Exception e)
@@ -84,7 +84,7 @@ public static class ModelManager
             if (model?.Name is null)
                 continue;
 
-            CheckAdd(model);
+            CheckAdd(model, false);
         }
     }
 
@@ -117,7 +117,7 @@ public static class ModelManager
                 if (model?.Name is null)
                     continue;
 
-                CheckAdd(model);
+                CheckAdd(model, true);
             }
         }
         catch (Exception e)
@@ -153,13 +153,16 @@ public static class ModelManager
     /// Logs the action of loading a new model.
     /// </summary>
     /// <param name="newModel">The new ModelProfile to consider adding to the existing models.</param>
-    private static void CheckAdd(ModelProfile newModel)
+    private static void CheckAdd(ModelProfile newModel, bool embedded)
     {
         var existingModel = _models.FirstOrDefault(p => p.Name == newModel.Name);
         if (existingModel == null)
         {
             _models.Add(newModel);
-            Util.Log($"Loading model named \"{newModel.Name}\"");
+            if (embedded)
+                Util.Log($"Loaded embedded model \"{newModel.Name}\"");
+            else
+                Util.Log($"Loaded model \"{newModel.Name}\" from file system");
         }
     }
     #endregion

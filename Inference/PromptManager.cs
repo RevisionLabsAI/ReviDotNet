@@ -56,7 +56,7 @@ namespace Revi
             try
             {
                 string path = AppDomain.CurrentDomain.BaseDirectory + "RConfigs/Prompts/";
-                Util.Log($"Attempting to load prompts from {path}");
+                //Util.Log($"Attempting to load prompts from {path}");
                 List<string> files = Directory
                     .EnumerateFiles(path, "*.pmt", SearchOption.AllDirectories)
                     .ToList();
@@ -69,7 +69,7 @@ namespace Revi
             }
             catch (DirectoryNotFoundException e)
             {
-                Util.Log($"Directory not found: {e.Message}. Attempting to load from embedded resources.");
+                //Util.Log($"Directory not found: {e.Message}. Attempting to load from embedded resources.");
                 LoadFromEmbeddedResources(assembly);
             }
             catch (Exception e)
@@ -93,7 +93,7 @@ namespace Revi
             if (prompt?.Name is null)
                 return;
 
-            CheckAdd(prompt);
+            CheckAdd(prompt, false);
         }
 
         /// <summary>
@@ -120,7 +120,7 @@ namespace Revi
 
                 foreach (var resourceName in resourceNames)
                 {
-                    Util.Log($"Found resource: {resourceName}");
+                    //Util.Log($"Found resource: {resourceName}");
                     using var stream = assembly.GetManifestResourceStream(resourceName);
                     if (stream == null) 
                     {
@@ -136,7 +136,7 @@ namespace Revi
                     if (prompt?.Name is null)
                         continue;
 
-                    CheckAdd(prompt);
+                    CheckAdd(prompt, true);
                 }
             }
             catch (Exception e)
@@ -173,18 +173,21 @@ namespace Revi
         /// based on name matching and version or update time comparison.
         /// </summary>
         /// <param name="newPrompt">The new prompt to evaluate for addition or update.</param>
-        private static void CheckAdd(Prompt newPrompt)
+        private static void CheckAdd(Prompt newPrompt, bool embedded)
         {
             var existingPrompt = _prompts.FirstOrDefault(p => p.Name == newPrompt.Name);
             if (existingPrompt == null)
             {
                 _prompts.Add(newPrompt);
-                Util.Log($"Loading prompt named \"{newPrompt.Name}\"");
+                if (embedded)
+                    Util.Log($"Loaded embedded prompt \"{newPrompt.Name}\"");
+                else
+                    Util.Log($"Loading prompt \"{newPrompt.Name}\" from file system");
             }
             else if (IsNewerVersionOrUpdatedLater(existingPrompt, newPrompt))
             {
                 _prompts[_prompts.IndexOf(existingPrompt)] = newPrompt;
-                Util.Log($"Updating to newer prompt named \"{newPrompt.Name}\"");
+                Util.Log($"Updated prompt \"{newPrompt.Name}\" to newer version");
             }
         }
         #endregion
