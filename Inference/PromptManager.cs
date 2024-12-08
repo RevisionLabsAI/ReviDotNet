@@ -182,7 +182,7 @@ namespace Revi
                 if (embedded)
                     Util.Log($"Loaded embedded prompt \"{newPrompt.Name}\"");
                 else
-                    Util.Log($"Loading prompt \"{newPrompt.Name}\" from file system");
+                    Util.Log($"Loaded prompt \"{newPrompt.Name}\" from file system");
             }
             else if (IsNewerVersionOrUpdatedLater(existingPrompt, newPrompt))
             {
