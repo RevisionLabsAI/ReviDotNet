@@ -138,6 +138,36 @@ public static partial class Util
 		}
 		return directories;
 	}
+	
+	public static string ExtractEmbeddedDirectories(string embeddedBaseFolder, string completePath)
+	{
+		if (!completePath.Contains(embeddedBaseFolder))
+		{
+			throw new ArgumentException("The provided path does not contain the specified embedded base folder");
+		}
+
+		// Find where the embedded base folder ends in the complete path
+		int startIndex = completePath.IndexOf(embeddedBaseFolder) + embeddedBaseFolder.Length;
+		string relativePath = completePath.Substring(startIndex);
+
+		// Split the relative path by '.' and '/'
+		string[] parts = relativePath.Split(new[] { '.' }, StringSplitOptions.RemoveEmptyEntries);
+		string directories = "";
+
+		for (int i = 0; i < parts.Length - 2; i++)  // Stop before the last part, considering it the file name
+		{
+			// Assuming file part separators are consistent, customize this logic if needed
+			string potentialDirectory = parts[i];
+        
+			// Check if this segment ends with '/', indicative of a directory name
+			if (!string.IsNullOrWhiteSpace(potentialDirectory))
+			{
+				directories += potentialDirectory + "/";
+			}
+		}
+
+		return directories;
+	}
 
 	private static Dictionary<char, int> GetCharacterFrequencyVector(string str)
 	{

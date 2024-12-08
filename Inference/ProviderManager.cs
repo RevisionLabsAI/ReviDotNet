@@ -43,7 +43,7 @@ public static class ProviderManager
     /// This method will clear the existing provider profiles before loading new ones.
     /// It handles exceptions related to directory access and general loading errors.
     /// </remarks>
-    public static void Load()
+    public static void Load(Assembly assembly = null)
     {
         _providers.Clear();
 
@@ -57,7 +57,7 @@ public static class ProviderManager
         catch (DirectoryNotFoundException e)
         {
             Util.Log($"Directory not found: {e.Message}. Attempting to load from embedded resources.");
-            LoadFromEmbeddedResources();
+            LoadFromEmbeddedResources(assembly);
         }
         catch (Exception e)
         {
@@ -98,11 +98,13 @@ public static class ProviderManager
     /// This method handles exceptions related to resource access and parsing errors.
     /// Successfully loaded provider profiles are added to the existing collection.
     /// </remarks>
-    private static void LoadFromEmbeddedResources()
+    private static void LoadFromEmbeddedResources(Assembly assembly)
     {
         try
         {
-            var assembly = Assembly.GetExecutingAssembly();
+            if (assembly is null)
+                throw new Exception("Assembly cannot be null.");
+            
             var resourceNames = assembly.GetManifestResourceNames()
                 .Where(name => name.Contains(".Providers.") && 
                                name.EndsWith(".rcfg", StringComparison.InvariantCultureIgnoreCase));
@@ -110,11 +112,15 @@ public static class ProviderManager
             foreach (var resourceName in resourceNames)
             {
                 using var stream = assembly.GetManifestResourceStream(resourceName);
-                if (stream == null) continue;
+                if (stream == null) 
+                {
+                    Util.Log($"Stream not found for resource: {resourceName}");
+                    continue;
+                }
 
                 using var reader = new StreamReader(stream);
-                var providerDictionary = RConfigParser.Read(reader.ReadToEnd());
-                const string folder = "embedded";
+                var providerDictionary = RConfigParser.ReadEmbedded(reader.ReadToEnd());
+                string folder = Util.ExtractEmbeddedDirectories(".Providers.", resourceName).ToLower();
                 ProviderProfile? provider = RConfigParser.ToObject<ProviderProfile>(providerDictionary, folder);
 
                 if (provider?.Name is null)

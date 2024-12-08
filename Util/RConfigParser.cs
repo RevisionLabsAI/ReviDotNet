@@ -191,6 +191,42 @@ public static class RConfigParser
     /// </summary>
     /// <param name="filePath">The path of the file to read.</param>
     /// <returns>A dictionary containing the rcfg data.</returns>
+    public static Dictionary<string, string> ReadEmbedded(string content)
+    {
+        var configDictionary = new Dictionary<string, string>();
+        string currentSection = "";
+        StringBuilder sectionContent = new();
+
+        try
+        {
+            using var reader = new StringReader(content);
+            string line;
+        
+            while ((line = reader.ReadLine()) != null)
+            {
+                if (string.IsNullOrWhiteSpace(line))
+                    continue;
+                
+                ProcessLine(
+                    line, 
+                    ref currentSection, 
+                    ref sectionContent, 
+                    ref configDictionary);
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new IOException("An error occurred while reading the configuration content.", ex);
+        }
+
+        return configDictionary;
+    }
+    
+    /// <summary>
+    /// Reads rcfg data from a file and converts it into a dictionary.
+    /// </summary>
+    /// <param name="filePath">The path of the file to read.</param>
+    /// <returns>A dictionary containing the rcfg data.</returns>
     public static Dictionary<string, string> Read(string filePath)
     {
         //Util.Log($"Read: {filePath}");
@@ -200,7 +236,7 @@ public static class RConfigParser
 
         var configDictionary = new Dictionary<string, string>();
         string currentSection = "";
-        StringBuilder sectionContent = new StringBuilder();
+        StringBuilder sectionContent = new();
 
         try
         {
@@ -209,37 +245,11 @@ public static class RConfigParser
                 if (string.IsNullOrWhiteSpace(line))
                     continue;
                 
-                //Util.Log($"Reading Line: {line}");
-
-                if (line.StartsWith("[[") && line.EndsWith("]]"))
-                {
-                    if (currentSection.StartsWith("_") && sectionContent.Length > 0)
-                    {
-                        configDictionary[currentSection] = sectionContent.ToString().Trim();
-                        sectionContent.Clear();
-                    }
-
-                    currentSection = line.Substring(2, line.Length - 4).Trim();
-                }
-                else if (currentSection.StartsWith("_"))
-                {
-                    sectionContent.AppendLine(line);
-                }
-                else
-                {
-                    var separatorIndex = line.IndexOf('=');
-                    if (separatorIndex != -1)
-                    {
-                        string key = $"{currentSection}_{line.Substring(0, separatorIndex).Trim()}";
-                        string value = line.Substring(separatorIndex + 1).Trim();
-                        configDictionary[key] = value;
-                    }
-                }
-            }
-
-            if (currentSection.StartsWith("_") && sectionContent.Length > 0)
-            {
-                configDictionary[currentSection] = sectionContent.ToString().Trim();
+                ProcessLine(
+                    line, 
+                    ref currentSection, 
+                    ref sectionContent, 
+                    ref configDictionary);
             }
         }
         catch (Exception ex)
@@ -248,12 +258,44 @@ public static class RConfigParser
             throw new IOException($"An error occurred while reading the {fileType} file.", ex);
         }
 
-        /*foreach (var item in configDictionary)
-        {
-            Util.Log($"Key: {item.Key}, Value: {item.Value}");
-        }*/
-
         return configDictionary;
+    }
+    
+    private static void ProcessLine(
+        string line, 
+        ref string currentSection, 
+        ref StringBuilder sectionContent, 
+        ref Dictionary<string, string> configDictionary)
+    {
+        if (line.StartsWith("[[") && line.EndsWith("]]"))
+        {
+            if (currentSection.StartsWith("_") && sectionContent.Length > 0)
+            {
+                configDictionary[currentSection] = sectionContent.ToString().Trim();
+                sectionContent.Clear();
+            }
+
+            currentSection = line.Substring(2, line.Length - 4).Trim();
+        }
+        else if (currentSection.StartsWith("_"))
+        {
+            sectionContent.AppendLine(line);
+        }
+        else
+        {
+            var separatorIndex = line.IndexOf('=');
+            if (separatorIndex != -1)
+            {
+                string key = $"{currentSection}_{line.Substring(0, separatorIndex).Trim()}";
+                string value = line.Substring(separatorIndex + 1).Trim();
+                configDictionary[key] = value;
+            }
+        }
+
+        if (currentSection.StartsWith("_") && sectionContent.Length > 0)
+        {
+            configDictionary[currentSection] = sectionContent.ToString().Trim();
+        }
     }
     
     /// <summary>

@@ -41,7 +41,7 @@ public static class ModelManager
     /// If the specified directory is not found, it attempts to load models from embedded resources.
     /// Logs the process of loading models and handles potential exceptions.
     /// </summary>
-    public static void Load()
+    public static void Load(Assembly assembly = null)
     {
         // Clear existing models
         _models.Clear();
@@ -56,7 +56,7 @@ public static class ModelManager
         catch (DirectoryNotFoundException e)
         {
             Util.Log($"Directory not found: {e.Message}. Attempting to load from embedded resources.");
-            LoadFromEmbeddedResources();
+            LoadFromEmbeddedResources(assembly);
         }
         catch (Exception e)
         {
@@ -93,11 +93,13 @@ public static class ModelManager
     /// and attempts to add them to the existing collection of models. It specifically
     /// looks for resources with names containing ".Models." and ending with ".rcfg".
     /// </summary>
-    private static void LoadFromEmbeddedResources()
+    private static void LoadFromEmbeddedResources(Assembly assembly)
     {
         try
         {
-            var assembly = Assembly.GetExecutingAssembly();
+            if (assembly is null)
+                throw new Exception("Assembly cannot be null.");
+ 
             var resourceNames = assembly.GetManifestResourceNames()
                 .Where(name => name.Contains(".Models.") && 
                                name.EndsWith(".rcfg", StringComparison.InvariantCultureIgnoreCase));
@@ -108,8 +110,8 @@ public static class ModelManager
                 if (stream == null) continue;
 
                 using var reader = new StreamReader(stream);
-                var modelDictionary = RConfigParser.Read(reader.ReadToEnd());
-                const string folder = "embedded";
+                var modelDictionary = RConfigParser.ReadEmbedded(reader.ReadToEnd());
+                string folder = Util.ExtractEmbeddedDirectories(".Models.", resourceName).ToLower();
                 ModelProfile? model = RConfigParser.ToObject<ModelProfile>(modelDictionary, folder);
 
                 if (model?.Name is null)

@@ -47,7 +47,7 @@ namespace Revi
         /// If the directory does not exist, it attempts to load prompts from embedded resources. Any errors encountered
         /// during the loading process are logged.
         /// </remarks>
-        public static void Load()
+        public static void Load(Assembly assembly = null)
         {
             // Clear existing prompts
             _prompts.Clear();
@@ -70,7 +70,7 @@ namespace Revi
             catch (DirectoryNotFoundException e)
             {
                 Util.Log($"Directory not found: {e.Message}. Attempting to load from embedded resources.");
-                LoadFromEmbeddedResources();
+                LoadFromEmbeddedResources(assembly);
             }
             catch (Exception e)
             {
@@ -105,23 +105,32 @@ namespace Revi
         /// converted to a <see cref="Prompt"/> object. If the prompt has a valid name, it is added to the collection of prompts.
         /// Any errors that occur during the loading process are captured and logged using the application's logging utility.
         /// </remarks>
-        private static void LoadFromEmbeddedResources()
+        private static void LoadFromEmbeddedResources(Assembly assembly)
         {
             try
             {
-                var assembly = Assembly.GetExecutingAssembly();
+                if (assembly is null)
+                    throw new Exception("Assembly cannot be null.");
+
+                //var assembly = Assembly.GetExecutingAssembly();
+                //Console.WriteLine($"Executing Assembly Location: {assembly.Location}");
                 var resourceNames = assembly.GetManifestResourceNames()
                     .Where(name => name.Contains(".Prompts.") &&
                                    name.EndsWith(".pmt", StringComparison.InvariantCultureIgnoreCase));
 
                 foreach (var resourceName in resourceNames)
                 {
+                    Util.Log($"Found resource: {resourceName}");
                     using var stream = assembly.GetManifestResourceStream(resourceName);
-                    if (stream == null) continue;
+                    if (stream == null) 
+                    {
+                        Util.Log($"Stream not found for resource: {resourceName}");
+                        continue;
+                    }
 
                     using var reader = new StreamReader(stream);
-                    var promptDictionary = RConfigParser.Read(reader.ReadToEnd());
-                    const string folder = "embedded";
+                    var promptDictionary = RConfigParser.ReadEmbedded(reader.ReadToEnd());
+                    string folder = Util.ExtractEmbeddedDirectories(".Prompts.", resourceName).ToLower();
                     Prompt? prompt = Prompt.ToObject(promptDictionary, folder);
 
                     if (prompt?.Name is null)
