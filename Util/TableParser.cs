@@ -1,4 +1,3 @@
-
 using System.Diagnostics;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -10,19 +9,23 @@ public static class TableParserExtensions
 {
     public static string ToStringTable<T>(this IEnumerable<T> values, string[] columnHeaders, params Func<T, object>[] valueSelectors)
     {
-        return ToStringTable(values.ToArray(), columnHeaders, valueSelectors);
+        return ToStringTable(values?.ToArray(), columnHeaders, valueSelectors);
     }
 
     public static string ToStringTable<T>(this T[] values, string[] columnHeaders, params Func<T, object>[] valueSelectors)
     {
-        Debug.Assert(columnHeaders.Length == valueSelectors.Length);
+        Debug.Assert(columnHeaders != null && valueSelectors != null);
+        if (values == null || columnHeaders.Length != valueSelectors.Length)
+        {
+            return string.Empty;
+        }
 
         var arrValues = new string[values.Length + 1, valueSelectors.Length];
 
         // Fill headers
         for (int colIndex = 0; colIndex < arrValues.GetLength(1); colIndex++)
         {
-            arrValues[0, colIndex] = columnHeaders[colIndex];
+            arrValues[0, colIndex] = columnHeaders[colIndex] ?? string.Empty;
         }
 
         // Fill table rows
@@ -30,9 +33,10 @@ public static class TableParserExtensions
         {
             for (int colIndex = 0; colIndex < arrValues.GetLength(1); colIndex++)
             {
-                object value = valueSelectors[colIndex].Invoke(values[rowIndex - 1]);
+                var valueSelector = valueSelectors[colIndex];
+                object value = valueSelector?.Invoke(values[rowIndex - 1]);
 
-                arrValues[rowIndex, colIndex] = value != null ? value.ToString() : "null";
+                arrValues[rowIndex, colIndex] = value?.ToString() ?? "null";
             }
         }
 
@@ -41,8 +45,13 @@ public static class TableParserExtensions
 
     public static string ToStringTable(this string[,] arrValues)
     {
+        if (arrValues == null)
+        {
+            return string.Empty;
+        }
+
         int[] maxColumnsWidth = GetMaxColumnsWidth(arrValues);
-        var headerSpliter = new string('-', maxColumnsWidth.Sum(i => i + 3) - 1);
+        var headerSplitter = new string('-', maxColumnsWidth.Sum(i => i + 3) - 1);
 
         var sb = new StringBuilder();
         for (int rowIndex = 0; rowIndex < arrValues.GetLength(0); rowIndex++)
@@ -50,8 +59,7 @@ public static class TableParserExtensions
             for (int colIndex = 0; colIndex < arrValues.GetLength(1); colIndex++)
             {
                 // Print cell
-                string cell = arrValues[rowIndex, colIndex];
-                cell = cell.PadRight(maxColumnsWidth[colIndex]);
+                var cell = (arrValues[rowIndex, colIndex] ?? string.Empty).PadRight(maxColumnsWidth[colIndex]);
                 sb.Append(" | ");
                 sb.Append(cell);
             }
@@ -63,7 +71,7 @@ public static class TableParserExtensions
             // Print splitter
             if (rowIndex == 0)
             {
-                sb.AppendFormat(" |{0}| ", headerSpliter);
+                sb.AppendFormat(" |{0}| ", headerSplitter);
                 sb.AppendLine();
             }
         }
@@ -78,7 +86,7 @@ public static class TableParserExtensions
         {
             for (int rowIndex = 0; rowIndex < arrValues.GetLength(0); rowIndex++)
             {
-                int newLength = arrValues[rowIndex, colIndex].Length;
+                int newLength = (arrValues[rowIndex, colIndex] ?? string.Empty).Length;
                 int oldLength = maxColumnsWidth[colIndex];
 
                 if (newLength > oldLength)
@@ -93,24 +101,29 @@ public static class TableParserExtensions
 
     public static string ToStringTable<T>(this IEnumerable<T> values, params Expression<Func<T, object>>[] valueSelectors)
     {
-        var headers = valueSelectors.Select(func => GetProperty(func).Name).ToArray();
+        if (values == null || valueSelectors == null)
+        {
+            return string.Empty;
+        }
+
+        var headers = valueSelectors.Select(func => GetProperty(func)?.Name ?? string.Empty).ToArray();
         var selectors = valueSelectors.Select(exp => exp.Compile()).ToArray();
         return ToStringTable(values, headers, selectors);
     }
 
-    private static PropertyInfo GetProperty<T>(Expression<Func<T, object>> expresstion)
+    private static PropertyInfo GetProperty<T>(Expression<Func<T, object>> expression)
     {
-        if (expresstion.Body is UnaryExpression)
+        if (expression.Body is UnaryExpression unaryExpression)
         {
-            if ((expresstion.Body as UnaryExpression).Operand is MemberExpression)
+            if (unaryExpression.Operand is MemberExpression memberExpression)
             {
-                return ((expresstion.Body as UnaryExpression).Operand as MemberExpression).Member as PropertyInfo;
+                return memberExpression.Member as PropertyInfo;
             }
         }
 
-        if ((expresstion.Body is MemberExpression))
+        if (expression.Body is MemberExpression memberExp)
         {
-            return (expresstion.Body as MemberExpression).Member as PropertyInfo;
+            return memberExp.Member as PropertyInfo;
         }
         return null;
     }
