@@ -13,6 +13,7 @@
 
 using System.Diagnostics;
 using System.Net.Mime;
+using System.Net.NetworkInformation;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -27,6 +28,21 @@ namespace Revi;
 
 public static partial class Util
 {
+	public static string GetMacAddress()
+	{
+		var networkInterfaces = NetworkInterface.GetAllNetworkInterfaces();
+		foreach (var network in networkInterfaces)
+		{
+			if (network.OperationalStatus == OperationalStatus.Up && network.NetworkInterfaceType != NetworkInterfaceType.Loopback)
+			{
+				return string.Join(":", network.GetPhysicalAddress()
+					.GetAddressBytes()
+					.Select(b => b.ToString("X2")));
+			}
+		}
+		return string.Empty;
+	}
+	
 	public static string Identifierize(string input)
 	{
 		// Remove non-alphanumeric characters
