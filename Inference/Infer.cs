@@ -597,7 +597,7 @@ public class Infer
 		Prompt filterPrompt = FindPrompt(prompt.Filter);
 		
 		// Double check that this filter doesn't have its own filter
-		if (!string.IsNullOrEmpty(prompt.Filter))
+		if (!string.IsNullOrEmpty(filterPrompt.Filter))
 			throw new Exception("Yo dawg, I heard you like filters... filters can't have filters, recursive loops will occur!");
 		
 		// Figure out what our model is for this filter
