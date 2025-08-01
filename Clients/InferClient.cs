@@ -122,7 +122,17 @@ public class AsyncInferenceClient : IDisposable
         //_client.DefaultRequestHeaders.Add("Content-Type", "application/json");
         
         if (_useApiKey)
-            _client.DefaultRequestHeaders.Add("Authorization", $"Bearer {_apiKey}");
+        {
+            if (_protocol == Protocol.Gemini)
+            {
+                // Gemini uses query parameter for API key instead of Bearer token
+                // API key will be added to the URL in the request
+            }
+            else
+            {
+                _client.DefaultRequestHeaders.Add("Authorization", $"Bearer {_apiKey}");
+            }
+        }
         
         _client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
     }
@@ -282,12 +292,13 @@ public class AsyncInferenceClient : IDisposable
         string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
         //Util.Log($"Payload:\n{payloadDebug}");
         
-        Dictionary<string, string> serverResponse = await ExecuteRequest("v1/chat/completions", parameters, cancellationToken);
+        string endpoint = _protocol == Protocol.Gemini ? GetGeminiChatEndpoint(model) : "v1/chat/completions";
+        Dictionary<string, string> serverResponse = await ExecuteRequest(endpoint, parameters, cancellationToken);
         CompletionResponse response = BuildResponse(messages, serverResponse);
         
         string responseDebug = $"'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''";
         string dumpMessage = $"### ReviDotNet.GenerateAsync() Chat Completion\n" +
-                             $"# URL\n{_client.BaseAddress + "v1/chat/completions"}\n\n" +
+                             $"# URL\n{_client.BaseAddress + endpoint}\n\n" +
                              $"# Payload\n{payloadDebug}\n\n" +
                              $"# Response\n{responseDebug}\n\n";
         
@@ -399,6 +410,18 @@ public class AsyncInferenceClient : IDisposable
         try
         {
             await EnsureRateLimit();
+            
+            // Handle Gemini-specific payload transformation
+            if (_protocol == Protocol.Gemini)
+            {
+                payload = TransformToGeminiPayload(payload);
+                // Add API key to endpoint for Gemini
+                if (_useApiKey && !endpoint.Contains("key="))
+                {
+                    endpoint += (endpoint.Contains("?") ? "&" : "?") + $"key={_apiKey}";
+                }
+            }
+            
             var content = new StringContent(JsonConvert.SerializeObject(payload), System.Text.Encoding.UTF8,
                 "application/json");
             return await MakeRequestAsync(endpoint, content, cancellationToken);
@@ -422,7 +445,6 @@ public class AsyncInferenceClient : IDisposable
     {
         int retryAttempt = 0; // Counter for the current attempt number
 
-        https://api.runpod.ai/v2/vllm-jeg2tuagjkdldx/openai/
         HttpResponseMessage response = await _client.PostAsync(endpoint, content, cancellationToken);
         
         // We got an unsuccessful response back... try again? 
@@ -475,31 +497,63 @@ public class AsyncInferenceClient : IDisposable
     /// </summary>
     /// <param name="response">The HTTP response returned by the server.</param>
     /// <returns>A dictionary containing the extracted information from the response.</returns>
-    private static Dictionary<string, string> ProcessHttpResponse(HttpResponseMessage response)
+    private Dictionary<string, string> ProcessHttpResponse(HttpResponseMessage response)
     {
         var data = response.Content.ReadFromJsonAsync<Dictionary<string, JsonElement>>().Result;
         //Util.Log($"Response: {System.Text.Json.JsonSerializer.Serialize(data)}");
         
-        if (data == null || !data.TryGetValue("choices", out var choices))
-            throw new Exception($"ProcessHttpResponse: Invalid response:\n'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''\n");
+        if (data == null)
+            throw new Exception($"ProcessHttpResponse: Invalid response (data null):\n'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''\n");
 
         var result = new Dictionary<string, string>();
-        if (choices[0].TryGetProperty("text", out var textElement))
+
+        // Handle Gemini response format
+        if (_protocol == Protocol.Gemini)
         {
-            result.Add("text", textElement.GetString() ?? "");
+            if (data.TryGetValue("candidates", out var candidates) && 
+                candidates.ValueKind == JsonValueKind.Array)
+            {
+                var firstCandidate = candidates[0];
+                if (firstCandidate.TryGetProperty("content", out var content) &&
+                    content.TryGetProperty("parts", out var parts) &&
+                    parts.ValueKind == JsonValueKind.Array)
+                {
+                    var firstPart = parts[0];
+                    if (firstPart.TryGetProperty("text", out var textElement))
+                    {
+                        result.Add("text", textElement.GetString() ?? "");
+                    }
+                }
+                
+                if (firstCandidate.TryGetProperty("finishReason", out var finishReason))
+                {
+                    result.Add("finish_reason", finishReason.GetString() ?? string.Empty);
+                }
+            }
         }
         else
         {
-            // Extracting message content from the chat completion response
-            if (choices[0].TryGetProperty("message", out var messageElement) &&
-                messageElement.TryGetProperty("content", out var contentElement))
+            // Standard OpenAI/vLLM format
+            if (!data.TryGetValue("choices", out var choices))
+                throw new Exception($"ProcessHttpResponse: Invalid response (missing choices):\n'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''\n");
+
+            if (choices[0].TryGetProperty("text", out var textElement))
             {
-                result.Add("text", contentElement.GetString() ?? "");
+                result.Add("text", textElement.GetString() ?? "");
             }
+            else
+            {
+                // Extracting message content from the chat completion response
+                if (choices[0].TryGetProperty("message", out var messageElement) &&
+                    messageElement.TryGetProperty("content", out var contentElement))
+                {
+                    result.Add("text", contentElement.GetString() ?? "");
+                }
+            }
+            
+            if (choices[0].TryGetProperty("finish_reason", out var finishReason))
+                result.Add("finish_reason", finishReason.GetString() ?? string.Empty);
         }
-        
-        if (choices[0].TryGetProperty("finish_reason", out var finishReason))
-            result.Add("finish_reason", finishReason.GetString() ?? string.Empty);
 
         return result;
     }
@@ -517,6 +571,88 @@ public class AsyncInferenceClient : IDisposable
     public void Dispose()
     {
         _client.Dispose();
+    }
+
+    /// <summary>
+    /// Gets the Gemini-specific chat endpoint for the specified model.
+    /// </summary>
+    /// <param name="model">The model identifier.</param>
+    /// <returns>The Gemini chat endpoint URL.</returns>
+    private string GetGeminiChatEndpoint(string model)
+    {
+        return $"v1beta/models/{model}:generateContent";
+    }
+
+    /// <summary>
+    /// Transforms the standard payload format to Gemini's expected format.
+    /// </summary>
+    /// <param name="payload">The standard payload dictionary.</param>
+    /// <returns>The transformed payload for Gemini API.</returns>
+    private Dictionary<string, object> TransformToGeminiPayload(Dictionary<string, object> payload)
+    {
+        var geminiPayload = new Dictionary<string, object>();
+        
+        // Transform messages to Gemini's contents format
+        if (payload.TryGetValue("messages", out var messagesObj) && messagesObj is List<Message> messages)
+        {
+            var contents = new List<object>();
+            
+            foreach (var message in messages)
+            {
+                var role = message.Role switch
+                {
+                    "system" => "user", // Gemini doesn't have system role, convert to user
+                    "assistant" => "model",
+                    _ => message.Role
+                };
+                
+                contents.Add(new
+                {
+                    role = role,
+                    parts = new[] { new { text = message.Content } }
+                });
+            }
+            
+            geminiPayload["contents"] = contents;
+        }
+        else if (payload.TryGetValue("prompt", out var promptObj))
+        {
+            // For prompt completion, convert to contents format
+            geminiPayload["contents"] = new[]
+            {
+                new
+                {
+                    role = "user",
+                    parts = new[] { new { text = promptObj.ToString() } }
+                }
+            };
+        }
+
+        // Transform generation config parameters
+        var generationConfig = new Dictionary<string, object>();
+        
+        if (payload.TryGetValue("temperature", out var temperature))
+            generationConfig["temperature"] = temperature;
+        
+        if (payload.TryGetValue("top_p", out var topP))
+            generationConfig["topP"] = topP;
+        
+        if (payload.TryGetValue("top_k", out var topK))
+            generationConfig["topK"] = topK;
+        
+        if (payload.TryGetValue("max_tokens", out var maxTokens))
+            generationConfig["maxOutputTokens"] = maxTokens;
+        
+        if (payload.TryGetValue("stop", out var stopSequences))
+            generationConfig["stopSequences"] = stopSequences;
+
+        if (generationConfig.Count > 0)
+            geminiPayload["generationConfig"] = generationConfig;
+
+        // Note: Gemini doesn't support frequency_penalty, presence_penalty, or best_of
+        // These parameters are ignored for Gemini requests
+
+        return geminiPayload;
     }
 
     /// <summary>
@@ -615,6 +751,14 @@ public class AsyncInferenceClient : IDisposable
                         break;
                 }
 
+                break;
+            }
+
+            case Protocol.Gemini:
+            {
+                // Gemini doesn't support bestOf, frequencyPenalty, presencePenalty
+                // Guidance is not supported in the same way as other protocols
+                // Parameters will be transformed in TransformToGeminiPayload method
                 break;
             }
         }
