@@ -291,8 +291,15 @@ public class AsyncInferenceClient : IDisposable
 
         string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
         //Util.Log($"Payload:\n{payloadDebug}");
+
+        string endpoint;
+        if (_protocol == Protocol.Gemini)
+            endpoint = $"v1beta/models/{model}:generateContent";
+        else
+        {
+            endpoint = "v1/chat/completions";
+        }
         
-        string endpoint = _protocol == Protocol.Gemini ? GetGeminiChatEndpoint(model) : "v1/chat/completions";
         Dictionary<string, string> serverResponse = await ExecuteRequest(endpoint, parameters, cancellationToken);
         CompletionResponse response = BuildResponse(messages, serverResponse);
         
@@ -431,16 +438,22 @@ public class AsyncInferenceClient : IDisposable
             _clientSemaphore.Release();
         }
     }
-    
+
     /// <summary>
-    /// Makes an asynchronous HTTP POST request with the provided content to the API.
+    /// Sends an asynchronous HTTP POST request to the specified API endpoint with the given content.
+    /// Implements a retry mechanism with exponential back-off in case of failures.
     /// </summary>
-    /// <param name="content">The HTTP content to send with the request.</param>
-    /// <param name="cancellationToken">A token to cancel the request.</param>
-    /// <returns>A dictionary containing the response from the API.</returns>
+    /// <param name="endpoint">The API endpoint to which the request is sent.</param>
+    /// <param name="content">The HTTP request content to be sent in the POST request.</param>
+    /// <param name="cancellationToken">A token that can be used to cancel the operation.</param>
+    /// <returns>A dictionary object containing the parsed key-value pairs from the API response.</returns>
+    /// <remarks>
+    /// If the request fails due to reasons such as a non-success status code, the method retries with an exponential back-off
+    /// delay until the maximum retry limit is reached. An exception is thrown if all retry attempts fail.
+    /// </remarks>
     private async Task<Dictionary<string, string>> MakeRequestAsync(
         string endpoint,
-        StringContent content, 
+        StringContent content,
         CancellationToken cancellationToken)
     {
         int retryAttempt = 0; // Counter for the current attempt number
@@ -574,16 +587,6 @@ public class AsyncInferenceClient : IDisposable
     }
 
     /// <summary>
-    /// Gets the Gemini-specific chat endpoint for the specified model.
-    /// </summary>
-    /// <param name="model">The model identifier.</param>
-    /// <returns>The Gemini chat endpoint URL.</returns>
-    private string GetGeminiChatEndpoint(string model)
-    {
-        return $"v1beta/models/{model}:generateContent";
-    }
-
-    /// <summary>
     /// Transforms the standard payload format to Gemini's expected format.
     /// </summary>
     /// <param name="payload">The standard payload dictionary.</param>
@@ -645,6 +648,13 @@ public class AsyncInferenceClient : IDisposable
         
         if (payload.TryGetValue("stop", out var stopSequences))
             generationConfig["stopSequences"] = stopSequences;
+
+        // Handle Gemini JSON Schema (responseSchema)
+        if (payload.TryGetValue("guided_json", out var jsonSchema))
+        {
+            generationConfig["responseSchema"] = jsonSchema;
+            generationConfig["responseMimeType"] = "application/json";
+        }
 
         if (generationConfig.Count > 0)
             geminiPayload["generationConfig"] = generationConfig;
@@ -757,8 +767,18 @@ public class AsyncInferenceClient : IDisposable
             case Protocol.Gemini:
             {
                 // Gemini doesn't support bestOf, frequencyPenalty, presencePenalty
-                // Guidance is not supported in the same way as other protocols
+                // Note: Gemini doesn't support regex guidance or other guidance types
                 // Parameters will be transformed in TransformToGeminiPayload method
+                
+                // Gemini JSON Schema Guidance
+                if (!_supportsGuidance || string.IsNullOrEmpty(chosenString) || chosenType != GuidanceType.Json)
+                {
+                    //Util.Log($"{_supportsGuidance} : {chosenString}");
+                    return;
+                }
+                
+                // Add guided_json parameter which will be transformed to responseSchema in TransformToGeminiPayload
+                parameters.Add("guided_json", chosenString);
                 break;
             }
         }
