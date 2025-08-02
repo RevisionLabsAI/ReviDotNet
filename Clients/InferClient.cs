@@ -290,7 +290,7 @@ public class AsyncInferenceClient : IDisposable
             guidanceString);
 
         string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
-        //Util.Log($"Payload:\n{payloadDebug}");
+        Util.Log($"Protocol:\n{_protocol}");
 
         string endpoint;
         if (_protocol == Protocol.Gemini)
@@ -652,8 +652,19 @@ public class AsyncInferenceClient : IDisposable
         // Handle Gemini JSON Schema (responseSchema)
         if (payload.TryGetValue("guided_json", out var jsonSchema))
         {
-            generationConfig["responseSchema"] = jsonSchema;
-            generationConfig["responseMimeType"] = "application/json";
+            try
+            {
+                // Parse the JSON schema string to ensure it's valid JSON
+                var schemaObject = JsonConvert.DeserializeObject(jsonSchema.ToString());
+                generationConfig["responseSchema"] = schemaObject;
+                generationConfig["responseMimeType"] = "application/json";
+            }
+            catch (Newtonsoft.Json.JsonException)
+            {
+                // If parsing fails, treat it as a string (though this shouldn't happen with valid JSON schema)
+                Util.Log($"Warning: Invalid JSON schema provided for Gemini: {jsonSchema}");
+            }
+
         }
 
         if (generationConfig.Count > 0)

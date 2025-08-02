@@ -107,6 +107,11 @@ public class ProviderProfile
                 SupportsCompletion = false;
                 break;
             
+            case Revi.Protocol.Gemini:
+                SupportsGuidance = true;
+                SupportsCompletion = false;
+                break;
+            
             default:
             //case ProviderType.Custom:
             {
@@ -121,6 +126,7 @@ public class ProviderProfile
         InferenceClient = new AsyncInferenceClient(
             apiUrl: APIURL,
             apiKey: APIKey ?? "",
+            protocol: Protocol ?? Revi.Protocol.vLLM,
             defaultModel: DefaultModel ?? "default",
             timeoutSeconds: TimeoutSeconds ?? 100,
             delayBetweenRequestsMs: DelayBetweenRequestsMs ?? 0,
