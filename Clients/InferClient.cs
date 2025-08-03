@@ -200,12 +200,19 @@ public class AsyncInferenceClient : IDisposable
         string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
         //Util.Log($"Payload:\n{payloadDebug}");
         
-        Dictionary<string, string> serverResponse = await ExecuteRequest("v1/completions", parameters, cancellationToken);
+        // Use appropriate endpoint based on protocol
+        string endpoint;
+        if (_protocol == Protocol.Gemini)
+            endpoint = $"v1beta/models/{model}:generateContent";
+        else
+            endpoint = "v1/completions";
+        
+        Dictionary<string, string> serverResponse = await ExecuteRequest(endpoint, parameters, cancellationToken);
         CompletionResponse response = BuildResponse(prompt, serverResponse);
         
         string responseDebug = $"'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''";
         string dumpMessage = $"### ReviDotNet.GenerateAsync() Prompt Completion\n" +
-                             $"# URL\n{_client.BaseAddress + "v1/completions"}\n\n" +
+                             $"# URL\n{_client.BaseAddress + endpoint}\n\n" +
                              $"# Payload\n{payloadDebug}\n\n" +
                              $"# Response\n{responseDebug}\n\n";
         
@@ -594,46 +601,9 @@ public class AsyncInferenceClient : IDisposable
     private Dictionary<string, object> TransformToGeminiPayload(Dictionary<string, object> payload)
     {
         var geminiPayload = new Dictionary<string, object>();
-        
-        // Transform messages to Gemini's contents format
-        if (payload.TryGetValue("messages", out var messagesObj) && messagesObj is List<Message> messages)
-        {
-            var contents = new List<object>();
-            
-            foreach (var message in messages)
-            {
-                var role = message.Role switch
-                {
-                    "system" => "user", // Gemini doesn't have system role, convert to user
-                    "assistant" => "model",
-                    _ => message.Role
-                };
-                
-                contents.Add(new
-                {
-                    role = role,
-                    parts = new[] { new { text = message.Content } }
-                });
-            }
-            
-            geminiPayload["contents"] = contents;
-        }
-        else if (payload.TryGetValue("prompt", out var promptObj))
-        {
-            // For prompt completion, convert to contents format
-            geminiPayload["contents"] = new[]
-            {
-                new
-                {
-                    role = "user",
-                    parts = new[] { new { text = promptObj.ToString() } }
-                }
-            };
-        }
-
-        // Transform generation config parameters
         var generationConfig = new Dictionary<string, object>();
         
+        // Transform generation config parameters
         if (payload.TryGetValue("temperature", out var temperature))
             generationConfig["temperature"] = temperature;
         
@@ -664,11 +634,40 @@ public class AsyncInferenceClient : IDisposable
                 // If parsing fails, treat it as a string (though this shouldn't happen with valid JSON schema)
                 Util.Log($"Warning: Invalid JSON schema provided for Gemini: {jsonSchema}");
             }
+        }
+        
+        if (generationConfig.Any())
+            geminiPayload["generationConfig"] = generationConfig;
+        
+        // Handle single prompt
+        if (payload.TryGetValue("prompt", out var promptValue) && promptValue is string prompt)
+        {
+            geminiPayload["contents"] = new[]
+            {
+                new { parts = new[] { new { text = prompt } } }
+            };
+        }
+        // Handle chat messages
+        else if (payload.TryGetValue("messages", out var messagesValue) && messagesValue is List<Message> messages)
+        {
+            Message? systemMessage = messages.FirstOrDefault(m => string.Equals(m.Role, "system", StringComparison.OrdinalIgnoreCase));
+            if (systemMessage != null)
+            {
+                geminiPayload["systemInstruction"] = new { parts = new[] { new { text = systemMessage.Content } } };
+            }
 
+            var contents = messages
+                .Where(m => !string.Equals(m.Role, "system", StringComparison.OrdinalIgnoreCase))
+                .Select(m => new
+                {
+                    role = string.Equals(m.Role, "assistant", StringComparison.OrdinalIgnoreCase) ? "model" : m.Role.ToLower(),
+                    parts = new[] { new { text = m.Content } }
+                })
+                .ToList();
+            
+            geminiPayload["contents"] = contents;
         }
 
-        if (generationConfig.Count > 0)
-            geminiPayload["generationConfig"] = generationConfig;
 
         // Note: Gemini doesn't support frequency_penalty, presence_penalty, or best_of
         // These parameters are ignored for Gemini requests
