@@ -144,31 +144,35 @@ public class AsyncInferenceClient : IDisposable
     // ===================
     
     #region Prompt Completion
+
     /// <summary>
-    /// Generates predictions based on a single prompt with various optional parameters.
+    /// Generates a text completion based on the provided prompt and optional parameters using the specified AI model.
     /// </summary>
-    /// <param name="prompt">The prompt to generate text from.</param>
-    /// <param name="model">The model identifier to use for the request.</param>
-    /// <param name="temperature">Control randomness. Lower values make responses more deterministic.</param>
-    /// <param name="topP">Nucleus sampling: higher values cause more randomness.</param>
-    /// <param name="topK">Limits the generated predictions to the top-k likely next words.</param>
-    /// <param name="bestOf">Generates multiple outputs and selects the best one.</param>
-    /// <param name="maxTokens">Maximum number of tokens to generate.</param>
-    /// <param name="frequencyPenalty">Penalizes new tokens based on their frequency.</param>
-    /// <param name="presencePenalty">Penalizes new tokens based on their presence.</param>
-    /// <param name="stopSequences">Sequences where the model should stop generating further tokens.</param>
-    /// <param name="cancellationToken">Cancellation token to cancel the request.</param>
-    /// <returns>A task that represents the asynchronous operation. The task result contains the <see cref="CompletionResponse"/> object.</returns>
+    /// <param name="prompt">The input text that serves as the prompt for the completion generation.</param>
+    /// <param name="model">The model to be used for generating the completion. If set to "default", the default model configured for the client is used.</param>
+    /// <param name="temperature">Controls the randomness of the output. Higher values generate more creative responses, while lower values yield more focused responses. Optional.</param>
+    /// <param name="topP">Limits the sampling to a subset of the most likely tokens where the sum of their probabilities is greater than the specified threshold. Optional.</param>
+    /// <param name="topK">Limits the sampling to the top K most probable tokens. Optional.</param>
+    /// <param name="bestOf">Generates multiple completions server-side and returns the one with the highest log-probability per token. Optional.</param>
+    /// <param name="maxTokens">Specifies the maximum number of tokens to generate in the completion. Optional.</param>
+    /// <param name="frequencyPenalty">Applies a penalty to discourage repeated phrases or tokens based on their frequency in the completion. Optional.</param>
+    /// <param name="presencePenalty">Applies a penalty to encourage the inclusion of new tokens not already in the text. Optional.</param>
+    /// <param name="stopSequences">An array of strings where the completion generation stops if any of the specified sequences is encountered. Optional.</param>
+    /// <param name="guidanceType">Specifies the type of guidance to apply during completion generation, if applicable. Default is Disabled.</param>
+    /// <param name="guidanceString">Specifies a guidance configuration string, if applicable, for AI-generated results. Optional.</param>
+    /// <param name="cancellationToken">Token to observe cancellation requests, allowing the operation to be aborted. Default is none.</param>
+    /// <returns>Returns a <see cref="CompletionResponse"/> containing the generated text completion and related information.</returns>
+    /// <exception cref="Exception">Throws an exception if the client does not support prompt completion.</exception>
     public async Task<CompletionResponse> GenerateAsync(
-        string prompt, 
-        string model = "default", 
+        string prompt,
+        string model = "default",
         double? temperature = null,
-        double? topP = null, 
-        int? topK = null, 
+        double? topP = null,
+        int? topK = null,
         int? bestOf = null,
-        int? maxTokens = null, 
+        int? maxTokens = null,
         double? frequencyPenalty = null,
-        double? presencePenalty = null, 
+        double? presencePenalty = null,
         string[]? stopSequences = null,
         GuidanceType? guidanceType = GuidanceType.Disabled,
         string? guidanceString = null,
@@ -176,27 +180,27 @@ public class AsyncInferenceClient : IDisposable
     {
         if (_supportsCompletion is false)
             throw new Exception("Attempting prompt completion on provider that does not support it");
-        
+
         model = model == "default" ? _defaultModel : model;
         var parameters = new Dictionary<string, object>
         {
-            {"model", model},
-            {"prompt", prompt}
+            { "model", model },
+            { "prompt", prompt }
         };
 
         AddOptionalParameters(
-            parameters, 
-            temperature, 
-            topP, 
+            parameters,
+            temperature,
+            topP,
             topK,
             bestOf,
-            maxTokens, 
-            frequencyPenalty, 
-            presencePenalty, 
+            maxTokens,
+            frequencyPenalty,
+            presencePenalty,
             stopSequences,
             guidanceType,
             guidanceString);
-        
+
         string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
         //Util.Log($"Payload:\n{payloadDebug}");
         
@@ -245,31 +249,34 @@ public class AsyncInferenceClient : IDisposable
     // =================
     
     #region Chat Completion
+
     /// <summary>
-    /// Generates an inference response asynchronously.
+    /// Generates a chat completion response asynchronously based on the provided input messages and optional configuration parameters.
     /// </summary>
-    /// <param name="messages">The list of messages to generate the response from.</param>
-    /// <param name="model">The model identifier to use for the request.</param>
-    /// <param name="temperature">Control randomness. Lower values make responses more deterministic.</param>
-    /// <param name="topP">Nucleus sampling: higher values cause more randomness.</param>
-    /// <param name="topK">Limits the generated predictions to the top-k likely next words.</param>
-    /// <param name="bestOf">Generates multiple outputs and selects the best one.</param>
-    /// <param name="maxTokens">Maximum number of tokens to generate.</param>
-    /// <param name="frequencyPenalty">Penalizes new tokens based on their frequency.</param>
-    /// <param name="presencePenalty">Penalizes new tokens based on their presence.</param>
-    /// <param name="stopSequences">Sequences where the model should stop generating further tokens.</param>
-    /// <param name="cancellationToken">Cancellation token to cancel the request.</param>
-    /// <returns>A task that represents the asynchronous operation. The task result contains the <see cref="CompletionResponse"/> object.</returns>
+    /// <param name="messages">A list of messages constituting the conversation input for the AI model.</param>
+    /// <param name="model">The identifier of the AI model to use. If not specified, the default model is used.</param>
+    /// <param name="temperature">The sampling temperature parameter that affects randomness in the response. Higher values yield more random outputs.</param>
+    /// <param name="topP">The top-p sampling parameter that limits the response to the smallest set of tokens with a cumulative probability ≥ topP.</param>
+    /// <param name="topK">The top-k sampling parameter that limits the response to the k most probable next tokens.</param>
+    /// <param name="bestOf">The number of best completions to consider. The highest-ranking result is returned.</param>
+    /// <param name="maxTokens">The maximum number of tokens allowed in the response.</param>
+    /// <param name="frequencyPenalty">The penalty applied to reduce the likelihood of token repetition.</param>
+    /// <param name="presencePenalty">The penalty applied to encourage the inclusion of new tokens in the response.</param>
+    /// <param name="stopSequences">An array of strings that, if generated, will halt further output generation.</param>
+    /// <param name="guidanceType">The type of guidance to apply when generating responses. Default is <see cref="GuidanceType.Disabled"/>.</param>
+    /// <param name="guidanceString">Additional guidance instructions for customizing the behavior of the AI model during generation.</param>
+    /// <param name="cancellationToken">A cancellation token to observe for cancellation requests during execution.</param>
+    /// <returns>A task that represents the asynchronous operation and resolves with a <see cref="CompletionResponse"/> containing the generated output.</returns>
     public async Task<CompletionResponse> GenerateAsync(
-        List<Message> messages, 
+        List<Message> messages,
         string model = "default",
         double? temperature = null,
-        double? topP = null, 
-        int? topK = null, 
+        double? topP = null,
+        int? topK = null,
         int? bestOf = null,
-        int? maxTokens = null, 
+        int? maxTokens = null,
         double? frequencyPenalty = null,
-        double? presencePenalty = null, 
+        double? presencePenalty = null,
         string[]? stopSequences = null,
         GuidanceType? guidanceType = GuidanceType.Disabled,
         string? guidanceString = null,
@@ -278,20 +285,20 @@ public class AsyncInferenceClient : IDisposable
         model = model == "default" ? _defaultModel : model;
         var parameters = new Dictionary<string, object>
         {
-            {"model", model},
-            {"messages", messages}
+            { "model", model },
+            { "messages", messages }
         };
 
         // Add optional parameters if they are not null
         AddOptionalParameters(
-            parameters, 
-            temperature, 
-            topP, 
+            parameters,
+            temperature,
+            topP,
             topK,
             bestOf,
-            maxTokens, 
-            frequencyPenalty, 
-            presencePenalty, 
+            maxTokens,
+            frequencyPenalty,
+            presencePenalty,
             stopSequences,
             guidanceType,
             guidanceString);
@@ -346,7 +353,8 @@ public class AsyncInferenceClient : IDisposable
         var payload = FormatRequestData(systemPrompt, userPrompt, model:model, _apiKey, _useApiKey, false, @params, extraBody);
         
         var response = await client.PostAsJsonAsync("/v1/completions", payload, cancellationToken: cancellationToken);
-        var content = await response.Content.ReadAsStreamAsync(cancellationToken); // TODO: code below not functional currently
+        var content = await response.Content.ReadAsStreamAsync(cancellationToken); 
+        // TODO: code below not functional currently
 
         var buffer = new byte[32768];
         var filled = 0;
