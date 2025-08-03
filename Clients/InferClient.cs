@@ -667,8 +667,7 @@ public class AsyncInferenceClient : IDisposable
             
             geminiPayload["contents"] = contents;
         }
-
-
+        
         // Note: Gemini doesn't support frequency_penalty, presence_penalty, or best_of
         // These parameters are ignored for Gemini requests
 
