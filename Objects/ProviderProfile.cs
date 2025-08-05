@@ -108,8 +108,8 @@ public class ProviderProfile
                 break;
             
             case Revi.Protocol.Gemini:
-                SupportsGuidance = true;
-                SupportsCompletion = false;
+                //SupportsGuidance = true;
+                //SupportsCompletion = true;
                 break;
             
             default:
