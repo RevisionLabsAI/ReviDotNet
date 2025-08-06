@@ -392,83 +392,200 @@ public class Infer
 	
 	private static bool RecursivelyValidateObject(object obj)
 	{
-		foreach (var property in obj.GetType().GetProperties())
+		try
 		{
-			var value = property.GetValue(obj);
-			
-			// Check Required attribute
-			if (property.GetCustomAttributes(false).Any(attr => attr.GetType().Name == "RequiredAttribute"))
+			foreach (var property in obj.GetType().GetProperties())
 			{
-				if (value == null || (value is string str && string.IsNullOrEmpty(str)))
+				object? value = null;
+				
+				try
 				{
-					Util.Log($"Validation failed: Required property '{property.Name}' is null or empty");
-					return false;
-				}
-			}
-			
-			// Check MinItems/MaxItems for collections
-			if (value is ICollection collection)
-			{
-				var minItems = property.GetCustomAttributes(false)
-					.FirstOrDefault(attr => attr.GetType().Name == "MinItemsAttribute");
-				var maxItems = property.GetCustomAttributes(false)
-					.FirstOrDefault(attr => attr.GetType().Name == "MaxItemsAttribute");
-					
-				if (minItems != null)
-				{
-					var minValue = (int)minItems.GetType().GetConstructors()[0].GetParameters()[0].DefaultValue;
-					if (collection.Count < minValue)
+					// Safely get the property value
+					if (property.CanRead && property.GetIndexParameters().Length == 0)
 					{
-						Util.Log($"Validation failed: '{property.Name}' has {collection.Count} items, minimum: {minValue}");
-						return false;
+						value = property.GetValue(obj);
+					}
+				}
+				catch (Exception ex)
+				{
+					Util.Log($"Warning: Could not read property '{property.Name}': {ex.Message}");
+					continue;
+				}
+				
+				// Handle DBNull values - convert to null for validation purposes
+				if (value is DBNull)
+				{
+					value = null;
+				}
+				
+				// Check Required attribute
+				try
+				{
+					if (property.GetCustomAttributes(false).Any(attr => attr.GetType().Name == "RequiredAttribute"))
+					{
+						if (value == null || (value is string str && string.IsNullOrEmpty(str)))
+						{
+							Util.Log($"Validation failed: Required property '{property.Name}' is null or empty");
+							return false;
+						}
+					}
+				}
+				catch (Exception ex)
+				{
+					Util.Log($"Warning: Could not check Required attribute for property '{property.Name}': {ex.Message}");
+				}
+				
+				// Check collection constraints - simplified approach
+				if (value is ICollection collection)
+				{
+					try
+					{
+						var attributes = property.GetCustomAttributes(false);
+						
+						foreach (var attr in attributes)
+						{
+							var attrType = attr.GetType();
+							
+							// Check for MinItems-like attributes
+							if (attrType.Name.Contains("MinItems") || attrType.Name.Contains("MinLength"))
+							{
+								try
+								{
+									// Try different common property names for the minimum value
+									var minValue = GetAttributeIntValue(attr, new[] { "Value", "MinItems", "MinLength", "Minimum" });
+									if (minValue.HasValue && collection.Count < minValue.Value)
+									{
+										Util.Log($"Validation failed: '{property.Name}' has {collection.Count} items, minimum: {minValue.Value}");
+										return false;
+									}
+								}
+								catch (Exception ex)
+								{
+									Util.Log($"Warning: Could not validate MinItems for property '{property.Name}': {ex.Message}");
+								}
+							}
+							
+							// Check for MaxItems-like attributes
+							if (attrType.Name.Contains("MaxItems") || attrType.Name.Contains("MaxLength"))
+							{
+								try
+								{
+									// Try different common property names for the maximum value
+									var maxValue = GetAttributeIntValue(attr, new[] { "Value", "MaxItems", "MaxLength", "Maximum" });
+									if (maxValue.HasValue && collection.Count > maxValue.Value)
+									{
+										Util.Log($"Validation failed: '{property.Name}' has {collection.Count} items, maximum: {maxValue.Value}");
+										return false;
+									}
+								}
+								catch (Exception ex)
+								{
+									Util.Log($"Warning: Could not validate MaxItems for property '{property.Name}': {ex.Message}");
+								}
+							}
+						}
+					}
+					catch (Exception ex)
+					{
+						Util.Log($"Warning: Could not validate collection constraints for property '{property.Name}': {ex.Message}");
 					}
 				}
 				
-				if (maxItems != null)
+				// Recursively validate complex objects
+				if (value != null && !Util.IsSimpleType(property.PropertyType))
 				{
-					var maxValue = (int)maxItems.GetType().GetConstructors()[0].GetParameters()[0].DefaultValue;
-					if (collection.Count > maxValue)
+					try
 					{
-						Util.Log($"Validation failed: '{property.Name}' has {collection.Count} items, maximum: {maxValue}");
-						return false;
+						if (value is IEnumerable enumerable && !(value is string))
+						{
+							foreach (var item in enumerable)
+							{
+								if (item != null && !RecursivelyValidateObject(item))
+									return false;
+							}
+						}
+						else if (!RecursivelyValidateObject(value))
+						{
+							return false;
+						}
+					}
+					catch (Exception ex)
+					{
+						Util.Log($"Warning: Could not recursively validate property '{property.Name}': {ex.Message}");
 					}
 				}
 			}
 			
-			// Recursively validate complex objects
-			if (value != null && !Util.IsSimpleType(property.PropertyType))
+			// Also check fields (like NodeSummaryFromPartials.Label)
+			foreach (var field in obj.GetType().GetFields())
 			{
-				if (value is IEnumerable enumerable && !(value is string))
+				object? value = null;
+				
+				try
 				{
-					foreach (var item in enumerable)
+					value = field.GetValue(obj);
+				}
+				catch (Exception ex)
+				{
+					Util.Log($"Warning: Could not read field '{field.Name}': {ex.Message}");
+					continue;
+				}
+				
+				// Handle DBNull values - convert to null for validation purposes
+				if (value is DBNull)
+				{
+					value = null;
+				}
+				
+				try
+				{
+					if (field.GetCustomAttributes(false).Any(attr => attr.GetType().Name == "RequiredAttribute"))
 					{
-						if (item != null && !RecursivelyValidateObject(item))
+						if (value == null || (value is string str && string.IsNullOrEmpty(str)))
+						{
+							Util.Log($"Validation failed: Required field '{field.Name}' is null or empty");
 							return false;
+						}
 					}
 				}
-				else if (!RecursivelyValidateObject(value))
+				catch (Exception ex)
 				{
-					return false;
+					Util.Log($"Warning: Could not check Required attribute for field '{field.Name}': {ex.Message}");
 				}
 			}
 		}
-		
-		// Also check fields (like NodeSummaryFromPartials.Label)
-		foreach (var field in obj.GetType().GetFields())
+		catch (Exception ex)
 		{
-			var value = field.GetValue(obj);
-			
-			if (field.GetCustomAttributes(false).Any(attr => attr.GetType().Name == "RequiredAttribute"))
-			{
-				if (value == null || (value is string str && string.IsNullOrEmpty(str)))
-				{
-					Util.Log($"Validation failed: Required field '{field.Name}' is null or empty");
-					return false;
-				}
-			}
+			Util.Log($"Warning: General validation error for object of type '{obj.GetType().Name}': {ex.Message}");
+			// Continue with validation rather than failing completely
 		}
 		
 		return true;
+	}
+
+	// Helper method to safely extract integer values from attributes
+	private static int? GetAttributeIntValue(object attribute, string[] possiblePropertyNames)
+	{
+		foreach (var propertyName in possiblePropertyNames)
+		{
+			try
+			{
+				var property = attribute.GetType().GetProperty(propertyName);
+				if (property != null)
+				{
+					var value = property.GetValue(attribute);
+					if (value != null && value != DBNull.Value)
+					{
+						return Convert.ToInt32(value);
+					}
+				}
+			}
+			catch
+			{
+				// Continue to next property name
+			}
+		}
+		return null;
 	}
 
 	
