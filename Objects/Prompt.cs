@@ -26,9 +26,6 @@ public class Prompt
     
     #region Prompt Object Definition
     // Information
-    [JsonProperty("id"), RConfigProperty("information_id")]
-    public string ID { get; set; }
-
     [JsonProperty("name"), RConfigProperty("information_name")]
     public string? Name { get; set; }
 
@@ -130,9 +127,6 @@ public class Prompt
     #region Constructors
     public void Init()
     {
-        if (string.IsNullOrWhiteSpace(ID))
-            ID = Guid.NewGuid().ToString();
-        
         if (string.IsNullOrWhiteSpace(Name))
             throw new ArgumentException("Name must not be null or empty.");
         
@@ -151,14 +145,12 @@ public class Prompt
         if (string.IsNullOrWhiteSpace(Schema))
             Schema = CreateSchemaFromExamples(Examples);
     }
-    
+
     public Prompt()
-    { 
-        ID = Guid.NewGuid().ToString();
+    {
     }
-    
+
     public Prompt(
-        string? ID, 
         string? Name, 
         int? Version, 
         DateTime? DateCreated, 
@@ -186,9 +178,9 @@ public class Prompt
         string? Schema = null,
         List<Example>? Examples = null)
     {
-        if (string.IsNullOrWhiteSpace(ID))
+        /*if (string.IsNullOrWhiteSpace(ID))
             ID = Guid.NewGuid().ToString();
-        this.ID = ID;
+        this.ID = ID;*/
         this.Name = Name;
         this.Version = Version;
         this.DateCreated = DateCreated;
@@ -223,7 +215,6 @@ public class Prompt
     public Prompt(Prompt original)
     {
         // Copy value type Information
-        ID = Guid.NewGuid().ToString();
         Name = original.Name;
         Version = original.Version;
         DateCreated = original.DateCreated;
@@ -519,16 +510,23 @@ public class Prompt
     {
         var prompt = new Prompt();
         var properties = typeof(Prompt).GetProperties();
+        var processedKeys = new HashSet<string>();
 
         foreach (var property in properties)
         {
             var attribute = property.GetCustomAttributes(typeof(RConfigPropertyAttribute), false)
                 .FirstOrDefault() as RConfigPropertyAttribute;
 
-            if (attribute != null && data.TryGetValue(attribute.Name, out var value))
+            if (attribute == null)
+                continue;
+            
+            if (data.TryGetValue(attribute.Name, out var value))
             {
-                // Skip adding this property to the object/leave null
-                if ((value.ToLower()) == "default")
+                // Mark this key as processed
+                processedKeys.Add(attribute.Name);
+
+                // Skip adding this property to the object/leave null if marked default
+                if (value.ToLower() == "default")
                     continue;
                 
                 if (property.Name == "Name" && namePrefix != null)
@@ -550,9 +548,22 @@ public class Prompt
             }
             else
             {
-                Util.Log($"Prompt.ToObject: Could not get value for attribute {attribute?.Name}");
+                Util.Log($"Info: Prompt missing value for attribute {attribute?.Name}");
             }
         }
+        
+        // Check for unknown properties and issue warnings
+        var exampleKeyPattern = @"^_ex(in|out)_\d+$";
+        foreach (var key in data.Keys)
+        {
+            // Skip processed keys and example keys (which are handled specially)
+            if (!processedKeys.Contains(key) && !Regex.IsMatch(key, exampleKeyPattern))
+            {
+                // Issue warning for unknown property
+                Util.Log($"Warning: Unknown property '{key}' found in prompt '{prompt.Name}'");
+            }
+        }
+
 
         // Special handling for examples
         var examplePairs = ExtractExamples(data);
