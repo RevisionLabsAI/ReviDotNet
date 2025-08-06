@@ -46,9 +46,6 @@ public class Prompt
     [JsonProperty("filter"), RConfigProperty("settings_filter")]
     public string? Filter { get; set; }
 
-    [JsonProperty("retry"), RConfigProperty("settings_retry")]
-    public int? Retry { get; set; }
-
     [JsonProperty("chain-of-thought"), RConfigProperty("settings_chain-of-thought")]
     public bool? ChainOfThought { get; set; }
 
@@ -57,6 +54,15 @@ public class Prompt
 
     [JsonProperty("guidance-schema-type"), RConfigProperty("settings_guidance-schema-type")]
     public GuidanceSchemaType? GuidanceSchema { get; set; }
+    
+    [JsonProperty("require-valid-output"), RConfigProperty("settings_require-valid-output")]
+    public bool? RequireValidOutput { get; set; }
+
+    [JsonProperty("retry-attempts"), RConfigProperty("settings_retry-attempts")]
+    public int? RetryAttempts { get; set; }
+    
+    [JsonProperty("retry-prompt"), RConfigProperty("settings_retry-prompt")]
+    public string? RetryPrompt { get; set; }
 
     [JsonProperty("few-shot-examples"), RConfigProperty("settings_few-shot-examples")]
     public int? FewShotExamples { get; set; }
@@ -158,7 +164,9 @@ public class Prompt
         DateTime? DateCreated, 
         DateTime? DateUpdated, 
         string? Filter = null,
-        int? Retry = null, 
+        bool? RequireValidOutput = false,
+        int? RetryAttempts = null, 
+        string? RetryPrompt = null, 
         bool? ChainOfThought = false, 
         bool? RequestJson = false, 
         GuidanceSchemaType? GuidanceSchema = null,
@@ -186,10 +194,12 @@ public class Prompt
         this.DateCreated = DateCreated;
         this.DateUpdated = DateUpdated;
         this.Filter = Filter;
-        this.Retry = Retry;
         this.ChainOfThought = ChainOfThought;
         this.RequestJson = RequestJson;
         this.GuidanceSchema = GuidanceSchema;
+        this.RequireValidOutput = RequireValidOutput;
+        this.RetryAttempts = RetryAttempts;
+        this.RetryPrompt = RetryPrompt;
         this.FewShotExamples = FewShotExamples;
         this.ModelPref = ModelPref;
         this.MinTier = MinTier;
@@ -221,10 +231,12 @@ public class Prompt
 
         // Copy value type Settings
         Filter = original.Filter;
-        Retry = original.Retry;
         ChainOfThought = original.ChainOfThought;
         RequestJson = original.RequestJson;
         GuidanceSchema = original.GuidanceSchema;
+        RequireValidOutput = original.RequireValidOutput;
+        RetryAttempts = original.RetryAttempts;
+        RetryPrompt = original.RetryPrompt;
         FewShotExamples = original.FewShotExamples;
         ModelPref = original.ModelPref;
         MinTier = original.MinTier;
@@ -535,6 +547,10 @@ public class Prompt
                 {
                     throw new FormatException($"Failed to convert value to target type. Property: {property.Name}", ex);
                 }
+            }
+            else
+            {
+                Util.Log($"Prompt.ToObject: Could not get value for attribute {attribute?.Name}");
             }
         }
 

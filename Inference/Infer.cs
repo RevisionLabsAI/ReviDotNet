@@ -11,6 +11,7 @@
 //   See LICENSE.txt in the project root for full license information.
 // =================================================================================
 
+using System.Collections;
 using System.Data;
 using System.Security;
 using System.Text.RegularExpressions;
@@ -251,7 +252,9 @@ public class Infer
 		string promptName,
 		List<Input>? inputs = null,
 		ModelProfile? modelProfile = null,
-		string? modelName = null)
+		string? modelName = null,
+		int retryAttempt = 0,
+		int? originalRetryLimit = null)
 	{
 		// Declarations
 		Type outputType = typeof(T);
@@ -344,9 +347,130 @@ public class Infer
 			}
 		}
 		
-		// Return the resulting output
-		return (T?) Convert.ChangeType(newObject, typeof(T));
+		// Validate object and return it if it's valid
+		var castObject = (T?) Convert.ChangeType(newObject, typeof(T));
+		if (ValidateObject<T>(castObject, prompt))
+			return castObject;
+		
+		Util.Log($"Infer.ToObject() object was invalid for prompt '{prompt.Name}'");
+		
+		// Otherwise, check if we're going to retry
+		if (originalRetryLimit is null)
+			originalRetryLimit = prompt.RetryAttempts;
+		
+		if (retryAttempt < (originalRetryLimit ?? 0))
+		{
+			Util.Log($"Retrying Infer.ToObject() for prompt '{prompt.Name}'");
+			
+			string promptToRetry = promptName;
+			if (prompt.RetryPrompt is not null)
+				promptToRetry = prompt.RetryPrompt;
+			
+			return await ToObject<T>(
+				promptToRetry, 
+				inputs, 
+				modelProfile, 
+				modelName, 
+				retryAttempt + 1, 
+				originalRetryLimit);
+		}
+
+		// TODO: Check if there's a fallback response to provide, otherwise provide what we generated
+		return castObject;
 	}
+	
+	private static bool ValidateObject<T>(object? inputObject, Prompt prompt)
+	{
+		if (prompt.RequireValidOutput is false)
+			return true;
+		
+		if (inputObject is null)
+			return false;
+		
+		return RecursivelyValidateObject(inputObject);
+	}
+	
+	private static bool RecursivelyValidateObject(object obj)
+	{
+		foreach (var property in obj.GetType().GetProperties())
+		{
+			var value = property.GetValue(obj);
+			
+			// Check Required attribute
+			if (property.GetCustomAttributes(false).Any(attr => attr.GetType().Name == "RequiredAttribute"))
+			{
+				if (value == null || (value is string str && string.IsNullOrEmpty(str)))
+				{
+					Util.Log($"Validation failed: Required property '{property.Name}' is null or empty");
+					return false;
+				}
+			}
+			
+			// Check MinItems/MaxItems for collections
+			if (value is ICollection collection)
+			{
+				var minItems = property.GetCustomAttributes(false)
+					.FirstOrDefault(attr => attr.GetType().Name == "MinItemsAttribute");
+				var maxItems = property.GetCustomAttributes(false)
+					.FirstOrDefault(attr => attr.GetType().Name == "MaxItemsAttribute");
+					
+				if (minItems != null)
+				{
+					var minValue = (int)minItems.GetType().GetConstructors()[0].GetParameters()[0].DefaultValue;
+					if (collection.Count < minValue)
+					{
+						Util.Log($"Validation failed: '{property.Name}' has {collection.Count} items, minimum: {minValue}");
+						return false;
+					}
+				}
+				
+				if (maxItems != null)
+				{
+					var maxValue = (int)maxItems.GetType().GetConstructors()[0].GetParameters()[0].DefaultValue;
+					if (collection.Count > maxValue)
+					{
+						Util.Log($"Validation failed: '{property.Name}' has {collection.Count} items, maximum: {maxValue}");
+						return false;
+					}
+				}
+			}
+			
+			// Recursively validate complex objects
+			if (value != null && !Util.IsSimpleType(property.PropertyType))
+			{
+				if (value is IEnumerable enumerable && !(value is string))
+				{
+					foreach (var item in enumerable)
+					{
+						if (item != null && !RecursivelyValidateObject(item))
+							return false;
+					}
+				}
+				else if (!RecursivelyValidateObject(value))
+				{
+					return false;
+				}
+			}
+		}
+		
+		// Also check fields (like NodeSummaryFromPartials.Label)
+		foreach (var field in obj.GetType().GetFields())
+		{
+			var value = field.GetValue(obj);
+			
+			if (field.GetCustomAttributes(false).Any(attr => attr.GetType().Name == "RequiredAttribute"))
+			{
+				if (value == null || (value is string str && string.IsNullOrEmpty(str)))
+				{
+					Util.Log($"Validation failed: Required field '{field.Name}' is null or empty");
+					return false;
+				}
+			}
+		}
+		
+		return true;
+	}
+
 	
 	public static async Task<JObject?> ToJObject(
 		string promptName,

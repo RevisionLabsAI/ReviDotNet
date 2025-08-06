@@ -329,4 +329,15 @@ public static partial class Util
 			}
 		}
 	}
+	
+	public static bool IsSimpleType(Type type)
+	{
+		return type.IsPrimitive || 
+		       type == typeof(string) || 
+		       type == typeof(decimal) || 
+		       type == typeof(DateTime) || 
+		       type.IsEnum ||
+		       (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>));
+	}
+
 }
