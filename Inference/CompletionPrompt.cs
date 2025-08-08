@@ -166,7 +166,6 @@ public static class CompletionPrompt
 		// Create the inputSection if one of these items requests it
 		if (model.SystemInputType == InputType.Listed || model.InstructionInputType == InputType.Listed)
 		{
-			
 			inputList = Infer.ListInputs(model, inputs);
 			inputSection = AddOrFillInput(InputType.Listed, inputList, inputs, "");
 		}

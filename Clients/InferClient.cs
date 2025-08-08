@@ -166,13 +166,16 @@ public class AsyncInferenceClient : IDisposable
     public async Task<CompletionResponse> GenerateAsync(
         string prompt,
         string model = "default",
-        double? temperature = null,
-        double? topP = null,
+        float? temperature = null,
         int? topK = null,
+        float? topP = null,
+        float? minP = null,
         int? bestOf = null,
+        MaxTokenType? maxTokenType = null,
         int? maxTokens = null,
-        double? frequencyPenalty = null,
-        double? presencePenalty = null,
+        float? frequencyPenalty = null,
+        float? presencePenalty = null,
+        float? repetitionPenalty = null,
         string[]? stopSequences = null,
         GuidanceType? guidanceType = GuidanceType.Disabled,
         string? guidanceString = null,
@@ -191,18 +194,18 @@ public class AsyncInferenceClient : IDisposable
         AddOptionalParameters(
             parameters,
             temperature,
-            topP,
             topK,
+            topP,
+            minP,
             bestOf,
+            maxTokenType,
             maxTokens,
             frequencyPenalty,
             presencePenalty,
+            repetitionPenalty,
             stopSequences,
             guidanceType,
             guidanceString);
-
-        string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
-        //Util.Log($"Payload:\n{payloadDebug}");
         
         // Use appropriate endpoint based on protocol
         string endpoint;
@@ -210,17 +213,36 @@ public class AsyncInferenceClient : IDisposable
             endpoint = $"v1beta/models/{model}:generateContent";
         else
             endpoint = "v1/completions";
+
+        CompletionResponse response;
+        string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
         
-        Dictionary<string, string> serverResponse = await ExecuteRequest(endpoint, parameters, cancellationToken);
-        CompletionResponse response = BuildResponse(prompt, serverResponse);
+        try
+        {
+            Dictionary<string, string> serverResponse = await ExecuteRequest(endpoint, parameters, cancellationToken);
+            response = BuildResponse(prompt, serverResponse);
+        }
+
+        // Dump error message if an exception occurred
+        catch (Exception e)
+        {
+            string errorMessage = $"### ReviDotNet.GenerateAsync() Error Generating Completion\n" +
+                                 $"# URL\n{_client.BaseAddress + endpoint}\n\n" +
+                                 $"# Payload\n{payloadDebug}\n\n" +
+                                 $"# Exception\n{e.Message}\n\n";
+            Util.Log(errorMessage);
+            await Util.DumpLog(errorMessage, "ic-generate-prompt-error");
+            throw;
+        }
         
+        // Dump successful logging if successful
         string responseDebug = $"'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''";
         string dumpMessage = $"### ReviDotNet.GenerateAsync() Prompt Completion\n" +
                              $"# URL\n{_client.BaseAddress + endpoint}\n\n" +
                              $"# Payload\n{payloadDebug}\n\n" +
                              $"# Response\n{responseDebug}\n\n";
-        
         await Util.DumpLog(dumpMessage, "ic-generate-prompt");
+        
         return response;
     }
     
@@ -270,13 +292,16 @@ public class AsyncInferenceClient : IDisposable
     public async Task<CompletionResponse> GenerateAsync(
         List<Message> messages,
         string model = "default",
-        double? temperature = null,
-        double? topP = null,
+        float? temperature = null,
         int? topK = null,
+        float? topP = null,
+        float? minP = null,
         int? bestOf = null,
+        MaxTokenType? maxTokenType = null,
         int? maxTokens = null,
-        double? frequencyPenalty = null,
-        double? presencePenalty = null,
+        float? frequencyPenalty = null,
+        float? presencePenalty = null,
+        float? repetitionPenalty = null,
         string[]? stopSequences = null,
         GuidanceType? guidanceType = GuidanceType.Disabled,
         string? guidanceString = null,
@@ -293,18 +318,18 @@ public class AsyncInferenceClient : IDisposable
         AddOptionalParameters(
             parameters,
             temperature,
-            topP,
             topK,
+            topP,
+            minP,
             bestOf,
+            maxTokenType,
             maxTokens,
             frequencyPenalty,
             presencePenalty,
+            repetitionPenalty,
             stopSequences,
             guidanceType,
             guidanceString);
-
-        string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
-        Util.Log($"Protocol:\n{_protocol}");
 
         string endpoint;
         if (_protocol == Protocol.Gemini)
@@ -313,17 +338,36 @@ public class AsyncInferenceClient : IDisposable
         {
             endpoint = "v1/chat/completions";
         }
+
+        CompletionResponse response;
+        string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
+
+        try
+        {
+            Dictionary<string, string> serverResponse = await ExecuteRequest(endpoint, parameters, cancellationToken);
+            response = BuildResponse(messages, serverResponse);
+        }
         
-        Dictionary<string, string> serverResponse = await ExecuteRequest(endpoint, parameters, cancellationToken);
-        CompletionResponse response = BuildResponse(messages, serverResponse);
-        
+        // Dump error message if exception occurred
+        catch (Exception e)
+        {
+            string errorMessage = $"### ReviDotNet.GenerateAsync() Error Generating Chat Completion\n" +
+                                  $"# URL\n{_client.BaseAddress + endpoint}\n\n" +
+                                  $"# Payload\n{payloadDebug}\n\n" +
+                                  $"# Exception\n{e.Message}\n\n";
+            Util.Log(errorMessage);
+            await Util.DumpLog(errorMessage, "ic-generate-chat-error");
+            throw;
+        }
+
+        // Dump successful logging if successful
         string responseDebug = $"'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''";
         string dumpMessage = $"### ReviDotNet.GenerateAsync() Chat Completion\n" +
                              $"# URL\n{_client.BaseAddress + endpoint}\n\n" +
                              $"# Payload\n{payloadDebug}\n\n" +
                              $"# Response\n{responseDebug}\n\n";
-        
         await Util.DumpLog(dumpMessage, "ic-generate-chat");
+        
         return response;
     }
     
@@ -615,11 +659,14 @@ public class AsyncInferenceClient : IDisposable
         if (payload.TryGetValue("temperature", out var temperature))
             generationConfig["temperature"] = temperature;
         
+        if (payload.TryGetValue("top_k", out var topK))
+            generationConfig["topK"] = topK;
+        
         if (payload.TryGetValue("top_p", out var topP))
             generationConfig["topP"] = topP;
         
-        if (payload.TryGetValue("top_k", out var topK))
-            generationConfig["topK"] = topK;
+        if (payload.TryGetValue("min_p", out var minP))
+            generationConfig["minP"] = minP;
         
         if (payload.TryGetValue("max_tokens", out var maxTokens))
             generationConfig["maxOutputTokens"] = maxTokens;
@@ -698,34 +745,81 @@ public class AsyncInferenceClient : IDisposable
     /// <param name="guidanceString">The guidanceString parameter value.</param>
     private void AddOptionalParameters(
         Dictionary<string, object> parameters,
-        double? temperature,
-        double? topP,
+        float? temperature,
         int? topK,
+        float? topP,
+        float? minP,
         int? bestOf,
+        MaxTokenType? maxTokenType,
         int? maxTokens,
-        double? frequencyPenalty,
-        double? presencePenalty,
+        float? frequencyPenalty,
+        float? presencePenalty,
+        float? repetitionPenalty,
         string[]? stopSequences,
         GuidanceType? guidanceType,
         string? guidanceString)
     {
         if (temperature.HasValue) parameters.Add("temperature", temperature.Value);
+        if (topK.HasValue) parameters.Add("top_k", topK.Value);
         if (topP.HasValue) parameters.Add("top_p", topP.Value);
-        if (maxTokens.HasValue) parameters.Add("max_tokens", maxTokens.Value);
+        if (minP.HasValue) parameters.Add("min_p", minP.Value);
         if (frequencyPenalty.HasValue) parameters.Add("frequency_penalty", frequencyPenalty.Value);
         if (presencePenalty.HasValue) parameters.Add("presence_penalty", presencePenalty.Value);
+        if (repetitionPenalty.HasValue) parameters.Add("repetition_penalty", repetitionPenalty.Value);
         if (stopSequences is { Length: > 0 }) parameters.Add("stop", stopSequences);
-        if (topK.HasValue) parameters.Add("top_k", topK.Value);
 
         GuidanceType? chosenType = guidanceType ?? _defaultGuidanceType;
         string? chosenString = guidanceString ?? _defaultGuidanceString;
         //Util.Log($"guidanceString: {guidanceString}, _protocol: {_protocol}");
         
+        switch (maxTokenType)
+        {
+            case MaxTokenType.MaxTokens:
+                if (maxTokens.HasValue) parameters.Add("max_tokens", maxTokens.Value);
+                break;
+            
+            case MaxTokenType.MaxCompletionTokens:
+                if (maxTokens.HasValue) parameters.Add("max_completion_tokens", maxTokens.Value);
+                break;
+        }
+        
         switch (_protocol)
         {
             case Protocol.OpenAI:
-                // Nothing unique to do here
+            {
+                // OpenAI Parameters - no bestOf support
+                
+                // OpenAI JSON Schema Guidance
+                if (!_supportsGuidance || string.IsNullOrEmpty(chosenString) || chosenType != GuidanceType.Json)
+                {
+                    return;
+                }
+
+                try
+                {
+                    // Parse the JSON schema string to ensure it's valid JSON
+                    var processedSchema = Util.AddAdditionalPropertiesToSchema(chosenString);
+
+                    
+                    // OpenAI uses response_format with json_schema type
+                    parameters.Add("response_format", new
+                    {
+                        type = "json_schema",
+                        json_schema = new
+                        {
+                            name = "response_schema",
+                            strict = true,
+                            schema = processedSchema
+                        }
+                    });
+                }
+                catch (Newtonsoft.Json.JsonException ex)
+                {
+                    Util.Log($"Warning: Invalid JSON schema provided for OpenAI: {chosenString}. Error: {ex.Message}");
+                }
+                
                 break;
+            }
 
             case Protocol.vLLM:
             {

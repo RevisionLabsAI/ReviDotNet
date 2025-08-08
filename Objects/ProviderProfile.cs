@@ -92,7 +92,6 @@ public class ProviderProfile
         switch (Protocol)
         {
             case Revi.Protocol.OpenAI: 
-                SupportsGuidance = false;
                 SupportsCompletion = false;
                 break;
             

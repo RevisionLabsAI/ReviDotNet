@@ -400,7 +400,7 @@ public static class RConfigParser
             if (attribute != null && data.TryGetValue(attribute.Name, out var value))
             {
                 // Skip adding this property to the object/leave null
-                if (value.ToLower() == "default")
+                if ((value.ToLower() == "default") || (value.ToLower() == "prompt"))
                     continue;
 
                 if (property.Name == "Name" && namePrefix != null)

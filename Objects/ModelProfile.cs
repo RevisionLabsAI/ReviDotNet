@@ -52,6 +52,72 @@ public class ModelProfile
     [RConfigProperty("settings_stop-sequences")]
     public string? StopSequences { get; set; }
     
+    [RConfigProperty("settings_max-token-type")]
+    public MaxTokenType? MaxTokenType { get; set; }
+    
+    // Setting Overrides
+    [RConfigProperty("override-settings_filter")]
+    public string? Filter { get; set; }
+    
+    [RConfigProperty("override-settings_chain-of-thought")]
+    public string? ChainOfThought { get; set; }
+    
+    [RConfigProperty("override-settings_request-json")]
+    public string? RequestJson { get; set; }
+    
+    [RConfigProperty("override-settings_guidance-schema-type")]
+    public GuidanceSchemaType? GuidanceSchemaType { get; set; }
+    
+    [RConfigProperty("override-settings_require-valid-output")]
+    public bool? RequireValidOutput { get; set; }
+    
+    [RConfigProperty("override-settings_retry-attempts")]
+    public int? RetryAttempts { get; set; }
+    
+    [RConfigProperty("override-settings_retry-prompt")]
+    public string? RetryPrompt { get; set; }
+    
+    [RConfigProperty("override-settings_few-shot-examples")]
+    public int? FewShotExamples { get; set; }
+    
+    [RConfigProperty("override-settings_best-of")]
+    public int? BestOf { get; set; }
+    
+    [RConfigProperty("override-settings_max-tokens")]
+    public int? MaxTokens { get; set; }
+    
+    [RConfigProperty("override-settings_model-pref")]
+    public string? ModelPref { get; set; }
+    
+    [RConfigProperty("override-settings_min-tier")]
+    public ModelTier? MinTier { get; set; }
+    
+    [RConfigProperty("override-settings_completion-type")]
+    public CompletionType? CompletionType { get; set; }
+    
+    
+    // Tuning Overrides
+    [RConfigProperty("override-tuning_temperature")]
+    public float? Temperature { get; set; }
+    
+    [RConfigProperty("override-tuning_top-k")]
+    public int? TopK { get; set; }
+    
+    [RConfigProperty("override-tuning_top-p")]
+    public float? TopP { get; set; }
+    
+    [RConfigProperty("override-tuning_min-p")]
+    public float? MinP { get; set; }
+    
+    [RConfigProperty("override-tuning_presence-penalty")]
+    public float? PresencePenalty { get; set; }
+    
+    [RConfigProperty("override-tuning_frequency-penalty")]
+    public float? FrequencyPenalty { get; set; }
+    
+    [RConfigProperty("override-tuning_repition-penalty")]
+    public float? RepetitionPenalty { get; set; }
+    
     
     // Input Options
     [RConfigProperty("input_system-input-type")]

@@ -272,6 +272,126 @@ public static partial class Util
 		return input;
 	}
 	
+	
+public static object AddAdditionalPropertiesToSchema(string schemaString)
+{
+    try
+    {
+        // Parse the schema using JsonDocument to avoid JsonElement issues
+        using var document = JsonDocument.Parse(schemaString);
+        var cleanSchema = ConvertToCleanDictionary(document.RootElement);
+        
+        // Ensure root is an object type
+        if (!cleanSchema.ContainsKey("type") || cleanSchema["type"]?.ToString() != "object")
+        {
+            cleanSchema["type"] = "object";
+        }
+        
+        // Process recursively to add additionalProperties and ensure required fields
+        ProcessSchemaForOpenAI(cleanSchema);
+        
+        return cleanSchema;
+    }
+    catch (Exception ex)
+    {
+        Util.Log($"Error processing JSON schema: {ex.Message}");
+        
+        // Return a basic valid schema as fallback
+        return new Dictionary<string, object>
+        {
+            ["type"] = "object",
+            ["properties"] = new Dictionary<string, object>(),
+            ["required"] = new List<string>(),
+            ["additionalProperties"] = false
+        };
+    }
+}
+
+private static Dictionary<string, object> ConvertToCleanDictionary(JsonElement element)
+{
+    var result = new Dictionary<string, object>();
+    
+    foreach (var property in element.EnumerateObject())
+    {
+        result[property.Name] = ConvertJsonElementToCleanValue(property.Value);
+    }
+    
+    return result;
+}
+
+private static object ConvertJsonElementToCleanValue(JsonElement element)
+{
+    return element.ValueKind switch
+    {
+        JsonValueKind.Object => ConvertToCleanDictionary(element),
+        JsonValueKind.Array => element.EnumerateArray()
+            .Select(ConvertJsonElementToCleanValue)
+            .ToList(),
+        JsonValueKind.String => element.GetString() ?? "",
+        JsonValueKind.Number => element.TryGetInt32(out var intVal) ? intVal : element.GetDouble(),
+        JsonValueKind.True => true,
+        JsonValueKind.False => false,
+        JsonValueKind.Null => null,
+        _ => element.ToString()
+    };
+}
+
+private static void ProcessSchemaForOpenAI(Dictionary<string, object> schema)
+{
+    // Add additionalProperties: false for object types
+    if (schema.TryGetValue("type", out var typeValue) && typeValue?.ToString() == "object")
+    {
+        if (!schema.ContainsKey("additionalProperties"))
+        {
+            schema["additionalProperties"] = false;
+        }
+        
+        // For OpenAI: ensure required array includes ALL properties
+        if (schema.TryGetValue("properties", out var propertiesObj) && 
+            propertiesObj is Dictionary<string, object> properties)
+        {
+            // Get all property keys
+            var allPropertyKeys = properties.Keys.ToList();
+            
+            // Set required to include all properties (OpenAI requirement)
+            schema["required"] = allPropertyKeys;
+            
+            // Process nested properties
+            foreach (var prop in properties.Values.OfType<Dictionary<string, object>>())
+            {
+                ProcessSchemaForOpenAI(prop);
+            }
+        }
+        else
+        {
+            // If no properties, ensure required is still an empty array
+            schema["required"] = new List<string>();
+        }
+    }
+    
+    // Process items for arrays
+    if (schema.TryGetValue("items", out var itemsObj) && 
+        itemsObj is Dictionary<string, object> items)
+    {
+        ProcessSchemaForOpenAI(items);
+    }
+    
+    // Process oneOf, anyOf, allOf
+    foreach (var keyword in new[] { "oneOf", "anyOf", "allOf" })
+    {
+        if (schema.TryGetValue(keyword, out var arrayObj) && 
+            arrayObj is List<object> schemaArray)
+        {
+            foreach (var item in schemaArray.OfType<Dictionary<string, object>>())
+            {
+                ProcessSchemaForOpenAI(item);
+            }
+        }
+    }
+}
+
+
+	
 	/*public static string ExtractJSON(string input)
 	{
 		int firstOpenCurly = input.IndexOf('{');

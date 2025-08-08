@@ -87,13 +87,16 @@ public class Infer
 					response = await model.Provider.InferenceClient.GenerateAsync(
 						prompt: promptString,
 						model: model.ModelString,
-						temperature: prompt.Temperature,
-						topP: prompt.TopP,
-						topK: prompt.TopK,
-						bestOf: prompt.BestOf,
-						maxTokens: prompt.MaxTokens,
-						frequencyPenalty: prompt.FrequencyPenalty,
-						presencePenalty: prompt.PresencePenalty,
+						temperature: model.Temperature ?? prompt.Temperature,
+						topK: model.TopK ?? prompt.TopK,
+						topP: model.TopP ?? prompt.TopP,
+						minP: model.MinP ?? prompt.MinP,
+						bestOf: model.BestOf ?? prompt.BestOf,
+						maxTokenType: model.MaxTokenType,
+						maxTokens: model.MaxTokens ?? prompt.MaxTokens,
+						frequencyPenalty: model.FrequencyPenalty ?? prompt.FrequencyPenalty,
+						presencePenalty: model.PresencePenalty ?? prompt.PresencePenalty,
+						repetitionPenalty: model.RepetitionPenalty ?? prompt.RepetitionPenalty,
 						stopSequences: ToArray(model.StopSequences),
 						guidanceType: guidanceType,
 						guidanceString: guidanceString);
@@ -113,13 +116,15 @@ public class Infer
 					response = await model.Provider.InferenceClient.GenerateAsync(
 						messages: messages,
 						model: model.ModelString,
-						temperature: prompt.Temperature,
-						topP: prompt.TopP,
-						topK: prompt.TopK,
-						bestOf: prompt.BestOf,
-						maxTokens: prompt.MaxTokens,
-						frequencyPenalty: prompt.FrequencyPenalty,
-						presencePenalty: prompt.PresencePenalty,
+						temperature: model.Temperature ?? prompt.Temperature,
+						topK: model.TopK ?? prompt.TopK,
+						topP: model.TopP ?? prompt.TopP,
+						minP: model.MinP ?? prompt.MinP,
+						bestOf: model.BestOf ?? prompt.BestOf,
+						maxTokens: model.MaxTokens ?? prompt.MaxTokens,
+						frequencyPenalty: model.FrequencyPenalty ?? prompt.FrequencyPenalty,
+						presencePenalty: model.PresencePenalty ?? prompt.PresencePenalty,
+						repetitionPenalty: model.RepetitionPenalty ?? prompt.RepetitionPenalty,
 						stopSequences: ToArray(model.StopSequences),
 						guidanceType: guidanceType,
 						guidanceString: guidanceString);
@@ -890,7 +895,7 @@ public class Infer
 
 		if (!model.Provider.SupportsGuidance ?? false)
 		{
-			Util.Log($"GetGuidance: Provider {model.Provider.SupportsGuidance} does not support guidance");
+			Util.Log($"GetGuidance: Provider {model.Provider.Name} does not support guidance");
 			return;
 		}
 
