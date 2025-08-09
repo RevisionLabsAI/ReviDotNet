@@ -26,7 +26,24 @@ public class Infer
 	// ===================
 	//  Inference Calling 
 	// ===================
+	
+	private static object? SelectParam(string? modelString, object? promptObj)
+	{
+		if (modelString is null)
+			return promptObj;
+		
+		if (modelString is "disabled")
+			return promptObj;
 
+		switch (promptObj)
+		{
+			case string: return modelString;
+			case int: return int.Parse(modelString);
+			case float: return float.Parse(modelString);
+			default: throw new Exception($"Unexpected type: {promptObj.GetType()}");
+		}
+	}
+	
 	#region Inference Calling
 	/// <summary>
 	/// Calls the inference process for completing a prompt.
@@ -87,16 +104,16 @@ public class Infer
 					response = await model.Provider.InferenceClient.GenerateAsync(
 						prompt: promptString,
 						model: model.ModelString,
-						temperature: model.Temperature ?? prompt.Temperature,
-						topK: model.TopK ?? prompt.TopK,
-						topP: model.TopP ?? prompt.TopP,
-						minP: model.MinP ?? prompt.MinP,
-						bestOf: model.BestOf ?? prompt.BestOf,
+						temperature: (float?)SelectParam(model.Temperature, prompt.Temperature),
+						topK: (int?)SelectParam(model.TopK, prompt.TopK),
+						topP: (float?)SelectParam(model.TopP, prompt.TopP),
+						minP: (float?)SelectParam(model.MinP, prompt.MinP),
+						bestOf: (int?)SelectParam(model.BestOf, prompt.BestOf),
 						maxTokenType: model.MaxTokenType,
-						maxTokens: model.MaxTokens ?? prompt.MaxTokens,
-						frequencyPenalty: model.FrequencyPenalty ?? prompt.FrequencyPenalty,
-						presencePenalty: model.PresencePenalty ?? prompt.PresencePenalty,
-						repetitionPenalty: model.RepetitionPenalty ?? prompt.RepetitionPenalty,
+						maxTokens: (int?)SelectParam(model.MaxTokens, prompt.MaxTokens),
+						frequencyPenalty: (float?)SelectParam(model.FrequencyPenalty, prompt.FrequencyPenalty),
+						presencePenalty: (float?)SelectParam(model.PresencePenalty, prompt.PresencePenalty),
+						repetitionPenalty: (float?)SelectParam(model.RepetitionPenalty, prompt.RepetitionPenalty),
 						stopSequences: ToArray(model.StopSequences),
 						guidanceType: guidanceType,
 						guidanceString: guidanceString);
@@ -116,15 +133,16 @@ public class Infer
 					response = await model.Provider.InferenceClient.GenerateAsync(
 						messages: messages,
 						model: model.ModelString,
-						temperature: model.Temperature ?? prompt.Temperature,
-						topK: model.TopK ?? prompt.TopK,
-						topP: model.TopP ?? prompt.TopP,
-						minP: model.MinP ?? prompt.MinP,
-						bestOf: model.BestOf ?? prompt.BestOf,
-						maxTokens: model.MaxTokens ?? prompt.MaxTokens,
-						frequencyPenalty: model.FrequencyPenalty ?? prompt.FrequencyPenalty,
-						presencePenalty: model.PresencePenalty ?? prompt.PresencePenalty,
-						repetitionPenalty: model.RepetitionPenalty ?? prompt.RepetitionPenalty,
+						temperature: (float?)SelectParam(model.Temperature, prompt.Temperature),
+						topK: (int?)SelectParam(model.TopK, prompt.TopK),
+						topP: (float?)SelectParam(model.TopP, prompt.TopP),
+						minP: (float?)SelectParam(model.MinP, prompt.MinP),
+						bestOf: (int?)SelectParam(model.BestOf, prompt.BestOf),
+						maxTokenType: model.MaxTokenType,
+						maxTokens: (int?)SelectParam(model.MaxTokens, prompt.MaxTokens),
+						frequencyPenalty: (float?)SelectParam(model.FrequencyPenalty, prompt.FrequencyPenalty),
+						presencePenalty: (float?)SelectParam(model.PresencePenalty, prompt.PresencePenalty),
+						repetitionPenalty: (float?)SelectParam(model.RepetitionPenalty, prompt.RepetitionPenalty),
 						stopSequences: ToArray(model.StopSequences),
 						guidanceType: guidanceType,
 						guidanceString: guidanceString);

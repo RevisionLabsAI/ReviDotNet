@@ -81,10 +81,10 @@ public class ModelProfile
     public int? FewShotExamples { get; set; }
     
     [RConfigProperty("override-settings_best-of")]
-    public int? BestOf { get; set; }
+    public string? BestOf { get; set; }
     
     [RConfigProperty("override-settings_max-tokens")]
-    public int? MaxTokens { get; set; }
+    public string? MaxTokens { get; set; }
     
     [RConfigProperty("override-settings_model-pref")]
     public string? ModelPref { get; set; }
@@ -98,25 +98,25 @@ public class ModelProfile
     
     // Tuning Overrides
     [RConfigProperty("override-tuning_temperature")]
-    public float? Temperature { get; set; }
+    public string? Temperature { get; set; }
     
     [RConfigProperty("override-tuning_top-k")]
-    public int? TopK { get; set; }
+    public string? TopK { get; set; }
     
     [RConfigProperty("override-tuning_top-p")]
-    public float? TopP { get; set; }
+    public string? TopP { get; set; }
     
     [RConfigProperty("override-tuning_min-p")]
-    public float? MinP { get; set; }
+    public string? MinP { get; set; }
     
     [RConfigProperty("override-tuning_presence-penalty")]
-    public float? PresencePenalty { get; set; }
+    public string? PresencePenalty { get; set; }
     
     [RConfigProperty("override-tuning_frequency-penalty")]
-    public float? FrequencyPenalty { get; set; }
+    public string? FrequencyPenalty { get; set; }
     
     [RConfigProperty("override-tuning_repition-penalty")]
-    public float? RepetitionPenalty { get; set; }
+    public string? RepetitionPenalty { get; set; }
     
     
     // Input Options
