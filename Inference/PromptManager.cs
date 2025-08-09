@@ -47,7 +47,7 @@ namespace Revi
         /// If the directory does not exist, it attempts to load prompts from embedded resources. Any errors encountered
         /// during the loading process are logged.
         /// </remarks>
-        public static void Load(Assembly assembly = null)
+        public static void Load(Assembly assembly)
         {
             // Clear existing prompts
             _prompts.Clear();
@@ -111,9 +111,7 @@ namespace Revi
             {
                 if (assembly is null)
                     throw new Exception("Assembly cannot be null.");
-
-                //var assembly = Assembly.GetExecutingAssembly();
-                //Console.WriteLine($"Executing Assembly Location: {assembly.Location}");
+                
                 var resourceNames = assembly.GetManifestResourceNames()
                     .Where(name => name.Contains(".Prompts.") &&
                                    name.EndsWith(".pmt", StringComparison.InvariantCultureIgnoreCase));
