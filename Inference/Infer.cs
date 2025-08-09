@@ -688,6 +688,73 @@ public class Infer
 		return await ToString(promptName, inputs, modelProfile, modelName);
 	}
 	
+	public static async Task<List<string>> ToStringList(
+		string promptName,
+		List<Input>? inputs = null,
+		ModelProfile? modelProfile = null,
+		string? modelName = null,
+		int retryAttempt = 0,
+		int? originalRetryLimit = null)
+	{
+		Prompt prompt = FindPrompt(promptName);
+		try
+		{
+			CompletionResponse? completion = await Completion(
+				prompt,
+				inputs,
+				modelProfile,
+				modelName);
+			
+			if (completion is null)
+				throw new Exception("Infer.ToStringList(): Null completion!");
+			
+			if (string.IsNullOrEmpty(completion.Selected))
+				throw new Exception("Infer.ToStringList(): Null or empty selected string!");
+			
+			List<string> lines = completion.Selected.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+				.Select(line => line.Trim())
+				.ToList();
+			
+			return lines;
+		}
+		catch (Exception e)
+		{
+			// Otherwise, check if we're going to retry
+			if (originalRetryLimit is null)
+				originalRetryLimit = prompt.RetryAttempts;
+		
+			if (retryAttempt < (originalRetryLimit ?? 0))
+			{
+				Util.Log($"Retrying Infer.ToStringList() for prompt '{prompt.Name}'");
+			
+				string promptToRetry = promptName;
+				if (prompt.RetryPrompt is not null)
+					promptToRetry = prompt.RetryPrompt;
+			
+				return await ToStringList(
+					promptToRetry, 
+					inputs, 
+					modelProfile, 
+					modelName, 
+					retryAttempt + 1, 
+					originalRetryLimit);
+			}
+			
+			// If we're here, we completely failed
+			throw;
+		}
+	}
+	
+	public static async Task<List<string>> ToStringList(
+		string promptName,
+		Input? input,
+		ModelProfile? modelProfile = null,
+		string? modelName = null)
+	{
+		List<Input>? inputs = (input is not null) ? (new List<Input>() { input }) : null;
+		return await ToStringList(promptName, inputs, modelProfile, modelName);
+	}
+	
 	public static async Task<bool?> ToBool(
 		string promptName,
 		Input? input = null,
