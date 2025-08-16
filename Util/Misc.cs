@@ -28,6 +28,18 @@ namespace Revi;
 
 public static partial class Util
 {
+	
+	public static void RunAsync(Task task, string identifier = "")
+	{
+		task.ContinueWith(t =>
+		{
+			if (string.IsNullOrWhiteSpace(identifier))
+				Log($"RunAsync() Exception: {t.Exception}");
+			else
+				Log($"{identifier} Exception: {t.Exception}");
+		}, TaskContinuationOptions.OnlyOnFaulted);
+	}
+	
 	public static string GetMacAddress()
 	{
 		var networkInterfaces = NetworkInterface.GetAllNetworkInterfaces();
