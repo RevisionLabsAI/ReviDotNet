@@ -706,13 +706,15 @@ public class Infer
 		return await ToString(promptName, inputs, modelProfile, modelName);
 	}
 	
+	// TODO: Make Infer.cs/ReviDotNet actually support cancellation
 	public static async Task<List<string>> ToStringList(
 		string promptName,
 		List<Input>? inputs = null,
 		ModelProfile? modelProfile = null,
 		string? modelName = null,
 		int retryAttempt = 0,
-		int? originalRetryLimit = null)
+		int? originalRetryLimit = null,
+		CancellationToken? cancellationToken = null)
 	{
 		Prompt prompt = FindPrompt(promptName);
 		try
