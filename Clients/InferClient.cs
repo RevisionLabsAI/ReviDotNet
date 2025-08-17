@@ -494,7 +494,7 @@ public class AsyncInferenceClient : IDisposable
     /// <param name="guidanceString">Additional guidance instructions for customizing the behavior of the AI model during generation.</param>
     /// <param name="cancellationToken">A cancellation token to observe for cancellation requests during execution.</param>
     /// <returns>An async enumerable that yields streaming text chunks as they are generated.</returns>
-    public async IAsyncEnumerable<string> GenerateStreamAsync(
+    public StreamingResult<string> GenerateStreamAsync(
         List<Message> messages,
         string model = "default",
         float? temperature = null,
@@ -544,22 +544,9 @@ public class AsyncInferenceClient : IDisposable
 
         string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
 
-        try
-        {
-            await foreach (var chunk in ExecuteStreamingRequest(endpoint, parameters, cancellationToken))
-            {
-                yield return chunk;
-            }
-        }
-        finally
-        {
-            string errorMessage = $"### ReviDotNet.GenerateStreamAsync() Error Generating Streaming Chat Completion\n" +
-                                  $"# URL\n{_client.BaseAddress + endpoint}\n\n" +
-                                  $"# Payload\n{payloadDebug}\n\n";
-                                  //$"# Exception\n{e.Message}\n\n";
-            Util.Log(errorMessage);
-            await Util.DumpLog(errorMessage, "ic-generate-stream-error");
-        }
+        return CreateStreamingResultWrapper(
+            ExecuteStreamingRequest(endpoint, parameters, cancellationToken),
+            cancellationToken);
     }
     #endregion
     

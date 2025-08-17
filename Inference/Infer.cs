@@ -13,6 +13,7 @@
 
 using System.Collections;
 using System.Data;
+using System.Runtime.CompilerServices;
 using System.Security;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json;
@@ -44,7 +45,7 @@ public class Infer
 		}
 	}
 	
-	#region Inference Calling
+	#region Completion Inference
 	/// <summary>
 	/// Calls the inference process for completing a prompt.
 	/// </summary>
@@ -264,6 +265,196 @@ public class Infer
 		
 		// Return the resulting output
 		return result;
+	}
+	#endregion
+	
+	#region Streaming Inference
+	/// <summary>
+	/// Calls the streaming inference process for completing a prompt.
+	/// </summary>
+	/// <param name="promptObject">The prompt object to use for inference.</param>
+	/// <param name="prompt">The prompt information.</param>
+	/// <param name="model">The model profile to use for inference.</param>
+	/// <param name="outputType">The optional output object type.</param>
+	/// <param name="cancellationToken">Cancellation token for the operation.</param>
+	/// <returns>An async enumerable that yields text chunks as they are generated.</returns>
+	private static async IAsyncEnumerable<string> CallStreamingInference(
+		object promptObject,
+		Prompt prompt,
+		ModelProfile model,
+		Type? outputType = null,
+		[EnumeratorCancellation] CancellationToken token = default)
+	{
+		// Debug
+		Util.Log($"CallStreamingInference(prompt: '{prompt.Name}', model: '{model.Name}');");
+		
+		// Declarations
+		int totalLength;
+		StreamingResult<string> streamResult;
+		
+		// Sanity checks
+		if (model.Provider.InferenceClient is null)
+			throw new Exception("InferenceClient is null!");
+	
+		// Figure out our guidance strategy here
+		GetGuidance(
+			prompt, 
+			model,
+			outputType, 
+			out GuidanceType? guidanceType, 
+			out string? guidanceString);
+
+		try
+		{
+			switch (promptObject)
+			{
+				case string promptString:
+				{
+					// Prompt specific checks
+					totalLength = promptString.Length;
+					if (Util.EstTokenCountFromCharCount(totalLength) > model.TokenLimit)
+						throw new Exception("Too many tokens!");
+
+					// Streaming prompt completion
+					streamResult = model.Provider.InferenceClient.GenerateStreamAsync(
+						prompt: promptString,
+						model: model.ModelString,
+						temperature: (float?)SelectParam(model.Temperature, prompt.Temperature),
+						topK: (int?)SelectParam(model.TopK, prompt.TopK),
+						topP: (float?)SelectParam(model.TopP, prompt.TopP),
+						minP: (float?)SelectParam(model.MinP, prompt.MinP),
+						bestOf: (int?)SelectParam(model.BestOf, prompt.BestOf),
+						maxTokenType: model.MaxTokenType,
+						maxTokens: (int?)SelectParam(model.MaxTokens, prompt.MaxTokens),
+						frequencyPenalty: (float?)SelectParam(model.FrequencyPenalty, prompt.FrequencyPenalty),
+						presencePenalty: (float?)SelectParam(model.PresencePenalty, prompt.PresencePenalty),
+						repetitionPenalty: (float?)SelectParam(model.RepetitionPenalty, prompt.RepetitionPenalty),
+						stopSequences: ToArray(model.StopSequences),
+						guidanceType: guidanceType,
+						guidanceString: guidanceString,
+						cancellationToken: token);
+					break;
+				}
+
+				case List<Message> messages:
+				{
+					// Chat specific checks
+					totalLength = messages.Sum(msg => msg.Role.Length + msg.Content.Length);
+					if (Util.EstTokenCountFromCharCount(totalLength) > model.TokenLimit)
+						throw new Exception("Too many tokens!");
+
+					// Streaming chat completion
+					streamResult = model.Provider.InferenceClient.GenerateStreamAsync(
+						messages: messages,
+						model: model.ModelString,
+						temperature: (float?)SelectParam(model.Temperature, prompt.Temperature),
+						topK: (int?)SelectParam(model.TopK, prompt.TopK),
+						topP: (float?)SelectParam(model.TopP, prompt.TopP),
+						minP: (float?)SelectParam(model.MinP, prompt.MinP),
+						bestOf: (int?)SelectParam(model.BestOf, prompt.BestOf),
+						maxTokenType: model.MaxTokenType,
+						maxTokens: (int?)SelectParam(model.MaxTokens, prompt.MaxTokens),
+						frequencyPenalty: (float?)SelectParam(model.FrequencyPenalty, prompt.FrequencyPenalty),
+						presencePenalty: (float?)SelectParam(model.PresencePenalty, prompt.PresencePenalty),
+						repetitionPenalty: (float?)SelectParam(model.RepetitionPenalty, prompt.RepetitionPenalty),
+						stopSequences: ToArray(model.StopSequences),
+						guidanceType: guidanceType,
+						guidanceString: guidanceString,
+						cancellationToken: token);
+					break;
+				}
+
+				default:
+					throw new Exception($"Unexpected prompt object type: {promptObject.GetType()}");
+			}
+		}
+		catch (Exception e)
+		{
+			Util.Log($"CallStreamingInference Exception: \"{e.Message}\"");
+			throw;
+		}
+		
+		await foreach (var chunk in streamResult.Stream)
+		{
+			yield return chunk;
+		}
+		var metadata = await streamResult.Completion;
+		if (!metadata.IsSuccess)
+		{
+			Console.WriteLine($"Streaming failed: {metadata.ErrorMessage}");
+		}
+	}
+
+	/// <summary>
+	/// Generates streaming completion response based on the provided prompt, inputs, model profile, model name, and output object.
+	/// </summary>
+	/// <param name="prompt">The prompt to generate completion.</param>
+	/// <param name="inputs">The list of inputs to be considered along with prompt.</param>
+	/// <param name="modelProfile">The model profile to be used for completion. Can be null.</param>
+	/// <param name="modelName">The name of the model. Can be null.</param>
+	/// <param name="outputType">The type of the output object. Can be null.</param>
+	/// <param name="cancellationToken">Cancellation token for the operation.</param>
+	/// <returns>An async enumerable that yields streaming text chunks as they are generated.</returns>
+	public static async IAsyncEnumerable<string> CompletionStream(
+		Prompt prompt,
+		List<Input>? inputs = null,
+		ModelProfile? modelProfile = null,
+		string? modelName = null,
+		Type? outputType = null,
+		[EnumeratorCancellation] CancellationToken cancellationToken = default)
+	{
+		// Find the model
+		ModelProfile foundModel = FindModel(prompt, modelProfile, modelName);
+
+		// Check the inputs for potential prompt injection
+		if (await FilterCheck(prompt, inputs))
+			throw new SecurityException("FilterCheck failed!");
+		
+		// Find the completion method
+		if (!Enum.TryParse(prompt.CompletionType, out CompletionType type))
+		{
+			throw new Exception($"Invalid completion type: '{prompt.CompletionType}'");
+		}
+		
+		IAsyncEnumerable<string> streamResult;
+		
+		// Build the prompt and call streaming inference
+		switch (type)
+		{
+			case CompletionType.ChatOnly:
+				var messages = CompletionChat.BuildMessages(prompt, foundModel, inputs);
+				streamResult = CallStreamingInference(messages, prompt, foundModel, outputType, cancellationToken);
+				break;
+    
+			case CompletionType.PromptOnly:
+				var promptString = CompletionPrompt.BuildString(prompt, foundModel, inputs);
+				streamResult = CallStreamingInference(promptString, prompt, foundModel, outputType, cancellationToken);
+				break;
+
+			case CompletionType.PromptChatOne:
+			case CompletionType.PromptChatMulti:
+			{
+				if (foundModel.Provider.SupportsCompletion ?? false)
+				{
+					var promptStr = CompletionPrompt.BuildString(prompt, foundModel, inputs);
+					streamResult = CallStreamingInference(promptStr, prompt, foundModel, outputType, cancellationToken);
+				}
+				else
+				{
+					var msgs = CompletionChat.BuildMessages(prompt, foundModel, inputs);
+					streamResult = CallStreamingInference(msgs, prompt, foundModel, outputType, cancellationToken);
+				}
+				break;
+			}
+
+			default:
+				throw new Exception($"Unexpected completion type: '{prompt.CompletionType}'");
+		}
+		
+		await foreach (var chunk in streamResult)
+		{
+			yield return chunk;
+		}
 	}
 	#endregion
 
