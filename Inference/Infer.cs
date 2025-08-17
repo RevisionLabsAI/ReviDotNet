@@ -28,23 +28,6 @@ public class Infer
 	//  Inference Calling 
 	// ===================
 	
-	private static object? SelectParam(string? modelString, object? promptObj)
-	{
-		if (modelString is null)
-			return promptObj;
-		
-		if (modelString is "disabled")
-			return promptObj;
-
-		switch (promptObj)
-		{
-			case string: return modelString;
-			case int: return int.Parse(modelString);
-			case float: return float.Parse(modelString);
-			default: throw new Exception($"Unexpected type: {promptObj.GetType()}");
-		}
-	}
-	
 	#region Completion Inference
 	/// <summary>
 	/// Calls the inference process for completing a prompt.
@@ -1045,7 +1028,24 @@ public class Infer
 		return RlonValidation.CompareSchema(output, schema);
 	}*/
 	
-	public static string[]? ToArray(string? input)
+	private static object? SelectParam(string? modelString, object? promptObj)
+	{
+		if (modelString is null)
+			return promptObj;
+		
+		if (modelString is "disabled")
+			return promptObj;
+
+		switch (promptObj)
+		{
+			case string: return modelString;
+			case int: return int.Parse(modelString);
+			case float: return float.Parse(modelString);
+			default: throw new Exception($"Unexpected type: {promptObj.GetType()}");
+		}
+	}
+	
+	private static string[]? ToArray(string? input)
 	{
 		if (string.IsNullOrWhiteSpace(input)) return null;
 		return input.Split(' ');
