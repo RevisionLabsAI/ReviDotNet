@@ -20,6 +20,9 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Runtime.CompilerServices; // Add this for EnumeratorCancellation
+using System.IO; // Add this for StreamReader
+using System.Linq; // Add this for LINQ operations
 using Newtonsoft.Json;
 
 /// <summary>
@@ -385,73 +388,483 @@ public class AsyncInferenceClient : IDisposable
     #endregion
 
 
-    #region Streaming Function
-        /*
-    public async IAsyncEnumerable<IList<string>> Stream(
-        string systemPrompt,
-        string userPrompt,
-        string model,
-        Dictionary<string, object>? paramaters = null,
+    // ===================
+    //  Streaming Support
+    // ===================
+    
+    #region Streaming Support
+    
+    /// <summary>
+    /// Generates a streaming text completion based on the provided prompt and optional parameters using the specified AI model.
+    /// </summary>
+    /// <param name="prompt">The input text that serves as the prompt for the completion generation.</param>
+    /// <param name="model">The model to be used for generating the completion. If set to "default", the default model configured for the client is used.</param>
+    /// <param name="temperature">Controls the randomness of the output. Higher values generate more creative responses, while lower values yield more focused responses. Optional.</param>
+    /// <param name="topP">Limits the sampling to a subset of the most likely tokens where the sum of their probabilities is greater than the specified threshold. Optional.</param>
+    /// <param name="topK">Limits the sampling to the top K most probable tokens. Optional.</param>
+    /// <param name="bestOf">Generates multiple completions server-side and returns the one with the highest log-probability per token. Optional.</param>
+    /// <param name="maxTokens">Specifies the maximum number of tokens to generate in the completion. Optional.</param>
+    /// <param name="frequencyPenalty">Applies a penalty to discourage repeated phrases or tokens based on their frequency in the completion. Optional.</param>
+    /// <param name="presencePenalty">Applies a penalty to encourage the inclusion of new tokens not already in the text. Optional.</param>
+    /// <param name="stopSequences">An array of strings where the completion generation stops if any of the specified sequences is encountered. Optional.</param>
+    /// <param name="guidanceType">Specifies the type of guidance to apply during completion generation, if applicable. Default is Disabled.</param>
+    /// <param name="guidanceString">Specifies a guidance configuration string, if applicable, for AI-generated results. Optional.</param>
+    /// <param name="cancellationToken">Token to observe cancellation requests, allowing the operation to be aborted. Default is none.</param>
+    /// <returns>Returns an async enumerable that yields streaming text chunks as they are generated.</returns>
+    /// <exception cref="Exception">Throws an exception if the client does not support prompt completion.</exception>
+    public StreamingResult<string> GenerateStreamAsync(
+        string prompt,
+        string model = "default",
+        float? temperature = null,
+        int? topK = null,
+        float? topP = null,
+        float? minP = null,
+        int? bestOf = null,
+        MaxTokenType? maxTokenType = null,
+        int? maxTokens = null,
+        float? frequencyPenalty = null,
+        float? presencePenalty = null,
+        float? repetitionPenalty = null,
+        string[]? stopSequences = null,
+        GuidanceType? guidanceType = GuidanceType.Disabled,
+        string? guidanceString = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var payload = FormatRequestData(systemPrompt, userPrompt, model:model, _apiKey, _useApiKey, false, @params, extraBody);
-        
-        var response = await client.PostAsJsonAsync("/v1/completions", payload, cancellationToken: cancellationToken);
-        var content = await response.Content.ReadAsStreamAsync(cancellationToken); 
-        // TODO: code below not functional currently
+        if (_supportsCompletion is false)
+            throw new Exception("Attempting prompt completion on provider that does not support it");
 
-        var buffer = new byte[32768];
-        var filled = 0;
-
-        for(;;)
+        model = model == "default" ? _defaultModel : model;
+        var parameters = new Dictionary<string, object>
         {
-            var bytesRead = await content.ReadAsync(buffer.AsMemory(filled), cancellationToken);
-            if (bytesRead == 0)
-            {
-                if (filled > 0)
-                {
-                    throw new VllmChatClient("Unexpected end of stream");
-                }
+            { "model", model },
+            { "prompt", prompt },
+            { "stream", true }
+        };
 
-                break;
+        AddOptionalParameters(
+            parameters,
+            temperature,
+            topK,
+            topP,
+            minP,
+            bestOf,
+            maxTokenType,
+            maxTokens,
+            frequencyPenalty,
+            presencePenalty,
+            repetitionPenalty,
+            stopSequences,
+            guidanceType,
+            guidanceString);
+        
+        // Use appropriate endpoint based on protocol
+        string endpoint;
+        if (_protocol == Protocol.Gemini)
+            endpoint = $"v1beta/models/{model}:streamGenerateContent";
+        else
+            endpoint = "v1/completions";
+
+        string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
+        
+        return CreateStreamingResultWrapper(
+            ExecuteStreamingRequest(endpoint, parameters, cancellationToken),
+            cancellationToken);
+    }
+    
+    /// <summary>
+    /// Generates a streaming chat completion response asynchronously based on the provided input messages and optional configuration parameters.
+    /// </summary>
+    /// <param name="messages">A list of messages constituting the conversation input for the AI model.</param>
+    /// <param name="model">The identifier of the AI model to use. If not specified, the default model is used.</param>
+    /// <param name="temperature">The sampling temperature parameter that affects randomness in the response. Higher values yield more random outputs.</param>
+    /// <param name="topP">The top-p sampling parameter that limits the response to the smallest set of tokens with a cumulative probability ≥ topP.</param>
+    /// <param name="topK">The top-k sampling parameter that limits the response to the k most probable next tokens.</param>
+    /// <param name="bestOf">The number of best completions to consider. The highest-ranking result is returned.</param>
+    /// <param name="maxTokens">The maximum number of tokens allowed in the response.</param>
+    /// <param name="frequencyPenalty">The penalty applied to reduce the likelihood of token repetition.</param>
+    /// <param name="presencePenalty">The penalty applied to encourage the inclusion of new tokens in the response.</param>
+    /// <param name="stopSequences">An array of strings that, if generated, will halt further output generation.</param>
+    /// <param name="guidanceType">The type of guidance to apply when generating responses. Default is <see cref="GuidanceType.Disabled"/>.</param>
+    /// <param name="guidanceString">Additional guidance instructions for customizing the behavior of the AI model during generation.</param>
+    /// <param name="cancellationToken">A cancellation token to observe for cancellation requests during execution.</param>
+    /// <returns>An async enumerable that yields streaming text chunks as they are generated.</returns>
+    public async IAsyncEnumerable<string> GenerateStreamAsync(
+        List<Message> messages,
+        string model = "default",
+        float? temperature = null,
+        int? topK = null,
+        float? topP = null,
+        float? minP = null,
+        int? bestOf = null,
+        MaxTokenType? maxTokenType = null,
+        int? maxTokens = null,
+        float? frequencyPenalty = null,
+        float? presencePenalty = null,
+        float? repetitionPenalty = null,
+        string[]? stopSequences = null,
+        GuidanceType? guidanceType = GuidanceType.Disabled,
+        string? guidanceString = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        model = model == "default" ? _defaultModel : model;
+        var parameters = new Dictionary<string, object>
+        {
+            { "model", model },
+            { "messages", messages },
+            { "stream", true }
+        };
+
+        AddOptionalParameters(
+            parameters,
+            temperature,
+            topK,
+            topP,
+            minP,
+            bestOf,
+            maxTokenType,
+            maxTokens,
+            frequencyPenalty,
+            presencePenalty,
+            repetitionPenalty,
+            stopSequences,
+            guidanceType,
+            guidanceString);
+
+        string endpoint;
+        if (_protocol == Protocol.Gemini)
+            endpoint = $"v1beta/models/{model}:streamGenerateContent";
+        else
+            endpoint = "v1/chat/completions";
+
+        string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
+
+        try
+        {
+            await foreach (var chunk in ExecuteStreamingRequest(endpoint, parameters, cancellationToken))
+            {
+                yield return chunk;
             }
+        }
+        finally
+        {
+            string errorMessage = $"### ReviDotNet.GenerateStreamAsync() Error Generating Streaming Chat Completion\n" +
+                                  $"# URL\n{_client.BaseAddress + endpoint}\n\n" +
+                                  $"# Payload\n{payloadDebug}\n\n";
+                                  //$"# Exception\n{e.Message}\n\n";
+            Util.Log(errorMessage);
+            await Util.DumpLog(errorMessage, "ic-generate-stream-error");
+        }
+    }
+    
+    /// <summary>
+    /// Creates a StreamingResult wrapper that tracks metadata without breaking streaming.
+    /// </summary>
+    private StreamingResult<string> CreateStreamingResultWrapper(
+        IAsyncEnumerable<string> sourceStream,
+        CancellationToken cancellationToken)
+    {
+        var startTime = DateTime.UtcNow;
+        var metadataTracker = new StreamingMetadataTracker(startTime);
+    
+        var trackedStream = TrackStreamingMetadata(sourceStream, metadataTracker, cancellationToken);
+    
+        return new StreamingResult<string>
+        {
+            Stream = trackedStream,
+            Completion = metadataTracker.CompletionTask
+        };
+    }
 
-            filled += bytesRead;
-
-            for(;;)
+    /// <summary>
+    /// Tracks streaming metadata without buffering the stream.
+    /// </summary>
+    private async IAsyncEnumerable<string> TrackStreamingMetadata(
+        IAsyncEnumerable<string> sourceStream,
+        StreamingMetadataTracker tracker,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var enumerator = sourceStream.GetAsyncEnumerator(cancellationToken);
+        try
+        {
+            while (await MoveNextSafely(enumerator, tracker))
             {
-                var zero = Array.FindIndex(buffer, 0, filled, b => b == 0);
-                if (zero < 0)
+                yield return enumerator.Current;
+            }
+            tracker.CompleteSuccessfully();
+        }
+        finally
+        {
+            await enumerator.DisposeAsync();
+        }
+    }
+
+    /// <summary>
+    /// Safely moves to the next item and handles errors.
+    /// </summary>
+    private async Task<bool> MoveNextSafely(
+        IAsyncEnumerator<string> enumerator, 
+        StreamingMetadataTracker tracker)
+    {
+        try
+        {
+            var hasNext = await enumerator.MoveNextAsync();
+            if (hasNext)
+            {
+                tracker.IncrementChunkCount();
+            }
+            return hasNext;
+        }
+        catch (OperationCanceledException ex) when (ex.CancellationToken.IsCancellationRequested)
+        {
+            tracker.CompleteCanceled(ex);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            tracker.CompleteWithError(ex);
+            throw;
+        }
+    }
+
+
+
+    /// <summary>
+    /// Executes a streaming request to the AI inference service with the specified payload and cancellation token.
+    /// </summary>
+    /// <param name="endpoint">The endpoint of the AI inference service.</param>
+    /// <param name="payload">The payload to be sent to the AI inference service.</param>
+    /// <param name="cancellationToken">A cancellation token that can be used to cancel the request.</param>
+    /// <returns>An async enumerable that yields streaming text chunks.</returns>
+    private async IAsyncEnumerable<string> ExecuteStreamingRequest(
+        string endpoint,
+        Dictionary<string, object> payload,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await _clientSemaphore.WaitAsync(cancellationToken);
+        try
+        {
+            await EnsureRateLimit();
+            
+            // Handle Gemini-specific payload transformation
+            if (_protocol == Protocol.Gemini)
+            {
+                payload = TransformToGeminiPayload(payload);
+                // Add API key to endpoint for Gemini
+                if (_useApiKey && !endpoint.Contains("key="))
                 {
-                    if (filled == buffer.Length)
-                    {
-                        Array.Resize(ref buffer, buffer.Length * 2);
-                    }
-
-                    break;
+                    endpoint += (endpoint.Contains("?") ? "&" : "?") + $"key={_apiKey}";
                 }
+            }
+            
+            var content = new StringContent(JsonConvert.SerializeObject(payload), System.Text.Encoding.UTF8,
+                "application/json");
+                
+            await foreach (var chunk in MakeStreamingRequestAsync(endpoint, content, cancellationToken))
+            {
+                yield return chunk;
+            }
+        }
+        finally
+        {
+            _clientSemaphore.Release();
+        }
+    }
+    
+    /// <summary>
+    /// Sends a streaming HTTP POST request to the specified API endpoint and processes the Server-Sent Events (SSE) response.
+    /// </summary>
+    /// <param name="endpoint">The API endpoint to which the request is sent.</param>
+    /// <param name="content">The HTTP request content to be sent in the POST request.</param>
+    /// <param name="cancellationToken">A token that can be used to cancel the operation.</param>
+    /// <returns>An async enumerable that yields text chunks from the streaming response.</returns>
+    private async IAsyncEnumerable<string> MakeStreamingRequestAsync(
+        string endpoint,
+        StringContent content,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        HttpResponseMessage? response = null;
+        
+        try
+        {
+            response = await EstablishStreamingConnection(endpoint, content, cancellationToken);
+            
+            await foreach (var chunk in ProcessStreamingResponse(response, cancellationToken))
+            {
+                yield return chunk;
+            }
+        }
+        finally
+        {
+            response?.Dispose();
+        }
+    }
 
-                var jsonDoc = JsonDocument.Parse(buffer.AsMemory(0, zero));
-                var textItem = jsonDoc.RootElement.GetProperty("text");
-                if (textItem.ValueKind != JsonValueKind.Array)
+    /// <summary>
+    /// Establishes a streaming connection with retry logic.
+    /// </summary>
+    private async Task<HttpResponseMessage> EstablishStreamingConnection(
+        string endpoint,
+        StringContent content,
+        CancellationToken cancellationToken)
+    {
+        int retryAttempt = 0;
+        HttpResponseMessage? response = null;
+
+        while (retryAttempt <= _retryAttemptLimit)
+        {
+            try
+            {
+                response?.Dispose(); // Dispose previous attempt if any
+                
+                response = await _client.SendAsync(
+                    new HttpRequestMessage(HttpMethod.Post, endpoint) { Content = content },
+                    HttpCompletionOption.ResponseHeadersRead,
+                    cancellationToken);
+
+                if (response.IsSuccessStatusCode)
+                    return response;
+                
+                // Handle non-success status codes
+                string responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                
+                if (retryAttempt >= _retryAttemptLimit)
                 {
-                    throw new VllmChatClient("Invalid server response");
+                    string errorMessage = $"Streaming API request failed after {retryAttempt} retries: \n" +
+                                         $" - Reason: {response.ReasonPhrase} ({(int)response.StatusCode})\n" +
+                                         $" - Message: '{responseContent}'\n";
+                    
+                    Util.Log(errorMessage);
+                    await Util.DumpLog(errorMessage, "ic-streaming-api-failure");
+                    throw new Exception(errorMessage);
                 }
+                
+                // Calculate delay for retry
+                double delaySeconds = _retryInitialDelaySeconds * Math.Pow(2, retryAttempt);
+                await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
+                retryAttempt++;
+            }
+            catch (Exception ex) when (retryAttempt < _retryAttemptLimit)
+            {
+                response?.Dispose();
+                
+                double delaySeconds = _retryInitialDelaySeconds * Math.Pow(2, retryAttempt);
+                await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
+                retryAttempt++;
+                
+                if (retryAttempt > _retryAttemptLimit)
+                    throw;
+            }
+        }
 
-                var texts = textItem.EnumerateArray().Select(v => v.GetString() ?? "N/A").ToList();
-                yield return texts;
+        response?.Dispose();
+        throw new Exception("Failed to establish streaming connection after all retries");
+    }
 
-                var consumed = zero + 1;
-                if (filled > consumed)
+    /// <summary>
+    /// Processes the streaming response and yields individual chunks.
+    /// </summary>
+    private async IAsyncEnumerable<string> ProcessStreamingResponse(
+        HttpResponseMessage response,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream);
+        
+        string? line;
+        while ((line = await reader.ReadLineAsync(cancellationToken)) != null)
+        {
+            if (cancellationToken.IsCancellationRequested)
+                yield break;
+
+            // Handle Server-Sent Events format
+            if (line.StartsWith("data: "))
+            {
+                var chunk = ProcessStreamingChunk(line);
+                if (!string.IsNullOrEmpty(chunk))
                 {
-                    buffer.AsSpan(consumed).CopyTo(buffer);
+                    yield return chunk;
                 }
-
-                filled -= consumed;
             }
         }
     }
-    */
+
+    /// <summary>
+    /// Processes a single streaming chunk and extracts the text content.
+    /// </summary>
+    /// <param name="data">The raw JSON data from the streaming response.</param>
+    /// <returns>The extracted text content from the chunk.</returns>
+    private string ProcessStreamingChunk(string data)
+    {
+        if (string.IsNullOrWhiteSpace(data))
+            return string.Empty;
+
+        try
+        {
+            var jsonData = JsonConvert.DeserializeObject<Dictionary<string, JsonElement>>(data);
+            if (jsonData == null)
+                return string.Empty;
+
+            // Handle Gemini streaming response format
+            if (_protocol == Protocol.Gemini)
+            {
+                if (jsonData.TryGetValue("candidates", out var candidates) && 
+                    candidates.ValueKind == JsonValueKind.Array && 
+                    candidates.GetArrayLength() > 0)
+                {
+                    var firstCandidate = candidates[0];
+                    if (firstCandidate.TryGetProperty("content", out var content) &&
+                        content.TryGetProperty("parts", out var parts) &&
+                        parts.ValueKind == JsonValueKind.Array && 
+                        parts.GetArrayLength() > 0)
+                    {
+                        var firstPart = parts[0];
+                        if (firstPart.TryGetProperty("text", out var textElement))
+                        {
+                            return textElement.GetString() ?? string.Empty;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                // Standard OpenAI/vLLM streaming format
+                if (jsonData.TryGetValue("choices", out var choices) && 
+                    choices.ValueKind == JsonValueKind.Array && 
+                    choices.GetArrayLength() > 0)
+                {
+                    var firstChoice = choices[0];
+                    
+                    // Handle completion streaming (prompt-based)
+                    if (firstChoice.TryGetProperty("text", out var textElement))
+                    {
+                        return textElement.GetString() ?? string.Empty;
+                    }
+                    
+                    // Handle chat completion streaming
+                    if (firstChoice.TryGetProperty("delta", out var delta))
+                    {
+                        if (delta.TryGetProperty("content", out var contentElement))
+                        {
+                            return contentElement.GetString() ?? string.Empty;
+                        }
+                        
+                        // Handle message role changes
+                        if (delta.TryGetProperty("role", out var roleElement))
+                        {
+                            // Role changes don't contain content to yield
+                            return string.Empty;
+                        }
+                    }
+                }
+            }
+        }
+        catch (Newtonsoft.Json.JsonException ex)
+        {
+            Util.Log($"Warning: Failed to parse streaming JSON chunk: {ex.Message}");
+        }
+
+        return string.Empty;
+    }
     #endregion
     
     
