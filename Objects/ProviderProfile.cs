@@ -32,7 +32,7 @@ public class ProviderProfile
     [RConfigProperty("general_enabled")]
     public bool? Enabled { get; set; }
     
-    public AsyncInferenceClient? InferenceClient;
+    public InferClient? InferenceClient;
     
     [RConfigProperty("general_protocol")]
     public Protocol? Protocol { get; set; }
@@ -122,7 +122,7 @@ public class ProviderProfile
         }
         
         //Util.Log($"API Key: {APIKey}");
-        InferenceClient = new AsyncInferenceClient(
+        InferenceClient = new InferClient(
             apiUrl: APIURL,
             apiKey: APIKey ?? "",
             protocol: Protocol ?? Revi.Protocol.vLLM,
