@@ -388,12 +388,11 @@ public class AsyncInferenceClient : IDisposable
     #endregion
 
 
-    // ===================
-    //  Streaming Support
-    // ===================
+    // ==================
+    //  Prompt Streaming
+    // ==================
     
-    #region Streaming Support
-    
+    #region Prompt Streaming
     /// <summary>
     /// Generates a streaming text completion based on the provided prompt and optional parameters using the specified AI model.
     /// </summary>
@@ -470,7 +469,14 @@ public class AsyncInferenceClient : IDisposable
             ExecuteStreamingRequest(endpoint, parameters, cancellationToken),
             cancellationToken);
     }
+    #endregion
     
+    
+    // ================
+    //  Chat Streaming
+    // ================
+    
+    #region Chat Streaming
     /// <summary>
     /// Generates a streaming chat completion response asynchronously based on the provided input messages and optional configuration parameters.
     /// </summary>
@@ -555,7 +561,14 @@ public class AsyncInferenceClient : IDisposable
             await Util.DumpLog(errorMessage, "ic-generate-stream-error");
         }
     }
+    #endregion
     
+    
+    // ===================
+    //  Stream Requesting
+    // ===================
+    
+    #region Streaming Requesting
     /// <summary>
     /// Creates a StreamingResult wrapper that tracks metadata without breaking streaming.
     /// </summary>
