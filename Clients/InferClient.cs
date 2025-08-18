@@ -98,7 +98,6 @@ public class InferClient : IDisposable
         
         // Create shared resources
         _clientSemaphore = new SemaphoreSlim(simultaneousRequests);
-        _rateLimiter = new RateLimiter(delayBetweenRequestsMs);
 
         // HTTP Client Setup
         apiUrl = apiUrl.TrimEnd('/') + "/";
@@ -127,6 +126,7 @@ public class InferClient : IDisposable
         _httpClient.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
         
         // Initialize components with shared dependencies
+        _rateLimiter = new RateLimiter(delayBetweenRequestsMs);
         _payloadTransformer = new PayloadTransformer(_config);
         
         _inferenceHttpClient = new InferenceHttpClient(
@@ -157,11 +157,11 @@ public class InferClient : IDisposable
     /// </summary>
     public void Dispose()
     {
+        _httpClient?.Dispose();
         _inferenceHttpClient?.Dispose();
         _streamingProcessor?.Dispose();
         _clientSemaphore?.Dispose();
         _rateLimiter?.Dispose();
-
     }
     #endregion
 
@@ -453,10 +453,17 @@ public class InferClient : IDisposable
         string? guidanceString = null,
         CancellationToken cancellationToken = default)
     {
+        Util.Log("### InferClient.GenerateStreamAsync() - Prompt Streaming - Starting");
+        
         if (_config.SupportsCompletion is false)
+        {
+            Util.Log("### InferClient.GenerateStreamAsync() - Error: Provider does not support prompt completion");
             throw new Exception("Attempting prompt completion on provider that does not support it");
+        }
 
         model = model == "default" ? _config.DefaultModel : model;
+        Util.Log($"### InferClient.GenerateStreamAsync() - Using model: {model}");
+        
         var parameters = new Dictionary<string, object>
         {
             { "model", model },
@@ -483,7 +490,7 @@ public class InferClient : IDisposable
         // Use appropriate endpoint based on protocol
         string endpoint;
         if (_config.Protocol == Protocol.Gemini)
-            endpoint = $"v1beta/models/{model}:streamGenerateContent";
+            endpoint = $"v1beta/models/{model}:streamGenerateContent?alt=sse";
         else
             endpoint = "v1/completions";
 
@@ -536,7 +543,12 @@ public class InferClient : IDisposable
         string? guidanceString = null,
         CancellationToken cancellationToken = default)
     {
+        Util.Log("### InferClient.GenerateStreamAsync() - Chat Streaming - Starting");
+        
         model = model == "default" ? _config.DefaultModel : model;
+        Util.Log($"### InferClient.GenerateStreamAsync() - Using model: {model}");
+        Util.Log($"### InferClient.GenerateStreamAsync() - Messages count: {messages.Count}");
+        
         var parameters = new Dictionary<string, object>
         {
             { "model", model },
@@ -562,15 +574,32 @@ public class InferClient : IDisposable
 
         string endpoint;
         if (_config.Protocol == Protocol.Gemini)
-            endpoint = $"v1beta/models/{model}:streamGenerateContent";
+            endpoint = $"v1beta/models/{model}:streamGenerateContent?alt=sse";
         else
             endpoint = "v1/chat/completions";
 
+        Util.Log($"### InferClient.GenerateStreamAsync() - Endpoint: {endpoint}");
         string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
+        Util.Log($"### InferClient.GenerateStreamAsync() - Payload: {payloadDebug}");
 
-        return _streamingProcessor.CreateStreamingResultWrapper(
-            _streamingProcessor.ExecuteStreamingRequest(endpoint, parameters, cancellationToken),
-            cancellationToken);
+        try
+        {
+            Util.Log("### InferClient.GenerateStreamAsync() - Calling _streamingProcessor.ExecuteStreamingRequest");
+            var streamingEnumerable = _streamingProcessor.ExecuteStreamingRequest(endpoint, parameters, cancellationToken);
+            
+            Util.Log("### InferClient.GenerateStreamAsync() - Calling _streamingProcessor.CreateStreamingResultWrapper");
+            var result = _streamingProcessor.CreateStreamingResultWrapper(streamingEnumerable, cancellationToken);
+            
+            Util.Log("### InferClient.GenerateStreamAsync() - Returning StreamingResult");
+            return result;
+        }
+        catch (Exception ex)
+        {
+            string errorMessage = $"### InferClient.GenerateStreamAsync() - Exception in chat streaming: {ex.Message}";
+            Util.Log(errorMessage);
+            Util.Log($"### InferClient.GenerateStreamAsync() - Exception stack trace: {ex.StackTrace}");
+            throw;
+        }
     }
     #endregion
 }

@@ -15,6 +15,7 @@ using System.Collections;
 using System.Data;
 using System.Runtime.CompilerServices;
 using System.Security;
+using System.Text;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
@@ -357,16 +358,27 @@ public class Infer
 			throw;
 		}
 		
-		await foreach (var chunk in streamResult.Stream)
-		{
-			yield return chunk;
-		}
-		var metadata = await streamResult.Completion;
-		if (!metadata.IsSuccess)
-		{
-			Console.WriteLine($"Streaming failed: {metadata.ErrorMessage}");
-		}
-	}
+    bool hasYieldedAnyChunks = false;
+    
+    await foreach (var chunk in streamResult.Stream)
+    {
+        hasYieldedAnyChunks = true;
+        yield return chunk;
+    }
+    
+    var metadata = await streamResult.Completion;
+    if (!metadata.IsSuccess)
+    {
+        string errorMsg = $"Streaming failed: {metadata.ErrorMessage}";
+        Util.Log(errorMsg);
+        
+        // If we haven't yielded anything yet, this is likely a complete failure
+        if (!hasYieldedAnyChunks)
+        {
+            throw new Exception($"Streaming inference failed: {metadata.ErrorMessage}");
+        }
+    }
+}
 
 	/// <summary>
 	/// Generates streaming completion response based on the provided prompt, inputs, model profile, model name, and output object.
@@ -898,7 +910,6 @@ public class Infer
 		return await ToString(promptName, inputs, modelProfile, modelName, token);
 	}
 	
-	// TODO: Make Infer.cs/ReviDotNet actually support cancellation
 	public static async Task<List<string>> ToStringList(
 		string promptName,
 		List<Input>? inputs = null,
@@ -973,6 +984,119 @@ public class Infer
 			modelName, 
 			token: token);
 	}
+
+	/// <summary>
+	/// Generates a streaming list of strings from completion with an evaluator function that can stop the stream early.
+	/// </summary>
+	/// <param name="promptName">The prompt to complete.</param>
+	/// <param name="inputs">The list of inputs to provide for completion.</param>
+	/// <param name="modelProfile">The model profile to use for completion.</param>
+	/// <param name="modelName">The name of the model to use for completion.</param>
+	/// <param name="maxLines">Optional maximum number of lines to generate before stopping the stream.</param>
+	/// <param name="evaluator">Function called after each chunk that returns true to stop the stream.</param>
+	/// <param name="token">Cancellation token for the operation.</param>
+	/// <returns>A list of strings split by newlines, potentially limited by the evaluator or maxLines.</returns>
+	public static async Task<List<string>> ToStringListLimited(
+		string promptName,
+		List<Input>? inputs = null,
+		ModelProfile? modelProfile = null,
+		string? modelName = null,
+		int? maxLines = null,
+		Func<string, bool>? evaluator = null,
+		CancellationToken token = default)
+	{
+		var lines = new List<string>();
+		var currentLine = new StringBuilder();
+		var allContent = new StringBuilder();
+		int completedLineCount = 0;
+		
+		try
+		{
+			var prompt = FindPrompt(promptName);
+			var streamResult = CompletionStream(
+				prompt, 
+				inputs, 
+				modelProfile, 
+				modelName, 
+				null, 
+				token);
+			
+			await foreach (var chunk in streamResult)
+			{
+				Util.Log($"Chunk received: {chunk}");
+				allContent.Append(chunk);
+				
+				// Process each character in the chunk to detect newlines
+				foreach (char c in chunk)
+				{
+					if (c == '\n')
+					{
+						// Complete the current line and add it to the list
+						var completedLine = currentLine.ToString().Trim();
+						if (!string.IsNullOrEmpty(completedLine))
+						{
+							lines.Add(completedLine);
+							completedLineCount++;
+						}
+						currentLine.Clear();
+						
+						// Check built-in line limit first (most efficient)
+						if (maxLines.HasValue && completedLineCount >= maxLines.Value)
+						{
+							return lines;
+						}
+						
+						// Check custom evaluator if provided
+						if (evaluator?.Invoke(allContent.ToString()) == true)
+						{
+							return lines;
+						}
+					}
+					else if (c != '\r') // Skip carriage returns
+					{
+						currentLine.Append(c);
+					}
+				}
+			}
+			
+			// Add any remaining content as the last line
+			var finalLine = currentLine.ToString().Trim();
+			if (!string.IsNullOrEmpty(finalLine))
+			{
+				lines.Add(finalLine);
+			}
+		}
+		catch (OperationCanceledException)
+		{
+			// Expected when cancellation is requested
+			throw;
+		}
+		catch (Exception e)
+		{
+			Util.Log($"ToStringListLimited exception: {e.Message}");
+			throw;
+		}
+		
+		return lines;
+	}
+	
+	/// <summary>
+	/// Overload for ToStringListLimited with a single input.
+	/// </summary>
+	public static async Task<List<string>> ToStringListLimited(
+		string promptName,
+		Input? input = null,
+		ModelProfile? modelProfile = null,
+		string? modelName = null,
+		int? maxLines = null,
+		Func<string, bool>? evaluator = null,
+		CancellationToken token = default)
+	{
+		List<Input>? inputs = (input is not null) ? new List<Input>() { input } : null;
+		return await ToStringListLimited(promptName, inputs, modelProfile, modelName, maxLines, evaluator, token);
+	}
+
+
 	
 	public static async Task<bool?> ToBool(
 		string promptName,

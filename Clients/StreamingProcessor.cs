@@ -110,32 +110,46 @@ internal class StreamingProcessor
         Dictionary<string, object> payload,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        //Util.Log($"[DEBUG] ExecuteStreamingRequest started - Endpoint: {endpoint}");
+        //Util.Log($"[DEBUG] Waiting for client semaphore...");
+        
         await _clientSemaphore.WaitAsync(cancellationToken);
         try
         {
+            //Util.Log($"[DEBUG] Semaphore acquired, checking rate limit...");
             await _rateLimiter.EnsureRateLimit();
+            //Util.Log($"[DEBUG] Rate limit passed");
             
             // Handle Gemini-specific payload transformation
             if (_config.Protocol == Protocol.Gemini)
             {
+                //Util.Log($"[DEBUG] Transforming payload for Gemini protocol");
                 payload = _payloadTransformer.TransformToGeminiPayload(payload);
                 // Add API key to endpoint for Gemini
                 if (_config.UseApiKey && !endpoint.Contains("key="))
                 {
                     endpoint += (endpoint.Contains("?") ? "&" : "?") + $"key={_config.ApiKey}";
+                    //Util.Log($"[DEBUG] Added API key to endpoint");
                 }
             }
             
+            //Util.Log($"[DEBUG] Creating request content, payload size: {JsonConvert.SerializeObject(payload).Length} chars");
             var content = new StringContent(JsonConvert.SerializeObject(payload), System.Text.Encoding.UTF8,
                 "application/json");
-                
+            
+            //Util.Log($"[DEBUG] Starting streaming request...");
+            int chunkCount = 0;
             await foreach (var chunk in MakeStreamingRequestAsync(endpoint, content, cancellationToken))
             {
+                chunkCount++;
+                //Util.Log($"[DEBUG] Yielding chunk #{chunkCount}, length: {chunk.Length}");
                 yield return chunk;
             }
+            //Util.Log($"[DEBUG] Streaming completed, total chunks: {chunkCount}");
         }
         finally
         {
+            //Util.Log($"[DEBUG] Releasing semaphore");
             _clientSemaphore.Release();
         }
     }
@@ -177,6 +191,7 @@ internal class StreamingProcessor
         StringContent content,
         CancellationToken cancellationToken)
     {
+        //Util.Log($"[DEBUG] EstablishStreamingConnection started");
         int retryAttempt = 0;
         HttpResponseMessage? response = null;
 
@@ -184,18 +199,26 @@ internal class StreamingProcessor
         {
             try
             {
+                //Util.Log($"[DEBUG] Connection attempt #{retryAttempt + 1}");
                 response?.Dispose(); // Dispose previous attempt if any
                 
+                //Util.Log($"[DEBUG] Sending HTTP request to: {endpoint}");
                 response = await _httpClient.SendAsync(
                     new HttpRequestMessage(HttpMethod.Post, endpoint) { Content = content },
                     HttpCompletionOption.ResponseHeadersRead,
                     cancellationToken);
 
+                //Util.Log($"[DEBUG] HTTP response received - Status: {response.StatusCode} ({response.ReasonPhrase})");
+                
                 if (response.IsSuccessStatusCode)
+                {
+                    //Util.Log($"[DEBUG] Connection established successfully");
                     return response;
+                }
                 
                 // Handle non-success status codes
                 string responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                //Util.Log($"[DEBUG] Non-success response content: {responseContent}");
                 
                 if (retryAttempt >= _config.RetryAttemptLimit)
                 {
@@ -203,6 +226,7 @@ internal class StreamingProcessor
                                          $" - Reason: {response.ReasonPhrase} ({(int)response.StatusCode})\n" +
                                          $" - Message: '{responseContent}'\n";
                     
+                    //Util.Log($"[DEBUG] Max retries exceeded, throwing exception");
                     Util.Log(errorMessage);
                     await Util.DumpLog(errorMessage, "ic-streaming-api-failure");
                     throw new Exception(errorMessage);
@@ -210,14 +234,17 @@ internal class StreamingProcessor
                 
                 // Calculate delay for retry
                 double delaySeconds = _config.RetryInitialDelaySeconds * Math.Pow(2, retryAttempt);
+                //Util.Log($"[DEBUG] Retrying in {delaySeconds} seconds...");
                 await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
                 retryAttempt++;
             }
             catch (Exception ex) when (retryAttempt < _config.RetryAttemptLimit)
             {
+                //Util.Log($"[DEBUG] Exception during connection attempt: {ex.Message}");
                 response?.Dispose();
                 
                 double delaySeconds = _config.RetryInitialDelaySeconds * Math.Pow(2, retryAttempt);
+                //Util.Log($"[DEBUG] Retrying after exception in {delaySeconds} seconds...");
                 await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
                 retryAttempt++;
                 
@@ -227,6 +254,7 @@ internal class StreamingProcessor
         }
 
         response?.Dispose();
+        //Util.Log($"[DEBUG] Failed to establish connection after all retries");
         throw new Exception("Failed to establish streaming connection after all retries");
     }
 
@@ -237,25 +265,45 @@ internal class StreamingProcessor
         HttpResponseMessage response,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        //Util.Log($"[DEBUG] ProcessStreamingResponse started");
         using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var reader = new StreamReader(stream);
         
+        //Util.Log($"[DEBUG] Stream reader created, starting to read lines...");
         string? line;
+        int lineCount = 0;
         while ((line = await reader.ReadLineAsync(cancellationToken)) != null)
         {
+            lineCount++;
             if (cancellationToken.IsCancellationRequested)
+            {
+                //Util.Log($"[DEBUG] Cancellation requested, breaking out of loop");
                 yield break;
+            }
+
+            //Util.Log($"[DEBUG] Read line #{lineCount}: {(line.Length > 100 ? line.Substring(0, 100) + "..." : line)}");
 
             // Handle Server-Sent Events format
             if (line.StartsWith("data: "))
             {
+                //Util.Log($"[DEBUG] Processing SSE data line");
                 var chunk = ProcessStreamingChunk(line);
                 if (!string.IsNullOrEmpty(chunk))
                 {
+                    //Util.Log($"[DEBUG] Extracted chunk with length: {chunk.Length}");
                     yield return chunk;
                 }
+                else
+                {
+                    //Util.Log($"[DEBUG] No chunk extracted from data line");
+                }
+            }
+            else
+            {
+                //Util.Log($"[DEBUG] Skipping non-data line: {line}");
             }
         }
+        //Util.Log($"[DEBUG] Stream reading completed, total lines read: {lineCount}");
     }
 
     /// <summary>
@@ -266,73 +314,130 @@ internal class StreamingProcessor
     private string ProcessStreamingChunk(string data)
     {
         if (string.IsNullOrWhiteSpace(data))
+        {
+            //Util.Log($"[DEBUG] ProcessStreamingChunk: empty or null data");
             return string.Empty;
+        }
 
         try
         {
-            var jsonData = JsonConvert.DeserializeObject<Dictionary<string, JsonElement>>(data);
+            // Remove "data: " prefix if present
+            string jsonString = data.StartsWith("data: ") ? data.Substring(6) : data;
+            //Util.Log($"[DEBUG] Processing JSON chunk: {(jsonString.Length > 200 ? jsonString.Substring(0, 200) + "..." : jsonString)}");
+            
+            // Use Newtonsoft.Json throughout for consistency
+            var jsonData = JsonConvert.DeserializeObject<Dictionary<string, object>>(jsonString);
             if (jsonData == null)
+            {
+                //Util.Log($"[DEBUG] Failed to deserialize JSON data");
                 return string.Empty;
+            }
+
+            //Util.Log($"[DEBUG] JSON parsed successfully, protocol: {_config.Protocol}");
 
             // Handle Gemini streaming response format
             if (_config.Protocol == Protocol.Gemini)
             {
-                if (jsonData.TryGetValue("candidates", out var candidates) && 
-                    candidates.ValueKind == JsonValueKind.Array && 
-                    candidates.GetArrayLength() > 0)
+                //Util.Log($"[DEBUG] Processing Gemini format");
+                if (jsonData.TryGetValue("candidates", out var candidatesObj) && 
+                    candidatesObj is Newtonsoft.Json.Linq.JArray candidates &&
+                    candidates.Count > 0)
                 {
-                    var firstCandidate = candidates[0];
-                    if (firstCandidate.TryGetProperty("content", out var content) &&
-                        content.TryGetProperty("parts", out var parts) &&
-                        parts.ValueKind == JsonValueKind.Array && 
-                        parts.GetArrayLength() > 0)
+                    //Util.Log($"[DEBUG] Found candidates array with {candidates.Count} items");
+                    var firstCandidate = candidates[0] as Newtonsoft.Json.Linq.JObject;
+                    if (firstCandidate != null &&
+                        firstCandidate.TryGetValue("content", out var contentToken) &&
+                        contentToken is Newtonsoft.Json.Linq.JObject content &&
+                        content.TryGetValue("parts", out var partsToken) &&
+                        partsToken is Newtonsoft.Json.Linq.JArray parts &&
+                        parts.Count > 0)
                     {
-                        var firstPart = parts[0];
-                        if (firstPart.TryGetProperty("text", out var textElement))
+                        //Util.Log($"[DEBUG] Found content parts with {parts.Count} items");
+                        var firstPart = parts[0] as Newtonsoft.Json.Linq.JObject;
+                        if (firstPart != null &&
+                            firstPart.TryGetValue("text", out var textToken))
                         {
-                            return textElement.GetString() ?? string.Empty;
+                            var text = textToken?.ToString() ?? string.Empty;
+                            //Util.Log($"[DEBUG] Extracted Gemini text: '{text}'");
+                            return text;
+                        }
+                        else
+                        {
+                            //Util.Log($"[DEBUG] No 'text' property found in first part");
                         }
                     }
+                    else
+                    {
+                        //Util.Log($"[DEBUG] No content/parts structure found in first candidate");
+                    }
+                }
+                else
+                {
+                    //Util.Log($"[DEBUG] No candidates array found or empty");
                 }
             }
             else
             {
+                //Util.Log($"[DEBUG] Processing OpenAI/vLLM format");
                 // Standard OpenAI/vLLM streaming format
-                if (jsonData.TryGetValue("choices", out var choices) && 
-                    choices.ValueKind == JsonValueKind.Array && 
-                    choices.GetArrayLength() > 0)
+                if (jsonData.TryGetValue("choices", out var choicesObj) && 
+                    choicesObj is Newtonsoft.Json.Linq.JArray choices &&
+                    choices.Count > 0)
                 {
-                    var firstChoice = choices[0];
+                    //Util.Log($"[DEBUG] Found choices array with {choices.Count} items");
+                    var firstChoice = choices[0] as Newtonsoft.Json.Linq.JObject;
                     
-                    // Handle completion streaming (prompt-based)
-                    if (firstChoice.TryGetProperty("text", out var textElement))
+                    if (firstChoice != null)
                     {
-                        return textElement.GetString() ?? string.Empty;
-                    }
-                    
-                    // Handle chat completion streaming
-                    if (firstChoice.TryGetProperty("delta", out var delta))
-                    {
-                        if (delta.TryGetProperty("content", out var contentElement))
+                        // Handle completion streaming (prompt-based)
+                        if (firstChoice.TryGetValue("text", out var textToken))
                         {
-                            return contentElement.GetString() ?? string.Empty;
+                            var text = textToken?.ToString() ?? string.Empty;
+                            //Util.Log($"[DEBUG] Extracted completion text: '{text}'");
+                            return text;
                         }
                         
-                        // Handle message role changes
-                        if (delta.TryGetProperty("role", out var roleElement))
+                        // Handle chat completion streaming
+                        if (firstChoice.TryGetValue("delta", out var deltaToken) &&
+                            deltaToken is Newtonsoft.Json.Linq.JObject delta)
                         {
-                            // Role changes don't contain content to yield
-                            return string.Empty;
+                            //Util.Log($"[DEBUG] Found delta object");
+                            if (delta.TryGetValue("content", out var contentToken))
+                            {
+                                var text = contentToken?.ToString() ?? string.Empty;
+                                //Util.Log($"[DEBUG] Extracted delta content: '{text}'");
+                                return text;
+                            }
+                            
+                            // Handle message role changes
+                            if (delta.TryGetValue("role", out var roleToken))
+                            {
+                                //Util.Log($"[DEBUG] Found role change: {roleToken}");
+                                // Role changes don't contain content to yield
+                                return string.Empty;
+                            }
+                            
+                            //Util.Log($"[DEBUG] Delta object has no content or role property");
+                        }
+                        else
+                        {
+                            //Util.Log($"[DEBUG] No text or delta property found in first choice");
                         }
                     }
+                }
+                else
+                {
+                    //Util.Log($"[DEBUG] No choices array found or empty");
                 }
             }
         }
         catch (Newtonsoft.Json.JsonException ex)
         {
+            //Util.Log($"[DEBUG] JSON parsing error: {ex.Message}");
             Util.Log($"Warning: Failed to parse streaming JSON chunk: {ex.Message}");
         }
 
+        //Util.Log($"[DEBUG] No content extracted from chunk");
         return string.Empty;
     }
 }
