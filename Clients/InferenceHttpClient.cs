@@ -1,7 +1,36 @@
+using System.Net.Http.Json;
+using System.Text.Json;
+using Newtonsoft.Json;
+
 namespace Revi;
 
 internal class InferenceHttpClient : IDisposable
 {
+    private readonly InferClientConfig _config;
+    private readonly SemaphoreSlim _clientSemaphore;
+    private readonly RateLimiter _rateLimiter;
+    private readonly PayloadTransformer _payloadTransformer;
+    private readonly HttpClient _httpClient;
+
+    public InferenceHttpClient(
+        InferClientConfig config,
+        SemaphoreSlim clientSemaphore,
+        RateLimiter rateLimiter,
+        PayloadTransformer payloadTransformer,
+        HttpClient httpClient)
+    {
+        _config = config;
+        _clientSemaphore = clientSemaphore;
+        _rateLimiter = rateLimiter;
+        _payloadTransformer = payloadTransformer;
+        _httpClient = httpClient;
+    }
+
+    public void Dispose()
+    {
+        return;
+    }
+    
         /// <summary>
     /// Executes a request to the AI inference service with the specified payload and cancellation token.
     /// </summary>
@@ -9,7 +38,7 @@ internal class InferenceHttpClient : IDisposable
     /// <param name="payload">The payload to be sent to the AI inference service. It should contain the necessary parameters for the request.</param>
     /// <param name="cancellationToken">A cancellation token that can be used to cancel the request.</param>
     /// <returns>A task that represents the asynchronous operation. The task result contains a dictionary of the response parameters.</returns>
-    private async Task<Dictionary<string, string>> ExecuteRequest(
+    public async Task<Dictionary<string, string>> ExecuteRequest(
         string endpoint,
         Dictionary<string, object> payload,
         CancellationToken cancellationToken)
@@ -17,16 +46,16 @@ internal class InferenceHttpClient : IDisposable
         await _clientSemaphore.WaitAsync(cancellationToken);
         try
         {
-            await EnsureRateLimit();
+            await _rateLimiter.EnsureRateLimit();
             
             // Handle Gemini-specific payload transformation
-            if (_protocol == Protocol.Gemini)
+            if (_config.Protocol == Protocol.Gemini)
             {
-                payload = TransformToGeminiPayload(payload);
+                payload = _payloadTransformer.TransformToGeminiPayload(payload);
                 // Add API key to endpoint for Gemini
-                if (_useApiKey && !endpoint.Contains("key="))
+                if (_config.UseApiKey && !endpoint.Contains("key="))
                 {
-                    endpoint += (endpoint.Contains("?") ? "&" : "?") + $"key={_apiKey}";
+                    endpoint += (endpoint.Contains("?") ? "&" : "?") + $"key={_config.ApiKey}";
                 }
             }
             
@@ -59,7 +88,7 @@ internal class InferenceHttpClient : IDisposable
     {
         int retryAttempt = 0; // Counter for the current attempt number
 
-        HttpResponseMessage response = await _client.PostAsync(endpoint, content, cancellationToken);
+        HttpResponseMessage response = await _httpClient.PostAsync(endpoint, content, cancellationToken);
         
         // We got an unsuccessful response back... try again? 
         while (!response.IsSuccessStatusCode)
@@ -69,7 +98,7 @@ internal class InferenceHttpClient : IDisposable
             string errorMessage;
             
             // End if we're at our retry attempt limit
-            if (retryAttempt >= _retryAttemptLimit)
+            if (retryAttempt >= _config.RetryAttemptLimit)
             {
                 errorMessage = $"API request failed after {retryAttempt} retries: \n" +
                                $" - Reason: {response.ReasonPhrase} ({(int)response.StatusCode})\n" +
@@ -85,9 +114,9 @@ internal class InferenceHttpClient : IDisposable
             }
             
             // Calculate the delay using exponential back-off
-            double delaySeconds = _retryInitialDelaySeconds * Math.Pow(2, retryAttempt);
+            double delaySeconds = _config.RetryInitialDelaySeconds * Math.Pow(2, retryAttempt);
             errorMessage = $"API request failed, trying again in {delaySeconds} seconds:\n" +
-                           $" - URI: {_client.BaseAddress + endpoint}\n" +
+                           $" - URI: {_httpClient.BaseAddress + endpoint}\n" +
                            $" - Reason: {response.ReasonPhrase} ({(int)response.StatusCode})\n" +
                            $" - Message: '{responseContent}'\n";
 
@@ -100,7 +129,7 @@ internal class InferenceHttpClient : IDisposable
             retryAttempt++;
 
             // Try again
-            response = await _client.PostAsync(endpoint, content, cancellationToken);
+            response = await _httpClient.PostAsync(endpoint, content, cancellationToken);
         }
 
         return ProcessHttpResponse(response);
@@ -122,7 +151,7 @@ internal class InferenceHttpClient : IDisposable
         var result = new Dictionary<string, string>();
 
         // Handle Gemini response format
-        if (_protocol == Protocol.Gemini)
+        if (_config.Protocol == Protocol.Gemini)
         {
             if (data.TryGetValue("candidates", out var candidates) && 
                 candidates.ValueKind == JsonValueKind.Array)
@@ -170,10 +199,5 @@ internal class InferenceHttpClient : IDisposable
         }
 
         return result;
-    }
-    
-    public void Dispose()
-    {
-        return;
     }
 }

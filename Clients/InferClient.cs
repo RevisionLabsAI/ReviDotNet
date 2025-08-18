@@ -35,24 +35,13 @@ public class InferClient : IDisposable
     // ==============
     
     #region Declarations
-    private readonly HttpClient _client;
-    private readonly string _defaultModel;
-    private readonly string _apiKey;
-    private readonly bool _useApiKey;
-    private readonly Protocol _protocol;
-    
+    private readonly HttpClient _httpClient;
+    private readonly InferClientConfig _config;
     private readonly SemaphoreSlim _clientSemaphore;
-    private static DateTime _lastExecutionTime;
-
-    private readonly int _delayBetweenRequestsMs;
-    private readonly int _retryAttemptLimit;
-    private readonly int _retryInitialDelaySeconds;
-
-    private readonly bool _supportsCompletion;
-    
-    private readonly bool _supportsGuidance;
-    private readonly GuidanceType? _defaultGuidanceType;
-    private readonly string? _defaultGuidanceString;
+    private readonly RateLimiter _rateLimiter;
+    private readonly InferenceHttpClient _inferenceHttpClient;
+    private readonly StreamingProcessor _streamingProcessor;
+    private readonly PayloadTransformer _payloadTransformer;
     #endregion
     
 
@@ -88,30 +77,30 @@ public class InferClient : IDisposable
         GuidanceType? defaultGuidanceType = GuidanceType.Disabled,
         string? defaultGuidanceString = null)
     {
-        // Rate Limiting
-        _delayBetweenRequestsMs = delayBetweenRequestsMs;
-        _retryAttemptLimit = retryAttemptLimit;
-        _retryInitialDelaySeconds = retryInitialDelaySeconds;
-
-        _lastExecutionTime = DateTime.MinValue;
+        // Create configuration
+        _config = new InferClientConfig
+        {
+            ApiUrl = apiUrl,
+            ApiKey = apiKey,
+            UseApiKey = !string.IsNullOrEmpty(apiKey),
+            Protocol = protocol,
+            DefaultModel = defaultModel,
+            TimeoutSeconds = timeoutSeconds,
+            DelayBetweenRequestsMs = delayBetweenRequestsMs,
+            RetryAttemptLimit = retryAttemptLimit,
+            RetryInitialDelaySeconds = retryInitialDelaySeconds,
+            SimultaneousRequests = simultaneousRequests,
+            SupportsCompletion = supportsCompletion,
+            SupportsGuidance = supportsGuidance,
+            DefaultGuidanceType = defaultGuidanceType,
+            DefaultGuidanceString = defaultGuidanceString
+        };
+        
+        // Create shared resources
         _clientSemaphore = new SemaphoreSlim(simultaneousRequests);
-        
-        // API Key
-        _apiKey = apiKey;
-        _useApiKey = !string.IsNullOrEmpty(apiKey);
-        
-        // Model 
-        _defaultModel = defaultModel;
-        _supportsCompletion = supportsCompletion;
-        
-        // Guidance
-        _supportsGuidance = supportsGuidance;
-        _defaultGuidanceType = defaultGuidanceType;
-        _defaultGuidanceString = defaultGuidanceString;
-        
-        
+        _rateLimiter = new RateLimiter(delayBetweenRequestsMs);
+
         // HTTP Client Setup
-        _protocol = protocol;
         apiUrl = apiUrl.TrimEnd('/') + "/";
         
         if (apiUrl.EndsWith("v1/chat/completions"))
@@ -120,24 +109,59 @@ public class InferClient : IDisposable
         if (apiUrl.EndsWith("v1/completions"))
             throw new Exception("Please remove v1/completions from the end of API URL"); 
         
-        _client = new HttpClient { BaseAddress = new Uri(apiUrl) };
-        _client.DefaultRequestHeaders.Add("Accept", "application/json");
+        _httpClient = new HttpClient { BaseAddress = new Uri(apiUrl) };
+        _httpClient.DefaultRequestHeaders.Add("Accept", "application/json");
         //_client.DefaultRequestHeaders.Add("Content-Type", "application/json");
-        
-        if (_useApiKey)
+        if (_config.UseApiKey)
         {
-            if (_protocol == Protocol.Gemini)
+            if (_config.Protocol == Protocol.Gemini)
             {
                 // Gemini uses query parameter for API key instead of Bearer token
                 // API key will be added to the URL in the request
             }
             else
             {
-                _client.DefaultRequestHeaders.Add("Authorization", $"Bearer {_apiKey}");
+                _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_config.ApiKey}");
             }
         }
+        _httpClient.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
         
-        _client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+        // Initialize components with shared dependencies
+        _payloadTransformer = new PayloadTransformer(_config);
+        
+        _inferenceHttpClient = new InferenceHttpClient(
+            _config, 
+            _clientSemaphore, 
+            _rateLimiter, 
+            _payloadTransformer, 
+            _httpClient);
+        
+        _streamingProcessor = new StreamingProcessor(
+            _config, 
+            _clientSemaphore, 
+            _rateLimiter,
+            _payloadTransformer,
+            _httpClient);
+        
+    }
+    #endregion
+    
+    
+    // ==========
+    //  Disposal
+    // ==========
+    
+    #region Disposal
+    /// <summary>
+    /// Disposes the HttpClient instance.
+    /// </summary>
+    public void Dispose()
+    {
+        _inferenceHttpClient?.Dispose();
+        _streamingProcessor?.Dispose();
+        _clientSemaphore?.Dispose();
+        _rateLimiter?.Dispose();
+
     }
     #endregion
 
@@ -184,17 +208,17 @@ public class InferClient : IDisposable
         string? guidanceString = null,
         CancellationToken cancellationToken = default)
     {
-        if (_supportsCompletion is false)
+        if (_config.SupportsCompletion is false)
             throw new Exception("Attempting prompt completion on provider that does not support it");
 
-        model = model == "default" ? _defaultModel : model;
+        model = model == "default" ? _config.DefaultModel : model;
         var parameters = new Dictionary<string, object>
         {
             { "model", model },
             { "prompt", prompt }
         };
 
-        AddOptionalParameters(
+        _payloadTransformer.AddOptionalParameters(
             parameters,
             temperature,
             topK,
@@ -212,7 +236,7 @@ public class InferClient : IDisposable
         
         // Use appropriate endpoint based on protocol
         string endpoint;
-        if (_protocol == Protocol.Gemini)
+        if (_config.Protocol == Protocol.Gemini)
             endpoint = $"v1beta/models/{model}:generateContent";
         else
             endpoint = "v1/completions";
@@ -222,7 +246,7 @@ public class InferClient : IDisposable
         
         try
         {
-            Dictionary<string, string> serverResponse = await ExecuteRequest(endpoint, parameters, cancellationToken);
+            Dictionary<string, string> serverResponse = await _inferenceHttpClient.ExecuteRequest(endpoint, parameters, cancellationToken);
             response = BuildResponse(prompt, serverResponse);
         }
 
@@ -230,7 +254,7 @@ public class InferClient : IDisposable
         catch (Exception e)
         {
             string errorMessage = $"### ReviDotNet.GenerateAsync() Error Generating Completion\n" +
-                                 $"# URL\n{_client.BaseAddress + endpoint}\n\n" +
+                                 $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
                                  $"# Payload\n{payloadDebug}\n\n" +
                                  $"# Exception\n{e.Message}\n\n";
             Util.Log(errorMessage);
@@ -241,7 +265,7 @@ public class InferClient : IDisposable
         // Dump successful logging if successful
         string responseDebug = $"'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''";
         string dumpMessage = $"### ReviDotNet.GenerateAsync() Prompt Completion\n" +
-                             $"# URL\n{_client.BaseAddress + endpoint}\n\n" +
+                             $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
                              $"# Payload\n{payloadDebug}\n\n" +
                              $"# Response\n{responseDebug}\n\n";
         await Util.DumpLog(dumpMessage, "ic-generate-prompt");
@@ -310,7 +334,7 @@ public class InferClient : IDisposable
         string? guidanceString = null,
         CancellationToken cancellationToken = default)
     {
-        model = model == "default" ? _defaultModel : model;
+        model = model == "default" ? _config.DefaultModel : model;
         var parameters = new Dictionary<string, object>
         {
             { "model", model },
@@ -318,7 +342,7 @@ public class InferClient : IDisposable
         };
 
         // Add optional parameters if they are not null
-        AddOptionalParameters(
+        _payloadTransformer.AddOptionalParameters(
             parameters,
             temperature,
             topK,
@@ -335,7 +359,7 @@ public class InferClient : IDisposable
             guidanceString);
 
         string endpoint;
-        if (_protocol == Protocol.Gemini)
+        if (_config.Protocol == Protocol.Gemini)
             endpoint = $"v1beta/models/{model}:generateContent";
         else
         {
@@ -347,7 +371,7 @@ public class InferClient : IDisposable
 
         try
         {
-            Dictionary<string, string> serverResponse = await ExecuteRequest(endpoint, parameters, cancellationToken);
+            Dictionary<string, string> serverResponse = await _inferenceHttpClient.ExecuteRequest(endpoint, parameters, cancellationToken);
             response = BuildResponse(messages, serverResponse);
         }
         
@@ -355,7 +379,7 @@ public class InferClient : IDisposable
         catch (Exception e)
         {
             string errorMessage = $"### ReviDotNet.GenerateAsync() Error Generating Chat Completion\n" +
-                                  $"# URL\n{_client.BaseAddress + endpoint}\n\n" +
+                                  $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
                                   $"# Payload\n{payloadDebug}\n\n" +
                                   $"# Exception\n{e.Message}\n\n";
             Util.Log(errorMessage);
@@ -366,7 +390,7 @@ public class InferClient : IDisposable
         // Dump successful logging if successful
         string responseDebug = $"'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''";
         string dumpMessage = $"### ReviDotNet.GenerateAsync() Chat Completion\n" +
-                             $"# URL\n{_client.BaseAddress + endpoint}\n\n" +
+                             $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
                              $"# Payload\n{payloadDebug}\n\n" +
                              $"# Response\n{responseDebug}\n\n";
         await Util.DumpLog(dumpMessage, "ic-generate-chat");
@@ -429,10 +453,10 @@ public class InferClient : IDisposable
         string? guidanceString = null,
         CancellationToken cancellationToken = default)
     {
-        if (_supportsCompletion is false)
+        if (_config.SupportsCompletion is false)
             throw new Exception("Attempting prompt completion on provider that does not support it");
 
-        model = model == "default" ? _defaultModel : model;
+        model = model == "default" ? _config.DefaultModel : model;
         var parameters = new Dictionary<string, object>
         {
             { "model", model },
@@ -440,7 +464,7 @@ public class InferClient : IDisposable
             { "stream", true }
         };
 
-        AddOptionalParameters(
+        _payloadTransformer.AddOptionalParameters(
             parameters,
             temperature,
             topK,
@@ -458,15 +482,15 @@ public class InferClient : IDisposable
         
         // Use appropriate endpoint based on protocol
         string endpoint;
-        if (_protocol == Protocol.Gemini)
+        if (_config.Protocol == Protocol.Gemini)
             endpoint = $"v1beta/models/{model}:streamGenerateContent";
         else
             endpoint = "v1/completions";
 
         string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
         
-        return CreateStreamingResultWrapper(
-            ExecuteStreamingRequest(endpoint, parameters, cancellationToken),
+        return _streamingProcessor.CreateStreamingResultWrapper(
+            _streamingProcessor.ExecuteStreamingRequest(endpoint, parameters, cancellationToken),
             cancellationToken);
     }
     #endregion
@@ -512,7 +536,7 @@ public class InferClient : IDisposable
         string? guidanceString = null,
         CancellationToken cancellationToken = default)
     {
-        model = model == "default" ? _defaultModel : model;
+        model = model == "default" ? _config.DefaultModel : model;
         var parameters = new Dictionary<string, object>
         {
             { "model", model },
@@ -520,7 +544,7 @@ public class InferClient : IDisposable
             { "stream", true }
         };
 
-        AddOptionalParameters(
+        _payloadTransformer.AddOptionalParameters(
             parameters,
             temperature,
             topK,
@@ -537,621 +561,16 @@ public class InferClient : IDisposable
             guidanceString);
 
         string endpoint;
-        if (_protocol == Protocol.Gemini)
+        if (_config.Protocol == Protocol.Gemini)
             endpoint = $"v1beta/models/{model}:streamGenerateContent";
         else
             endpoint = "v1/chat/completions";
 
         string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
 
-        return CreateStreamingResultWrapper(
-            ExecuteStreamingRequest(endpoint, parameters, cancellationToken),
+        return _streamingProcessor.CreateStreamingResultWrapper(
+            _streamingProcessor.ExecuteStreamingRequest(endpoint, parameters, cancellationToken),
             cancellationToken);
-    }
-    #endregion
-    
-    
-    // ===================
-    //  Stream Requesting
-    // ===================
-    
-    #region Streaming Requesting
-    /// <summary>
-    /// Creates a StreamingResult wrapper that tracks metadata without breaking streaming.
-    /// </summary>
-    private StreamingResult<string> CreateStreamingResultWrapper(
-        IAsyncEnumerable<string> sourceStream,
-        CancellationToken cancellationToken)
-    {
-        var startTime = DateTime.UtcNow;
-        var metadataTracker = new StreamingMetadataTracker(startTime);
-    
-        var trackedStream = TrackStreamingMetadata(sourceStream, metadataTracker, cancellationToken);
-    
-        return new StreamingResult<string>
-        {
-            Stream = trackedStream,
-            Completion = metadataTracker.CompletionTask
-        };
-    }
-
-    /// <summary>
-    /// Tracks streaming metadata without buffering the stream.
-    /// </summary>
-    private async IAsyncEnumerable<string> TrackStreamingMetadata(
-        IAsyncEnumerable<string> sourceStream,
-        StreamingMetadataTracker tracker,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        var enumerator = sourceStream.GetAsyncEnumerator(cancellationToken);
-        try
-        {
-            while (await MoveNextSafely(enumerator, tracker))
-            {
-                yield return enumerator.Current;
-            }
-            tracker.CompleteSuccessfully();
-        }
-        finally
-        {
-            await enumerator.DisposeAsync();
-        }
-    }
-
-    /// <summary>
-    /// Safely moves to the next item and handles errors.
-    /// </summary>
-    private async Task<bool> MoveNextSafely(
-        IAsyncEnumerator<string> enumerator, 
-        StreamingMetadataTracker tracker)
-    {
-        try
-        {
-            var hasNext = await enumerator.MoveNextAsync();
-            if (hasNext)
-            {
-                tracker.IncrementChunkCount();
-            }
-            return hasNext;
-        }
-        catch (OperationCanceledException ex) when (ex.CancellationToken.IsCancellationRequested)
-        {
-            tracker.CompleteCanceled(ex);
-            throw;
-        }
-        catch (Exception ex)
-        {
-            tracker.CompleteWithError(ex);
-            throw;
-        }
-    }
-
-
-
-    /// <summary>
-    /// Executes a streaming request to the AI inference service with the specified payload and cancellation token.
-    /// </summary>
-    /// <param name="endpoint">The endpoint of the AI inference service.</param>
-    /// <param name="payload">The payload to be sent to the AI inference service.</param>
-    /// <param name="cancellationToken">A cancellation token that can be used to cancel the request.</param>
-    /// <returns>An async enumerable that yields streaming text chunks.</returns>
-    private async IAsyncEnumerable<string> ExecuteStreamingRequest(
-        string endpoint,
-        Dictionary<string, object> payload,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        await _clientSemaphore.WaitAsync(cancellationToken);
-        try
-        {
-            await EnsureRateLimit();
-            
-            // Handle Gemini-specific payload transformation
-            if (_protocol == Protocol.Gemini)
-            {
-                payload = TransformToGeminiPayload(payload);
-                // Add API key to endpoint for Gemini
-                if (_useApiKey && !endpoint.Contains("key="))
-                {
-                    endpoint += (endpoint.Contains("?") ? "&" : "?") + $"key={_apiKey}";
-                }
-            }
-            
-            var content = new StringContent(JsonConvert.SerializeObject(payload), System.Text.Encoding.UTF8,
-                "application/json");
-                
-            await foreach (var chunk in MakeStreamingRequestAsync(endpoint, content, cancellationToken))
-            {
-                yield return chunk;
-            }
-        }
-        finally
-        {
-            _clientSemaphore.Release();
-        }
-    }
-    
-    /// <summary>
-    /// Sends a streaming HTTP POST request to the specified API endpoint and processes the Server-Sent Events (SSE) response.
-    /// </summary>
-    /// <param name="endpoint">The API endpoint to which the request is sent.</param>
-    /// <param name="content">The HTTP request content to be sent in the POST request.</param>
-    /// <param name="cancellationToken">A token that can be used to cancel the operation.</param>
-    /// <returns>An async enumerable that yields text chunks from the streaming response.</returns>
-    private async IAsyncEnumerable<string> MakeStreamingRequestAsync(
-        string endpoint,
-        StringContent content,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        HttpResponseMessage? response = null;
-        
-        try
-        {
-            response = await EstablishStreamingConnection(endpoint, content, cancellationToken);
-            
-            await foreach (var chunk in ProcessStreamingResponse(response, cancellationToken))
-            {
-                yield return chunk;
-            }
-        }
-        finally
-        {
-            response?.Dispose();
-        }
-    }
-
-    /// <summary>
-    /// Establishes a streaming connection with retry logic.
-    /// </summary>
-    private async Task<HttpResponseMessage> EstablishStreamingConnection(
-        string endpoint,
-        StringContent content,
-        CancellationToken cancellationToken)
-    {
-        int retryAttempt = 0;
-        HttpResponseMessage? response = null;
-
-        while (retryAttempt <= _retryAttemptLimit)
-        {
-            try
-            {
-                response?.Dispose(); // Dispose previous attempt if any
-                
-                response = await _client.SendAsync(
-                    new HttpRequestMessage(HttpMethod.Post, endpoint) { Content = content },
-                    HttpCompletionOption.ResponseHeadersRead,
-                    cancellationToken);
-
-                if (response.IsSuccessStatusCode)
-                    return response;
-                
-                // Handle non-success status codes
-                string responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                
-                if (retryAttempt >= _retryAttemptLimit)
-                {
-                    string errorMessage = $"Streaming API request failed after {retryAttempt} retries: \n" +
-                                         $" - Reason: {response.ReasonPhrase} ({(int)response.StatusCode})\n" +
-                                         $" - Message: '{responseContent}'\n";
-                    
-                    Util.Log(errorMessage);
-                    await Util.DumpLog(errorMessage, "ic-streaming-api-failure");
-                    throw new Exception(errorMessage);
-                }
-                
-                // Calculate delay for retry
-                double delaySeconds = _retryInitialDelaySeconds * Math.Pow(2, retryAttempt);
-                await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
-                retryAttempt++;
-            }
-            catch (Exception ex) when (retryAttempt < _retryAttemptLimit)
-            {
-                response?.Dispose();
-                
-                double delaySeconds = _retryInitialDelaySeconds * Math.Pow(2, retryAttempt);
-                await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
-                retryAttempt++;
-                
-                if (retryAttempt > _retryAttemptLimit)
-                    throw;
-            }
-        }
-
-        response?.Dispose();
-        throw new Exception("Failed to establish streaming connection after all retries");
-    }
-
-    /// <summary>
-    /// Processes the streaming response and yields individual chunks.
-    /// </summary>
-    private async IAsyncEnumerable<string> ProcessStreamingResponse(
-        HttpResponseMessage response,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var reader = new StreamReader(stream);
-        
-        string? line;
-        while ((line = await reader.ReadLineAsync(cancellationToken)) != null)
-        {
-            if (cancellationToken.IsCancellationRequested)
-                yield break;
-
-            // Handle Server-Sent Events format
-            if (line.StartsWith("data: "))
-            {
-                var chunk = ProcessStreamingChunk(line);
-                if (!string.IsNullOrEmpty(chunk))
-                {
-                    yield return chunk;
-                }
-            }
-        }
-    }
-
-    /// <summary>
-    /// Processes a single streaming chunk and extracts the text content.
-    /// </summary>
-    /// <param name="data">The raw JSON data from the streaming response.</param>
-    /// <returns>The extracted text content from the chunk.</returns>
-    private string ProcessStreamingChunk(string data)
-    {
-        if (string.IsNullOrWhiteSpace(data))
-            return string.Empty;
-
-        try
-        {
-            var jsonData = JsonConvert.DeserializeObject<Dictionary<string, JsonElement>>(data);
-            if (jsonData == null)
-                return string.Empty;
-
-            // Handle Gemini streaming response format
-            if (_protocol == Protocol.Gemini)
-            {
-                if (jsonData.TryGetValue("candidates", out var candidates) && 
-                    candidates.ValueKind == JsonValueKind.Array && 
-                    candidates.GetArrayLength() > 0)
-                {
-                    var firstCandidate = candidates[0];
-                    if (firstCandidate.TryGetProperty("content", out var content) &&
-                        content.TryGetProperty("parts", out var parts) &&
-                        parts.ValueKind == JsonValueKind.Array && 
-                        parts.GetArrayLength() > 0)
-                    {
-                        var firstPart = parts[0];
-                        if (firstPart.TryGetProperty("text", out var textElement))
-                        {
-                            return textElement.GetString() ?? string.Empty;
-                        }
-                    }
-                }
-            }
-            else
-            {
-                // Standard OpenAI/vLLM streaming format
-                if (jsonData.TryGetValue("choices", out var choices) && 
-                    choices.ValueKind == JsonValueKind.Array && 
-                    choices.GetArrayLength() > 0)
-                {
-                    var firstChoice = choices[0];
-                    
-                    // Handle completion streaming (prompt-based)
-                    if (firstChoice.TryGetProperty("text", out var textElement))
-                    {
-                        return textElement.GetString() ?? string.Empty;
-                    }
-                    
-                    // Handle chat completion streaming
-                    if (firstChoice.TryGetProperty("delta", out var delta))
-                    {
-                        if (delta.TryGetProperty("content", out var contentElement))
-                        {
-                            return contentElement.GetString() ?? string.Empty;
-                        }
-                        
-                        // Handle message role changes
-                        if (delta.TryGetProperty("role", out var roleElement))
-                        {
-                            // Role changes don't contain content to yield
-                            return string.Empty;
-                        }
-                    }
-                }
-            }
-        }
-        catch (Newtonsoft.Json.JsonException ex)
-        {
-            Util.Log($"Warning: Failed to parse streaming JSON chunk: {ex.Message}");
-        }
-
-        return string.Empty;
-    }
-    #endregion
-    
-    
-    // =================
-    //  Http Requesting
-    // =================
-    
-    #region Http Requesting
-
-    #endregion
-    
-    
-    // ======================
-    //  Supporting Functions
-    // ======================
-    
-    #region Supporting Functions
-    /// <summary>
-    /// Disposes the HttpClient instance.
-    /// </summary>
-    public void Dispose()
-    {
-        _client.Dispose();
-    }
-
-    /// <summary>
-    /// Transforms the standard payload format to Gemini's expected format.
-    /// </summary>
-    /// <param name="payload">The standard payload dictionary.</param>
-    /// <returns>The transformed payload for Gemini API.</returns>
-    private Dictionary<string, object> TransformToGeminiPayload(Dictionary<string, object> payload)
-    {
-        var geminiPayload = new Dictionary<string, object>();
-        var generationConfig = new Dictionary<string, object>();
-        
-        // Transform generation config parameters
-        if (payload.TryGetValue("temperature", out var temperature))
-            generationConfig["temperature"] = temperature;
-        
-        if (payload.TryGetValue("top_k", out var topK))
-            generationConfig["topK"] = topK;
-        
-        if (payload.TryGetValue("top_p", out var topP))
-            generationConfig["topP"] = topP;
-        
-        if (payload.TryGetValue("min_p", out var minP))
-            generationConfig["minP"] = minP;
-        
-        if (payload.TryGetValue("max_tokens", out var maxTokens))
-            generationConfig["maxOutputTokens"] = maxTokens;
-        
-        if (payload.TryGetValue("stop", out var stopSequences))
-            generationConfig["stopSequences"] = stopSequences;
-
-        // Handle Gemini JSON Schema (responseSchema)
-        if (payload.TryGetValue("guided_json", out var jsonSchema))
-        {
-            try
-            {
-                // Parse the JSON schema string to ensure it's valid JSON
-                var schemaObject = JsonConvert.DeserializeObject(jsonSchema.ToString());
-                generationConfig["responseSchema"] = schemaObject;
-                generationConfig["responseMimeType"] = "application/json";
-            }
-            catch (Newtonsoft.Json.JsonException)
-            {
-                // If parsing fails, treat it as a string (though this shouldn't happen with valid JSON schema)
-                Util.Log($"Warning: Invalid JSON schema provided for Gemini: {jsonSchema}");
-            }
-        }
-        
-        if (generationConfig.Any())
-            geminiPayload["generationConfig"] = generationConfig;
-        
-        // Handle single prompt
-        if (payload.TryGetValue("prompt", out var promptValue) && promptValue is string prompt)
-        {
-            geminiPayload["contents"] = new[]
-            {
-                new { parts = new[] { new { text = prompt } } }
-            };
-        }
-        // Handle chat messages
-        else if (payload.TryGetValue("messages", out var messagesValue) && messagesValue is List<Message> messages)
-        {
-            Message? systemMessage = messages.FirstOrDefault(m => string.Equals(m.Role, "system", StringComparison.OrdinalIgnoreCase));
-            if (systemMessage != null)
-            {
-                geminiPayload["systemInstruction"] = new { parts = new[] { new { text = systemMessage.Content } } };
-            }
-
-            var contents = messages
-                .Where(m => !string.Equals(m.Role, "system", StringComparison.OrdinalIgnoreCase))
-                .Select(m => new
-                {
-                    role = string.Equals(m.Role, "assistant", StringComparison.OrdinalIgnoreCase) ? "model" : m.Role.ToLower(),
-                    parts = new[] { new { text = m.Content } }
-                })
-                .ToList();
-            
-            geminiPayload["contents"] = contents;
-        }
-        
-        // Note: Gemini doesn't support frequency_penalty, presence_penalty, or best_of
-        // These parameters are ignored for Gemini requests
-
-        return geminiPayload;
-    }
-
-    /// <summary>
-    /// Adds optional parameters to the specified dictionary.
-    /// </summary>
-    /// <param name="parameters">The dictionary to add the optional parameters to.</param>
-    /// <param name="temperature">The temperature parameter value.</param>
-    /// <param name="topP">The top_p parameter value.</param>
-    /// <param name="topK">The top_k parameter value.</param>
-    /// <param name="bestOf">The best_of parameter value.</param>
-    /// <param name="maxTokens">The max_tokens parameter value.</param>
-    /// <param name="frequencyPenalty">The frequencyPenalty parameter value.</param>
-    /// <param name="presencePenalty">The presencePenalty parameter value.</param>
-    /// <param name="stopSequences">The stopSequences parameter value.</param>
-    /// <param name="guidanceType">The guidanceType parameter value.</param>
-    /// <param name="guidanceString">The guidanceString parameter value.</param>
-    private void AddOptionalParameters(
-        Dictionary<string, object> parameters,
-        float? temperature,
-        int? topK,
-        float? topP,
-        float? minP,
-        int? bestOf,
-        MaxTokenType? maxTokenType,
-        int? maxTokens,
-        float? frequencyPenalty,
-        float? presencePenalty,
-        float? repetitionPenalty,
-        string[]? stopSequences,
-        GuidanceType? guidanceType,
-        string? guidanceString)
-    {
-        if (temperature.HasValue) parameters.Add("temperature", temperature.Value);
-        if (topK.HasValue) parameters.Add("top_k", topK.Value);
-        if (topP.HasValue) parameters.Add("top_p", topP.Value);
-        if (minP.HasValue) parameters.Add("min_p", minP.Value);
-        if (frequencyPenalty.HasValue) parameters.Add("frequency_penalty", frequencyPenalty.Value);
-        if (presencePenalty.HasValue) parameters.Add("presence_penalty", presencePenalty.Value);
-        if (repetitionPenalty.HasValue) parameters.Add("repetition_penalty", repetitionPenalty.Value);
-        if (stopSequences is { Length: > 0 }) parameters.Add("stop", stopSequences);
-
-        GuidanceType? chosenType = guidanceType ?? _defaultGuidanceType;
-        string? chosenString = guidanceString ?? _defaultGuidanceString;
-        //Util.Log($"guidanceString: {guidanceString}, _protocol: {_protocol}");
-        
-        switch (maxTokenType)
-        {
-            case MaxTokenType.MaxTokens:
-                if (maxTokens.HasValue) parameters.Add("max_tokens", maxTokens.Value);
-                break;
-            
-            case MaxTokenType.MaxCompletionTokens:
-                if (maxTokens.HasValue) parameters.Add("max_completion_tokens", maxTokens.Value);
-                break;
-        }
-        
-        switch (_protocol)
-        {
-            case Protocol.OpenAI:
-            {
-                // OpenAI Parameters - no bestOf support
-                
-                // OpenAI JSON Schema Guidance
-                if (!_supportsGuidance || string.IsNullOrEmpty(chosenString) || chosenType != GuidanceType.Json)
-                {
-                    return;
-                }
-
-                try
-                {
-                    // Parse the JSON schema string to ensure it's valid JSON
-                    var processedSchema = Util.AddAdditionalPropertiesToSchema(chosenString);
-
-                    
-                    // OpenAI uses response_format with json_schema type
-                    parameters.Add("response_format", new
-                    {
-                        type = "json_schema",
-                        json_schema = new
-                        {
-                            name = "response_schema",
-                            strict = true,
-                            schema = processedSchema
-                        }
-                    });
-                }
-                catch (Newtonsoft.Json.JsonException ex)
-                {
-                    Util.Log($"Warning: Invalid JSON schema provided for OpenAI: {chosenString}. Error: {ex.Message}");
-                }
-                
-                break;
-            }
-
-            case Protocol.vLLM:
-            {
-                // vLLM Parameters
-                if (bestOf.HasValue) parameters.Add("best_of", bestOf.Value);
-
-                // vLLM Guidance
-                if (!_supportsGuidance || string.IsNullOrEmpty(chosenString))
-                {
-                    //Util.Log($"{_supportsGuidance} : {chosenString}");
-                    return;
-                }
-
-                switch (chosenType)
-                {
-                    case GuidanceType.Json:
-                        parameters.Add("guided_json", chosenString);
-                        //parameters.Add("guided_decoding_backend", "outlines");
-                        parameters.Add("guided_decoding_backend", "outlines");
-                        break;
-                    case GuidanceType.Regex:
-                        parameters.Add("guided_regex", chosenString);
-                        parameters.Add("guided_decoding_backend", "lm-format-enforcer");
-                        //parameters.Add("guided_decoding_backend", "outlines");
-                        break;
-                    /*case GuidanceType.Choice:
-                        guidance.Add("guided_choice", _defaultGuidance);
-                        guidance.Add("guided_decoding_backend", "lm-format-enforcer");
-                        break;*/
-                }
-
-                break;
-            }
-
-            case Protocol.LLamaAPI:
-            {
-                // LLamaAPI Parameters
-                
-                // LLamaAPI Guidance
-                if (!_supportsGuidance || string.IsNullOrEmpty(chosenString)) 
-                    return;
-                
-                switch (chosenType)
-                {
-                    case GuidanceType.Json:
-                        parameters.Add("json_schema", chosenString);
-                        break;
-                    case GuidanceType.Grammar:
-                        parameters.Add("grammar", chosenString);
-                        break;
-                }
-
-                break;
-            }
-
-            case Protocol.Gemini:
-            {
-                // Gemini doesn't support bestOf, frequencyPenalty, presencePenalty
-                // Note: Gemini doesn't support regex guidance or other guidance types
-                // Parameters will be transformed in TransformToGeminiPayload method
-                
-                // Gemini JSON Schema Guidance
-                if (!_supportsGuidance || string.IsNullOrEmpty(chosenString) || chosenType != GuidanceType.Json)
-                {
-                    //Util.Log($"{_supportsGuidance} : {chosenString}");
-                    return;
-                }
-                
-                // Add guided_json parameter which will be transformed to responseSchema in TransformToGeminiPayload
-                parameters.Add("guided_json", chosenString);
-                break;
-            }
-        }
-    }
-    
-    /// <summary>
-    /// Ensures that the rate limit between requests is met before making a request.
-    /// </summary>
-    /// <returns>A task representing the asynchronous operation.</returns>
-    private async Task EnsureRateLimit()
-    {
-        var elapsed = DateTime.Now - _lastExecutionTime;
-        if (elapsed.TotalMilliseconds < _delayBetweenRequestsMs)
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(_delayBetweenRequestsMs) - elapsed);
-        }
-        _lastExecutionTime = DateTime.Now;
     }
     #endregion
 }
