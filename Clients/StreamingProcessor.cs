@@ -171,9 +171,11 @@ internal class StreamingProcessor
         try
         {
             response = await EstablishStreamingConnection(endpoint, content, cancellationToken);
+            //Util.Log("[DEBUG] Streaming connection established, starting to process response...");
             
             await foreach (var chunk in ProcessStreamingResponse(response, cancellationToken))
             {
+                //Util.Log($"[DEBUG] MakeStreamingRequestAsync: Yielding chunk, length: {chunk.Length}");
                 yield return chunk;
             }
         }
@@ -203,8 +205,16 @@ internal class StreamingProcessor
                 response?.Dispose(); // Dispose previous attempt if any
                 
                 //Util.Log($"[DEBUG] Sending HTTP request to: {endpoint}");
+                var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
+                {
+                    Content = content
+                };
+                // Ensure we negotiate for SSE
+                request.Headers.Accept.Clear();
+                request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+                // ... existing code ...
                 response = await _httpClient.SendAsync(
-                    new HttpRequestMessage(HttpMethod.Post, endpoint) { Content = content },
+                    request,
                     HttpCompletionOption.ResponseHeadersRead,
                     cancellationToken);
 
@@ -218,7 +228,7 @@ internal class StreamingProcessor
                 
                 // Handle non-success status codes
                 string responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                //Util.Log($"[DEBUG] Non-success response content: {responseContent}");
+                Util.Log($"EstablishStreamingConnection: Non-success response content: {responseContent}");
                 
                 if (retryAttempt >= _config.RetryAttemptLimit)
                 {
@@ -254,7 +264,7 @@ internal class StreamingProcessor
         }
 
         response?.Dispose();
-        //Util.Log($"[DEBUG] Failed to establish connection after all retries");
+        Util.Log($"EstablishStreamingConnection: Failed to establish connection after all retries");
         throw new Exception("Failed to establish streaming connection after all retries");
     }
 
@@ -281,13 +291,26 @@ internal class StreamingProcessor
                 yield break;
             }
 
-            //Util.Log($"[DEBUG] Read line #{lineCount}: {(line.Length > 100 ? line.Substring(0, 100) + "..." : line)}");
+            var trimmed = line.Trim();
+
+            // Skip keep-alives or empty event lines (valid in SSE)
+            if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith(":"))
+            {
+                continue;
+            }
+
+            // Explicitly handle OpenAI end-of-stream sentinel (allow incidental whitespace)
+            if (trimmed.StartsWith("data: [DONE]"))
+            {
+                //Util.Log($"[DEBUG] Received [DONE] sentinel, ending stream");
+                yield break;
+            }
 
             // Handle Server-Sent Events format
-            if (line.StartsWith("data: "))
+            if (trimmed.StartsWith("data: "))
             {
                 //Util.Log($"[DEBUG] Processing SSE data line");
-                var chunk = ProcessStreamingChunk(line);
+                var chunk = ProcessStreamingChunk(trimmed);
                 if (!string.IsNullOrEmpty(chunk))
                 {
                     //Util.Log($"[DEBUG] Extracted chunk with length: {chunk.Length}");
@@ -323,8 +346,14 @@ internal class StreamingProcessor
         {
             // Remove "data: " prefix if present
             string jsonString = data.StartsWith("data: ") ? data.Substring(6) : data;
-            //Util.Log($"[DEBUG] Processing JSON chunk: {(jsonString.Length > 200 ? jsonString.Substring(0, 200) + "..." : jsonString)}");
-            
+            jsonString = jsonString.Trim();
+
+            // Guard for sentinel or empty payloads arriving here
+            if (jsonString.Length == 0 || string.Equals(jsonString, "[DONE]", StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Empty;
+            }
+
             // Use Newtonsoft.Json throughout for consistency
             var jsonData = JsonConvert.DeserializeObject<Dictionary<string, object>>(jsonString);
             if (jsonData == null)
@@ -332,8 +361,6 @@ internal class StreamingProcessor
                 //Util.Log($"[DEBUG] Failed to deserialize JSON data");
                 return string.Empty;
             }
-
-            //Util.Log($"[DEBUG] JSON parsed successfully, protocol: {_config.Protocol}");
 
             // Handle Gemini streaming response format
             if (_config.Protocol == Protocol.Gemini)
@@ -378,56 +405,69 @@ internal class StreamingProcessor
             }
             else
             {
-                //Util.Log($"[DEBUG] Processing OpenAI/vLLM format");
-                // Standard OpenAI/vLLM streaming format
+                // OpenAI/vLLM format
                 if (jsonData.TryGetValue("choices", out var choicesObj) && 
                     choicesObj is Newtonsoft.Json.Linq.JArray choices &&
                     choices.Count > 0)
                 {
-                    //Util.Log($"[DEBUG] Found choices array with {choices.Count} items");
                     var firstChoice = choices[0] as Newtonsoft.Json.Linq.JObject;
-                    
                     if (firstChoice != null)
                     {
-                        // Handle completion streaming (prompt-based)
+                        // Completion (legacy / text) streaming
                         if (firstChoice.TryGetValue("text", out var textToken))
                         {
                             var text = textToken?.ToString() ?? string.Empty;
-                            //Util.Log($"[DEBUG] Extracted completion text: '{text}'");
                             return text;
                         }
-                        
-                        // Handle chat completion streaming
+
+                        // Chat streaming
                         if (firstChoice.TryGetValue("delta", out var deltaToken) &&
                             deltaToken is Newtonsoft.Json.Linq.JObject delta)
                         {
-                            //Util.Log($"[DEBUG] Found delta object");
-                            if (delta.TryGetValue("content", out var contentToken))
+                            // 1) Regular assistant content
+                            if (delta.TryGetValue("content", out var contentToken) && contentToken != null)
                             {
-                                var text = contentToken?.ToString() ?? string.Empty;
-                                //Util.Log($"[DEBUG] Extracted delta content: '{text}'");
+                                var text = contentToken.ToString();
                                 return text;
                             }
-                            
-                            // Handle message role changes
-                            if (delta.TryGetValue("role", out var roleToken))
+
+                            // 2) Tool/function call streaming arguments
+                            //    OpenAI: choices[].delta.tool_calls[i].function.arguments (streamed incrementally)
+                            if (delta.TryGetValue("tool_calls", out var toolCallsToken) &&
+                                toolCallsToken is Newtonsoft.Json.Linq.JArray toolCalls &&
+                                toolCalls.Count > 0)
                             {
-                                //Util.Log($"[DEBUG] Found role change: {roleToken}");
-                                // Role changes don't contain content to yield
+                                var sb = new System.Text.StringBuilder();
+                                foreach (var tc in toolCalls)
+                                {
+                                    if (tc is Newtonsoft.Json.Linq.JObject tcObj &&
+                                        tcObj.TryGetValue("function", out var fnToken) &&
+                                        fnToken is Newtonsoft.Json.Linq.JObject fnObj &&
+                                        fnObj.TryGetValue("arguments", out var argsToken) &&
+                                        argsToken != null)
+                                    {
+                                        sb.Append(argsToken.ToString());
+                                    }
+                                }
+                                return sb.ToString();
+                            }
+
+                            // 3) Legacy function_call (older models)
+                            if (delta.TryGetValue("function_call", out var fnCallToken) &&
+                                fnCallToken is Newtonsoft.Json.Linq.JObject fnCallObj &&
+                                fnCallObj.TryGetValue("arguments", out var fnArgsToken) &&
+                                fnArgsToken != null)
+                            {
+                                return fnArgsToken.ToString();
+                            }
+
+                            // Role changes carry no content to yield
+                            if (delta.TryGetValue("role", out _))
+                            {
                                 return string.Empty;
                             }
-                            
-                            //Util.Log($"[DEBUG] Delta object has no content or role property");
-                        }
-                        else
-                        {
-                            //Util.Log($"[DEBUG] No text or delta property found in first choice");
                         }
                     }
-                }
-                else
-                {
-                    //Util.Log($"[DEBUG] No choices array found or empty");
                 }
             }
         }
@@ -437,7 +477,6 @@ internal class StreamingProcessor
             Util.Log($"Warning: Failed to parse streaming JSON chunk: {ex.Message}");
         }
 
-        //Util.Log($"[DEBUG] No content extracted from chunk");
         return string.Empty;
     }
 }

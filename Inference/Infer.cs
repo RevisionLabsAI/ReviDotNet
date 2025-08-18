@@ -1023,7 +1023,7 @@ public class Infer
 			
 			await foreach (var chunk in streamResult)
 			{
-				Util.Log($"Chunk received: {chunk}");
+				//Util.Log($"Chunk received: {chunk}");
 				allContent.Append(chunk);
 				
 				// Process each character in the chunk to detect newlines

@@ -580,7 +580,7 @@ public class InferClient : IDisposable
 
         Util.Log($"### InferClient.GenerateStreamAsync() - Endpoint: {endpoint}");
         string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
-        Util.Log($"### InferClient.GenerateStreamAsync() - Payload: {payloadDebug}");
+        //Util.Log($"### InferClient.GenerateStreamAsync() - Payload: {payloadDebug}");
 
         try
         {
