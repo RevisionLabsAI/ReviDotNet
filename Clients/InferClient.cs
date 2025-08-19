@@ -16,13 +16,8 @@ namespace Revi;
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
-using System.Net.Http.Json;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Runtime.CompilerServices; // Add this for EnumeratorCancellation
-using System.IO; // Add this for StreamReader
-using System.Linq; // Add this for LINQ operations
 using Newtonsoft.Json;
 
 /// <summary>
