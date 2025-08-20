@@ -1010,6 +1010,9 @@ public class Infer
 		var allContent = new StringBuilder();
 		int completedLineCount = 0;
 		
+		// Create a cancellation token source that we can cancel when we're satisfied
+		using var internalCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+		
 		try
 		{
 			var prompt = FindPrompt(promptName);
@@ -1019,7 +1022,7 @@ public class Infer
 				modelProfile, 
 				modelName, 
 				null, 
-				token);
+				internalCts.Token); // Use our internal cancellation token
 			
 			await foreach (var chunk in streamResult)
 			{
@@ -1043,12 +1046,16 @@ public class Infer
 						// Check built-in line limit first (most efficient)
 						if (maxLines.HasValue && completedLineCount >= maxLines.Value)
 						{
+							// Cancel the underlying request since we have enough data
+							internalCts.Cancel();
 							return lines;
 						}
 						
 						// Check custom evaluator if provided
 						if (evaluator?.Invoke(allContent.ToString()) == true)
 						{
+							// Cancel the underlying request since evaluator is satisfied
+							internalCts.Cancel();
 							return lines;
 						}
 					}
@@ -1066,9 +1073,19 @@ public class Infer
 				lines.Add(finalLine);
 			}
 		}
-		catch (OperationCanceledException)
+		catch (OperationCanceledException) when (internalCts.Token.IsCancellationRequested && !token.IsCancellationRequested)
 		{
-			// Expected when cancellation is requested
+			// This is our internal cancellation (we got what we needed), not an external cancellation
+			// Add any remaining content as the last line before returning
+			var finalLine = currentLine.ToString().Trim();
+			if (!string.IsNullOrEmpty(finalLine))
+			{
+				lines.Add(finalLine);
+			}
+		}
+		catch (OperationCanceledException) when (token.IsCancellationRequested)
+		{
+			// External cancellation - re-throw
 			throw;
 		}
 		catch (Exception e)

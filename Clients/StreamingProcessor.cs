@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using Newtonsoft.Json;
 
@@ -31,18 +32,102 @@ internal class StreamingProcessor
     /// </summary>
     public StreamingResult<string> CreateStreamingResultWrapper(
         IAsyncEnumerable<string> sourceStream,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<StreamingMetadata, string, Task>? onCompletionCallback = null,
+        Func<Exception, Task>? onErrorCallback = null)
     {
         var startTime = DateTime.UtcNow;
         var metadataTracker = new StreamingMetadataTracker(startTime);
+        var responseBuilder = new StringBuilder();
     
-        var trackedStream = TrackStreamingMetadata(sourceStream, metadataTracker, cancellationToken);
+        var trackedStream = TrackStreamingMetadata(sourceStream, metadataTracker, cancellationToken, responseBuilder);
+        
+        // Set up completion task to handle callbacks when streaming finishes
+        var completionTask = HandleStreamingCompletion(metadataTracker.CompletionTask, responseBuilder, onCompletionCallback, onErrorCallback);
+        
+        // IMPORTANT: Ensure the completion task runs even if no one awaits it
+        // This fire-and-forget approach ensures callbacks are executed
+        _ = completionTask.ContinueWith(t => 
+        {
+            if (t.IsFaulted)
+            {
+                Util.Log($"StreamingProcessor completion task faulted: {t.Exception?.GetBaseException().Message}");
+            }
+            else if (t.IsCanceled)
+            {
+                Util.Log("StreamingProcessor completion task was canceled");
+            }
+            // Success case is handled by the callbacks themselves
+        }, TaskScheduler.Default);
     
         return new StreamingResult<string>
         {
             Stream = trackedStream,
-            Completion = metadataTracker.CompletionTask
+            Completion = completionTask
         };
+    }
+
+    /// <summary>
+    /// Handles streaming completion callbacks without affecting the stream itself.
+    /// </summary>
+    private async Task<StreamingMetadata> HandleStreamingCompletion(
+        Task<StreamingMetadata> originalCompletion,
+        StringBuilder responseBuilder,
+        Func<StreamingMetadata, string, Task>? onCompletionCallback,
+        Func<Exception, Task>? onErrorCallback)
+    {
+        try
+        {
+            var metadata = await originalCompletion;
+            var fullResponse = responseBuilder.ToString();
+            
+            // Call completion callback for any completion that has response data (including cancellations)
+            if (onCompletionCallback != null && !string.IsNullOrEmpty(fullResponse))
+            {
+                try
+                {
+                    //Util.Log("OnCompletionCallback!");
+                    await onCompletionCallback(metadata, fullResponse);
+                }
+                catch (Exception ex)
+                {
+                    Util.Log($"Error in streaming completion callback: {ex.Message}");
+                }
+            }
+            // Call error callback only for actual errors that don't have response data
+            else if (!metadata.IsSuccess && metadata.Exception != null && onErrorCallback != null &&
+                     !(metadata.Exception is OperationCanceledException) && string.IsNullOrEmpty(fullResponse))
+            {
+                try
+                {
+                    //Util.Log("OnErrorCallback!");
+                    await onErrorCallback(metadata.Exception);
+                }
+                catch (Exception ex)
+                {
+                    Util.Log($"Error in streaming error callback: {ex.Message}");
+                }
+            }
+            
+            return metadata;
+        }
+        catch (Exception ex)
+        {
+            // If the completion task itself fails, call error callback
+            if (onErrorCallback != null && !(ex is OperationCanceledException))
+            {
+                try
+                {
+                    //Util.Log("OnErrorCallback!");
+                    await onErrorCallback(ex);
+                }
+                catch (Exception callbackEx)
+                {
+                    Util.Log($"Error in streaming error callback: {callbackEx.Message}");
+                }
+            }
+            throw;
+        }
     }
 
     /// <summary>
@@ -51,19 +136,41 @@ internal class StreamingProcessor
     private async IAsyncEnumerable<string> TrackStreamingMetadata(
         IAsyncEnumerable<string> sourceStream,
         StreamingMetadataTracker tracker,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken,
+        StringBuilder responseBuilder)
     {
         var enumerator = sourceStream.GetAsyncEnumerator(cancellationToken);
+        bool completedSuccessfully = false;
+        
         try
         {
             while (await MoveNextSafely(enumerator, tracker))
             {
-                yield return enumerator.Current;
+                var chunk = enumerator.Current;
+                responseBuilder.Append(chunk); // Collect chunks as they're yielded
+                yield return chunk;
             }
+            completedSuccessfully = true;
             tracker.CompleteSuccessfully();
         }
         finally
         {
+            // If we didn't complete successfully and the tracker hasn't been completed yet,
+            // it means we exited due to an exception or cancellation
+            if (!completedSuccessfully && !tracker.CompletionTask.IsCompleted)
+            {
+                // Check if it was cancellation
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    tracker.CompleteCanceled(new OperationCanceledException(cancellationToken));
+                }
+                else
+                {
+                    // Some other reason - complete with a generic error
+                    tracker.CompleteWithError(new Exception("Stream ended unexpectedly"));
+                }
+            }
+            
             await enumerator.DisposeAsync();
         }
     }

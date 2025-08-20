@@ -448,17 +448,16 @@ public class InferClient : IDisposable
         string? guidanceString = null,
         CancellationToken cancellationToken = default)
     {
-        Util.Log("### InferClient.GenerateStreamAsync() - Prompt Streaming - Starting");
-        
         if (_config.SupportsCompletion is false)
         {
-            Util.Log("### InferClient.GenerateStreamAsync() - Error: Provider does not support prompt completion");
+            string errorMessage = $"### ReviDotNet.GenerateStreamAsync() Error - Prompt Streaming Not Supported\n" +
+                                 $"# Error\nAttempting prompt completion on provider that does not support it\n\n";
+            Util.Log(errorMessage);
+            Task.Run(async () => await Util.DumpLog(errorMessage, "ic-stream-prompt-error"));
             throw new Exception("Attempting prompt completion on provider that does not support it");
         }
 
         model = model == "default" ? _config.DefaultModel : model;
-        Util.Log($"### InferClient.GenerateStreamAsync() - Using model: {model}");
-        
         var parameters = new Dictionary<string, object>
         {
             { "model", model },
@@ -491,9 +490,44 @@ public class InferClient : IDisposable
 
         string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
         
-        return _streamingProcessor.CreateStreamingResultWrapper(
-            _streamingProcessor.ExecuteStreamingRequest(endpoint, parameters, cancellationToken),
-            cancellationToken);
+        // Log the start of streaming request
+        /*string startMessage = $"### ReviDotNet.GenerateStreamAsync() Prompt Streaming - Started\n" +
+                             $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                             $"# Payload\n{payloadDebug}\n\n";
+        Task.Run(async () => await Util.DumpLog(startMessage, "ic-stream-prompt-start"));*/
+        
+        try
+        {
+            var streamingEnumerable = _streamingProcessor.ExecuteStreamingRequest(endpoint, parameters, cancellationToken);
+            return _streamingProcessor.CreateStreamingResultWrapper(streamingEnumerable, cancellationToken, 
+                async (completion, fullResponse) => {
+                    // This callback will be called when streaming completes with the full response
+                    string completionMessage = $"### ReviDotNet.GenerateStreamAsync() Prompt Streaming - Completed\n" +
+                                             $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                                             $"# Payload\n{payloadDebug}\n\n" +
+                                             $"# Response\n'''\n{fullResponse}\n'''\n\n" +
+                                             $"# Completion Info\n{JsonConvert.SerializeObject(completion, Formatting.Indented)}\n\n";
+                    await Util.DumpLog(completionMessage, "ic-stream-prompt");
+                },
+                async (ex) => {
+                    // This callback will be called if streaming fails
+                    string errorMessage = $"### ReviDotNet.GenerateStreamAsync() Prompt Streaming - Error\n" +
+                                         $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                                         $"# Payload\n{payloadDebug}\n\n" +
+                                         $"# Exception\n{ex.Message}\n\n";
+                    await Util.DumpLog(errorMessage, "ic-stream-prompt-error");
+                });
+        }
+        catch (Exception e)
+        {
+            string errorMessage = $"### ReviDotNet.GenerateStreamAsync() Prompt Streaming - Setup Error\n" +
+                                 $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                                 $"# Payload\n{payloadDebug}\n\n" +
+                                 $"# Exception\n{e.Message}\n\n";
+            Util.Log(errorMessage);
+            Task.Run(async () => await Util.DumpLog(errorMessage, "ic-stream-prompt-error"));
+            throw;
+        }
     }
     #endregion
     
@@ -538,12 +572,7 @@ public class InferClient : IDisposable
         string? guidanceString = null,
         CancellationToken cancellationToken = default)
     {
-        Util.Log("### InferClient.GenerateStreamAsync() - Chat Streaming - Starting");
-        
         model = model == "default" ? _config.DefaultModel : model;
-        Util.Log($"### InferClient.GenerateStreamAsync() - Using model: {model}");
-        Util.Log($"### InferClient.GenerateStreamAsync() - Messages count: {messages.Count}");
-        
         var parameters = new Dictionary<string, object>
         {
             { "model", model },
@@ -573,26 +602,44 @@ public class InferClient : IDisposable
         else
             endpoint = "v1/chat/completions";
 
-        Util.Log($"### InferClient.GenerateStreamAsync() - Endpoint: {endpoint}");
         string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
-        //Util.Log($"### InferClient.GenerateStreamAsync() - Payload: {payloadDebug}");
+        
+        // Log the start of streaming request
+        /*string startMessage = $"### ReviDotNet.GenerateStreamAsync() Chat Streaming - Started\n" +
+                             $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                             $"# Payload\n{payloadDebug}\n\n";
+        Task.Run(async () => await Util.DumpLog(startMessage, "ic-stream-chat-start"));*/
 
         try
         {
-            Util.Log("### InferClient.GenerateStreamAsync() - Calling _streamingProcessor.ExecuteStreamingRequest");
             var streamingEnumerable = _streamingProcessor.ExecuteStreamingRequest(endpoint, parameters, cancellationToken);
-            
-            Util.Log("### InferClient.GenerateStreamAsync() - Calling _streamingProcessor.CreateStreamingResultWrapper");
-            var result = _streamingProcessor.CreateStreamingResultWrapper(streamingEnumerable, cancellationToken);
-            
-            Util.Log("### InferClient.GenerateStreamAsync() - Returning StreamingResult");
-            return result;
+            return _streamingProcessor.CreateStreamingResultWrapper(streamingEnumerable, cancellationToken,
+                async (completion, fullResponse) => {
+                    // This callback will be called when streaming completes with the full response
+                    string completionMessage = $"### ReviDotNet.GenerateStreamAsync() Chat Streaming - Completed\n" +
+                                             $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                                             $"# Payload\n{payloadDebug}\n\n" +
+                                             $"# Response\n'''\n{fullResponse}\n'''\n\n" +
+                                             $"# Completion Info\n{JsonConvert.SerializeObject(completion, Formatting.Indented)}\n\n";
+                    await Util.DumpLog(completionMessage, "ic-stream-chat");
+                },
+                async (ex) => {
+                    // This callback will be called if streaming fails
+                    string errorMessage = $"### ReviDotNet.GenerateStreamAsync() Chat Streaming - Error\n" +
+                                         $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                                         $"# Payload\n{payloadDebug}\n\n" +
+                                         $"# Exception\n{ex.Message}\n\n";
+                    await Util.DumpLog(errorMessage, "ic-stream-chat-error");
+                });
         }
         catch (Exception ex)
         {
-            string errorMessage = $"### InferClient.GenerateStreamAsync() - Exception in chat streaming: {ex.Message}";
+            string errorMessage = $"### ReviDotNet.GenerateStreamAsync() Chat Streaming - Setup Error\n" +
+                                 $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                                 $"# Payload\n{payloadDebug}\n\n" +
+                                 $"# Exception\n{ex.Message}\n\n";
             Util.Log(errorMessage);
-            Util.Log($"### InferClient.GenerateStreamAsync() - Exception stack trace: {ex.StackTrace}");
+            Task.Run(async () => await Util.DumpLog(errorMessage, "ic-stream-chat-error"));
             throw;
         }
     }
