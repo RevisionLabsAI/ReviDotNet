@@ -94,4 +94,56 @@ public class InferClientTests
         await act.Should().ThrowAsync<Exception>()
             .WithMessage("*does not support*");
     }
+
+    [Fact]
+    public async Task GenerateStreamAsync_Prompt_Gemini_StreamsSingleChunkAndCompletes()
+    {
+        var (client, server) = CreateClient(Protocol.Gemini, supportsCompletion: true, defaultModel: "gemini-pro", apiKey: "abc123");
+        using var _ = client; using var __ = server;
+
+        var result = client.GenerateStreamAsync("Stream please", model: "gemini-pro");
+
+        var chunks = new List<string>();
+        await foreach (var chunk in result.Stream)
+        {
+            chunks.Add(chunk);
+        }
+        var completion = await result.Completion;
+
+        chunks.Should().NotBeNull();
+        chunks.Should().HaveCount(1);
+        chunks[0].Should().Be("chunk");
+
+        completion.IsSuccess.Should().BeTrue();
+        completion.ChunkCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GenerateStreamAsync_Chat_Gemini_StreamsSingleChunkAndCompletes()
+    {
+        var (client, server) = CreateClient(Protocol.Gemini, supportsCompletion: true, defaultModel: "gemini-pro", apiKey: "abc123");
+        using var _ = client; using var __ = server;
+
+        var messages = new List<Message>
+        {
+            new("system", "You are helpful"),
+            new("user", "Stream please")
+        };
+
+        var result = client.GenerateStreamAsync(messages, model: "gemini-pro");
+
+        var chunks = new List<string>();
+        await foreach (var chunk in result.Stream)
+        {
+            chunks.Add(chunk);
+        }
+        var completion = await result.Completion;
+
+        chunks.Should().NotBeNull();
+        chunks.Should().HaveCount(1);
+        chunks[0].Should().Be("chunk");
+
+        completion.IsSuccess.Should().BeTrue();
+        completion.ChunkCount.Should().Be(1);
+    }
 }
