@@ -70,7 +70,8 @@ public class InferClient : IDisposable
         bool supportsCompletion = false,
         bool supportsGuidance = false,
         GuidanceType? defaultGuidanceType = GuidanceType.Disabled,
-        string? defaultGuidanceString = null)
+        string? defaultGuidanceString = null,
+        HttpClient? httpClientOverride = null)
     {
         // Create configuration
         _config = new InferClientConfig
@@ -103,8 +104,16 @@ public class InferClient : IDisposable
         if (apiUrl.EndsWith("v1/completions"))
             throw new Exception("Please remove v1/completions from the end of API URL"); 
         
-        _httpClient = new HttpClient { BaseAddress = new Uri(apiUrl) };
-        _httpClient.DefaultRequestHeaders.Add("Accept", "application/json");
+        // Use provided HttpClient if available (for testing), otherwise create a new one
+        _httpClient = httpClientOverride ?? new HttpClient { BaseAddress = new Uri(apiUrl) };
+        if (_httpClient.BaseAddress is null)
+        {
+            _httpClient.BaseAddress = new Uri(apiUrl);
+        }
+        if (!_httpClient.DefaultRequestHeaders.Contains("Accept"))
+        {
+            _httpClient.DefaultRequestHeaders.Add("Accept", "application/json");
+        }
         //_client.DefaultRequestHeaders.Add("Content-Type", "application/json");
         if (_config.UseApiKey)
         {
@@ -113,7 +122,7 @@ public class InferClient : IDisposable
                 // Gemini uses query parameter for API key instead of Bearer token
                 // API key will be added to the URL in the request
             }
-            else
+            else if (!_httpClient.DefaultRequestHeaders.Contains("Authorization"))
             {
                 _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_config.ApiKey}");
             }
