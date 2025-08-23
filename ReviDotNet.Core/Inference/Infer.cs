@@ -1175,7 +1175,7 @@ public class Infer
 			return promptObj;
 		
 		if (modelString is "disabled")
-			return promptObj;
+			return null;
 
 		switch (promptObj)
 		{

@@ -115,7 +115,7 @@ public class ModelProfile
     [RConfigProperty("override-tuning_frequency-penalty")]
     public string? FrequencyPenalty { get; set; }
     
-    [RConfigProperty("override-tuning_repition-penalty")]
+    [RConfigProperty("override-tuning_repetition-penalty")]
     public string? RepetitionPenalty { get; set; }
     
     
