@@ -89,6 +89,27 @@ public class ProviderProfile
         if (string.IsNullOrEmpty(APIURL))
             throw new Exception("Missing API URL!");
         
+        // Resolve API key from environment if requested
+        if (!string.IsNullOrEmpty(APIKey) && APIKey.Equals("environment", StringComparison.InvariantCultureIgnoreCase))
+        {
+            string providerName = (Name ?? string.Empty).Trim();
+            // Construct environment variable name: PROVAPIKEY_<PROVIDERNAME>
+            string envVarName = "PROVAPIKEY_" + providerName
+                .Replace('-', '_')
+                .Replace(' ', '_')
+                .ToUpperInvariant();
+            string? envApiKey = Environment.GetEnvironmentVariable(envVarName);
+            if (string.IsNullOrWhiteSpace(envApiKey))
+            {
+                Util.Log($"Environment variable '{envVarName}' not found or empty for provider '{Name}'. Using empty API key.");
+                APIKey = string.Empty;
+            }
+            else
+            {
+                APIKey = envApiKey;
+            }
+        }
+        
         switch (Protocol)
         {
             case Revi.Protocol.OpenAI: 

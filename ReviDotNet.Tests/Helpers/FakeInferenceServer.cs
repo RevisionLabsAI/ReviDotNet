@@ -27,7 +27,8 @@ public static class FakeInferenceServer
                     new { text = "Hello world (prompt)", finish_reason = "stop" }
                 }
             };
-            await context.Response.WriteAsJsonAsync(response);
+            var json = JsonSerializer.Serialize(response);
+            await context.Response.WriteAsync(json);
         });
 
         // OpenAI: chat completions
@@ -41,7 +42,8 @@ public static class FakeInferenceServer
                     new { message = new { content = "Hello world (chat)" }, finish_reason = "stop" }
                 }
             };
-            await context.Response.WriteAsJsonAsync(response);
+            var json = JsonSerializer.Serialize(response);
+            await context.Response.WriteAsync(json);
         });
 
         // Gemini prompt
@@ -65,7 +67,8 @@ public static class FakeInferenceServer
                     }
                 }
             };
-            await context.Response.WriteAsJsonAsync(response);
+            var json = JsonSerializer.Serialize(response);
+            await context.Response.WriteAsync(json);
         });
 
         // Gemini streaming endpoint (we can just reuse same shape for completion callback not used in these tests)
