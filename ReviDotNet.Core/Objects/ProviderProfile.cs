@@ -94,7 +94,7 @@ public class ProviderProfile
         {
             string providerName = (Name ?? string.Empty).Trim();
             // Construct environment variable name: PROVAPIKEY_<PROVIDERNAME>
-            string envVarName = "PROVAPIKEY_" + providerName
+            string envVarName = "PROVAPIKEY__" + providerName
                 .Replace('-', '_')
                 .Replace(' ', '_')
                 .ToUpperInvariant();
