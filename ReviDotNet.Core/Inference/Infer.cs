@@ -85,7 +85,7 @@ public class Infer
 						throw new Exception("Too many tokens!");
 
 					// Prompt completion
-					response = await model.Provider.InferenceClient.GenerateAsync(
+                    response = await model.Provider.InferenceClient.GenerateAsync(
 						prompt: promptString,
 						model: model.ModelString,
 						temperature: (float?)SelectParam(model.Temperature, prompt.Temperature),
@@ -101,6 +101,7 @@ public class Infer
 						stopSequences: ToArray(model.StopSequences),
 						guidanceType: guidanceType,
 						guidanceString: guidanceString,
+						useSearchGrounding: (bool?)SelectParam(model.UseSearchGrounding, prompt.UseSearchGrounding),
 						cancellationToken: token);
 					break;
 				}
@@ -131,6 +132,7 @@ public class Infer
 						stopSequences: ToArray(model.StopSequences),
 						guidanceType: guidanceType,
 						guidanceString: guidanceString,
+						useSearchGrounding: (bool?)SelectParam(model.UseSearchGrounding, prompt.UseSearchGrounding),
 						cancellationToken: token);
 					break;
 				}
@@ -316,6 +318,7 @@ public class Infer
 						stopSequences: ToArray(model.StopSequences),
 						guidanceType: guidanceType,
 						guidanceString: guidanceString,
+						useSearchGrounding: (bool?)SelectParam(model.UseSearchGrounding, prompt.UseSearchGrounding),
 						cancellationToken: token);
 					break;
 				}
@@ -344,6 +347,7 @@ public class Infer
 						stopSequences: ToArray(model.StopSequences),
 						guidanceType: guidanceType,
 						guidanceString: guidanceString,
+						useSearchGrounding: (bool?)SelectParam(model.UseSearchGrounding, prompt.UseSearchGrounding),
 						cancellationToken: token);
 					break;
 				}
@@ -1169,6 +1173,19 @@ public class Infer
 		return RlonValidation.CompareSchema(output, schema);
 	}*/
 	
+	private static bool? ComputeUseSearchGrounding(Prompt prompt, ModelProfile model)
+	{
+		// Model override takes precedence if provided
+		var modelOverride = model.UseSearchGrounding?.Trim().ToLowerInvariant();
+		if (!string.IsNullOrEmpty(modelOverride))
+		{
+			if (modelOverride == "disabled") return null; // explicitly remove
+			if (bool.TryParse(modelOverride, out var b)) return b;
+		}
+		// Fallback to prompt setting
+		return prompt.UseSearchGrounding;
+	}
+
 	private static object? SelectParam(string? modelString, object? promptObj)
 	{
 		if (modelString is null)

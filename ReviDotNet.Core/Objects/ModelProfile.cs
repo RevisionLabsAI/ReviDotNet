@@ -89,6 +89,10 @@ public class ModelProfile
     [RConfigProperty("override-settings_model-pref")]
     public string? ModelPref { get; set; }
     
+    // Model-level override for Gemini Search Grounding: "true" / "false" / "disabled"
+    [RConfigProperty("override-settings_use-search-grounding")]
+    public string? UseSearchGrounding { get; set; }
+    
     [RConfigProperty("override-settings_min-tier")]
     public ModelTier? MinTier { get; set; }
     

@@ -210,6 +210,7 @@ public class InferClient : IDisposable
         string[]? stopSequences = null,
         GuidanceType? guidanceType = GuidanceType.Disabled,
         string? guidanceString = null,
+        bool? useSearchGrounding = null,
         CancellationToken cancellationToken = default)
     {
         if (_config.SupportsCompletion is false)
@@ -236,7 +237,8 @@ public class InferClient : IDisposable
             repetitionPenalty,
             stopSequences,
             guidanceType,
-            guidanceString);
+            guidanceString,
+            useSearchGrounding);
         
         // Use appropriate endpoint based on protocol
         string endpoint;
@@ -336,6 +338,7 @@ public class InferClient : IDisposable
         string[]? stopSequences = null,
         GuidanceType? guidanceType = GuidanceType.Disabled,
         string? guidanceString = null,
+        bool? useSearchGrounding = null,
         CancellationToken cancellationToken = default)
     {
         model = model == "default" ? _config.DefaultModel : model;
@@ -360,7 +363,8 @@ public class InferClient : IDisposable
             repetitionPenalty,
             stopSequences,
             guidanceType,
-            guidanceString);
+            guidanceString,
+            useSearchGrounding);
 
         string endpoint;
         if (_config.Protocol == Protocol.Gemini)
@@ -455,6 +459,7 @@ public class InferClient : IDisposable
         string[]? stopSequences = null,
         GuidanceType? guidanceType = GuidanceType.Disabled,
         string? guidanceString = null,
+        bool? useSearchGrounding = null,
         CancellationToken cancellationToken = default)
     {
         if (_config.SupportsCompletion is false)
@@ -488,7 +493,8 @@ public class InferClient : IDisposable
             repetitionPenalty,
             stopSequences,
             guidanceType,
-            guidanceString);
+            guidanceString,
+            useSearchGrounding);
         
         // Use appropriate endpoint based on protocol
         string endpoint;
@@ -579,6 +585,7 @@ public class InferClient : IDisposable
         string[]? stopSequences = null,
         GuidanceType? guidanceType = GuidanceType.Disabled,
         string? guidanceString = null,
+        bool? useSearchGrounding = null,
         CancellationToken cancellationToken = default)
     {
         model = model == "default" ? _config.DefaultModel : model;
@@ -603,7 +610,8 @@ public class InferClient : IDisposable
             repetitionPenalty,
             stopSequences,
             guidanceType,
-            guidanceString);
+            guidanceString,
+            useSearchGrounding);
 
         string endpoint;
         if (_config.Protocol == Protocol.Gemini)

@@ -90,6 +90,22 @@ public class PayloadTransformer
             geminiPayload["contents"] = contents;
         }
         
+        // Add Google Search grounding tool if requested per request (prompt or model override)
+        if (payload.TryGetValue("use_search_grounding", out var useGroundingObj))
+        {
+            bool enable = false;
+            if (useGroundingObj is bool b)
+                enable = b;
+            else if (bool.TryParse(useGroundingObj?.ToString(), out var parsed))
+                enable = parsed;
+
+            if (enable)
+            {
+                // Use snake_case key to match Gemini REST API: { "tools": [ { "google_search": {} } ] }
+                geminiPayload["tools"] = new[] { new { google_search = new { } } };
+            }
+        }
+        
         // Note: Gemini doesn't support frequency_penalty, presence_penalty, or best_of
         // These parameters are ignored for Gemini requests
 
@@ -124,7 +140,8 @@ public class PayloadTransformer
         float? repetitionPenalty,
         string[]? stopSequences,
         GuidanceType? guidanceType,
-        string? guidanceString)
+        string? guidanceString,
+        bool? useSearchGrounding)
     {
         if (temperature.HasValue) parameters.Add("temperature", temperature.Value);
         if (topK.HasValue) parameters.Add("top_k", topK.Value);
@@ -247,6 +264,11 @@ public class PayloadTransformer
                 // Gemini doesn't support bestOf, frequencyPenalty, presencePenalty
                 // Note: Gemini doesn't support regex guidance or other guidance types
                 // Parameters will be transformed in TransformToGeminiPayload method
+
+                if (useSearchGrounding is not null)
+                {
+                    parameters.Add("use_search_grounding", useSearchGrounding);
+                }
                 
                 // Gemini JSON Schema Guidance
                 if (!_config.SupportsGuidance || string.IsNullOrEmpty(chosenString) || chosenType != GuidanceType.Json)
