@@ -351,5 +351,32 @@ public static partial class Util
 		       type.IsEnum ||
 		       (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>));
 	}
+	
+	/// <summary>
+	/// Returns a clean, comma-separated string of the names of the values of an enum type TEnum.
+	/// Example: Unknown, Popular, Geographic, Sponsored, Brand, Infrastructure, Other
+	/// </summary>
+	/// <typeparam name="TEnum">An enum type.</typeparam>
+	/// <param name="separator">Separator between enum names. Defaults to ", ".</param>
+	/// <returns>Comma-separated string containing enum value names in declaration order.</returns>
+	public static string EnumNamesToString<TEnum>(string separator = ", ") where TEnum : struct, Enum
+	{
+		// Enum.GetNames preserves the declaration order for enums
+		return string.Join(separator, Enum.GetNames(typeof(TEnum)));
+	}
+
+	/// <summary>
+	/// Non-generic overload that accepts a Type instance representing an enum.
+	/// </summary>
+	/// <param name="enumType">Type of the enum.</param>
+	/// <param name="separator">Separator between enum names. Defaults to ", ".</param>
+	/// <returns>Comma-separated string containing enum value names in declaration order.</returns>
+	/// <exception cref="ArgumentException">Thrown if enumType is not an enum.</exception>
+	public static string EnumNamesToString(Type enumType, string separator = ", ")
+	{
+		if (enumType is null) throw new ArgumentNullException(nameof(enumType));
+		if (!enumType.IsEnum) throw new ArgumentException("Type must be an enum", nameof(enumType));
+		return string.Join(separator, Enum.GetNames(enumType));
+	}
 
 }

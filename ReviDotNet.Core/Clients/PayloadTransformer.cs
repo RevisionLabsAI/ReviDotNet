@@ -1,9 +1,130 @@
 using Newtonsoft.Json;
+using System.Linq;
+using System.Collections.Generic;
 
 namespace Revi;
 
 public class PayloadTransformer
 {
+    private static object? ConvertJTokenToPlain(Newtonsoft.Json.Linq.JToken token)
+    {
+        switch (token.Type)
+        {
+            case Newtonsoft.Json.Linq.JTokenType.Object:
+                var obj = (Newtonsoft.Json.Linq.JObject)token;
+                var dict = new Dictionary<string, object>();
+                foreach (var prop in obj.Properties())
+                {
+                    var val = ConvertJTokenToPlain(prop.Value);
+                    if (val != null)
+                        dict[prop.Name] = val;
+                }
+                return dict;
+            case Newtonsoft.Json.Linq.JTokenType.Array:
+                var arr = (Newtonsoft.Json.Linq.JArray)token;
+                var list = new List<object>();
+                foreach (var item in arr)
+                {
+                    var v = ConvertJTokenToPlain(item);
+                    list.Add(v!);
+                }
+                return list;
+            case Newtonsoft.Json.Linq.JTokenType.Integer:
+                return token.ToObject<long>();
+            case Newtonsoft.Json.Linq.JTokenType.Float:
+                return token.ToObject<double>();
+            case Newtonsoft.Json.Linq.JTokenType.Boolean:
+                return token.ToObject<bool>();
+            case Newtonsoft.Json.Linq.JTokenType.String:
+                return token.ToObject<string>();
+            case Newtonsoft.Json.Linq.JTokenType.Null:
+                return null;
+            default:
+                return token.ToString();
+        }
+    }
+
+    // Gemini requires enums to be only on string types. This sanitizer ensures that.
+    private static void SanitizeSchemaForGemini(Dictionary<string, object> schema)
+    {
+        void FixNode(Dictionary<string, object> node)
+        {
+            string type = node.TryGetValue("type", out var t) ? t?.ToString() ?? string.Empty : string.Empty;
+
+            // Handle enums on non-string types by converting to string enum
+            if (node.TryGetValue("enum", out var enumObj) && enumObj is IList<object> enumList)
+            {
+                if (!string.Equals(type, "string", StringComparison.OrdinalIgnoreCase))
+                {
+                    node["type"] = "string";
+                    node["enum"] = enumList.Select(v => v?.ToString() ?? string.Empty).ToList();
+                }
+            }
+
+            // Arrays: move enum from array node to items, and ensure items is string with enum when needed
+            if (string.Equals(type, "array", StringComparison.OrdinalIgnoreCase))
+            {
+                Dictionary<string, object> itemsNode;
+                if (node.TryGetValue("items", out var itemsObj) && itemsObj is Dictionary<string, object> dict)
+                {
+                    itemsNode = dict;
+                }
+                else
+                {
+                    itemsNode = new Dictionary<string, object>();
+                    node["items"] = itemsNode;
+                }
+
+                // Recurse into items first
+                FixNode(itemsNode);
+
+                if (node.TryGetValue("enum", out var arrEnumObj) && arrEnumObj is IList<object> arrEnum)
+                {
+                    itemsNode["type"] = "string";
+                    itemsNode["enum"] = arrEnum.Select(v => v?.ToString() ?? string.Empty).ToList();
+                    node.Remove("enum");
+                }
+            }
+
+            // Objects: recurse into properties
+            if (string.Equals(type, "object", StringComparison.OrdinalIgnoreCase))
+            {
+                if (node.TryGetValue("properties", out var propsObj) && propsObj is Dictionary<string, object> props)
+                {
+                    foreach (var key in props.Keys.ToList())
+                    {
+                        if (props[key] is Dictionary<string, object> child)
+                        {
+                            FixNode(child);
+                        }
+                    }
+                }
+            }
+
+            // Combinators: oneOf, anyOf, allOf
+            foreach (var keyword in new[] { "oneOf", "anyOf", "allOf" })
+            {
+                if (node.TryGetValue(keyword, out var combo) && combo is IList<object> list)
+                {
+                    foreach (var item in list)
+                    {
+                        if (item is Dictionary<string, object> child)
+                        {
+                            FixNode(child);
+                        }
+                    }
+                }
+            }
+
+            // Nested items (arrays of arrays)
+            if (node.TryGetValue("items", out var nested) && nested is Dictionary<string, object> nestedDict)
+            {
+                FixNode(nestedDict);
+            }
+        }
+
+        FixNode(schema);
+    }
     private readonly InferClientConfig _config;
 
     public PayloadTransformer(InferClientConfig config)
@@ -47,9 +168,18 @@ public class PayloadTransformer
             try
             {
                 // Parse the JSON schema string to ensure it's valid JSON
-                var schemaObject = JsonConvert.DeserializeObject(jsonSchema.ToString());
-                generationConfig["responseSchema"] = schemaObject;
-                generationConfig["responseMimeType"] = "application/json";
+                //                var schemaObject = JsonConvert.DeserializeObject(jsonSchema.ToString());
+                //generationConfig["responseSchema"] = schemaObject;
+                //generationConfig["responseMimeType"] = "application/json";
+                var schemaToken = Newtonsoft.Json.Linq.JToken.Parse(jsonSchema.ToString());
+                var schemaObject = ConvertJTokenToPlain(schemaToken) as Dictionary<string, object>;
+                if (schemaObject != null)
+                {
+                    // Sanitize schema for Gemini: enums must be on string types only
+                    SanitizeSchemaForGemini(schemaObject);
+                    generationConfig["responseSchema"] = schemaObject;
+                    generationConfig["responseMimeType"] = "application/json";
+                }
             }
             catch (Newtonsoft.Json.JsonException)
             {

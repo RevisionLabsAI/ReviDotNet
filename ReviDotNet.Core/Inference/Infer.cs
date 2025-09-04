@@ -506,7 +506,7 @@ public class Infer
 				throw new NoNullAllowedException(
 					$"InferToObject(): json was null or empty: \n'''\n{serializedResult}\n'''\n");
 			}
-			var settings = new JsonSerializerSettings
+			JsonSerializerSettings settings = new ()
 				{ Converters = new List<JsonConverter> { new StringEnumConverter() } };
 			
 			newObject = JsonConvert.DeserializeObject<T>(extractedJson, settings);
@@ -855,11 +855,159 @@ public class Infer
 	#endregion
 	
 	
+	// ===================
+	//  Enum Converters
+	// ===================
+	
+	#region Enum Converters
+	public static async Task<TEnum> ToEnum<TEnum>(
+		string promptName,
+		List<Input>? inputs = null,
+		ModelProfile? modelProfile = null,
+		string? modelName = null,
+		bool includeEnumValues = false,
+		int retryAttempt = 0,
+		int? originalRetryLimit = null,
+		CancellationToken token = default) where TEnum : struct, Enum
+	{
+		// Declarations
+		Type enumType = typeof(TEnum);
+		TEnum parsedValue = default;
+		string? rawOutput = null;
+		
+		// Find the prompt
+		Prompt prompt = FindPrompt(promptName);
+		
+		// Optionally augment inputs with enum values to help the model output a valid option
+		if (includeEnumValues)
+		{
+			inputs ??= new List<Input>();
+			// Only add if not already present
+			if (!inputs.Any(i => string.Equals(i.Label, "Enum Values", StringComparison.OrdinalIgnoreCase)))
+			{
+				inputs.Add(new Input("Enum Values", Util.EnumNamesToString(enumType)));
+			}
+		}
+		
+		// Prompt for completion
+		CompletionResponse? result = await Completion(
+			prompt,
+			inputs,
+			modelProfile,
+			modelName,
+			null,
+			token);
+		
+		rawOutput = result?.Selected;
+		
+		// Try to parse the output directly
+		if (TryParseEnum(rawOutput, out parsedValue))
+			return parsedValue;
+		
+		// Attempt remediation via an enum-fixer prompt if available
+		try
+		{
+			var fixer = PromptManager.Get("enum-fixer");
+			if (fixer is not null)
+			{
+				var fixInputs = new List<Input>
+				{
+					new Input("Enum Values", Util.EnumNamesToString(enumType)),
+					new Input("Bad Output", rawOutput ?? string.Empty),
+					new Input("Instruction", "Convert the input into exactly one of the enum names and output ONLY that enum name.")
+				};
+				var fixResult = await Completion(fixer, fixInputs, modelProfile, modelName, null, token);
+				var fixedOutput = fixResult?.Selected;
+				if (TryParseEnum(fixedOutput, out parsedValue))
+					return parsedValue;
+			}
+		}
+		catch (Exception e)
+		{
+			Util.Log($"Enum remediation attempt failed: {e.Message}");
+		}
+		
+		// Retry logic similar to ToObject
+		if (originalRetryLimit is null)
+			originalRetryLimit = prompt.RetryAttempts;
+		
+		if (retryAttempt < (originalRetryLimit ?? 0))
+		{
+			Util.Log($"Retrying Infer.ToEnum() for prompt '{prompt.Name}'");
+			string promptToRetry = promptName;
+			if (prompt.RetryPrompt is not null)
+				promptToRetry = prompt.RetryPrompt;
+			
+			return await ToEnum<TEnum>(
+				promptToRetry,
+				inputs,
+				modelProfile,
+				modelName,
+				includeEnumValues,
+				retryAttempt + 1,
+				originalRetryLimit,
+				token);
+		}
+		
+		// Fall back to default enum value (typically Unknown)
+		return parsedValue;
+	}
+	
+	private static bool TryParseEnum<TEnum>(string? text, out TEnum value) where TEnum : struct, Enum
+	{
+		value = default;
+		if (string.IsNullOrWhiteSpace(text))
+			return false;
+		
+		// Normalize: take first non-empty line and trim quotes/backticks/punctuation
+		var firstLine = text
+			.Replace("\r", "")
+			.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+			.FirstOrDefault()?.Trim();
+		if (string.IsNullOrEmpty(firstLine))
+			return false;
+		
+		string cleaned = firstLine.Trim('"', '\'', '`', ' ', '\t');
+		cleaned = cleaned.TrimEnd('.', ';', ':');
+		
+		// Direct parse first
+		if (Enum.TryParse(cleaned, ignoreCase: true, out value))
+			return true;
+		
+		// Try to locate an enum name token within the whole output
+		var all = text.Trim();
+		var names = Enum.GetNames(typeof(TEnum));
+		foreach (var name in names)
+		{
+			// Match as whole word ignoring case
+			var pattern = $@"(?i)(?<![A-Za-z0-9_]){Regex.Escape(name)}(?![A-Za-z0-9_])";
+			if (Regex.IsMatch(all, pattern))
+			{
+				if (Enum.TryParse(name, out value))
+					return true;
+			}
+		}
+		return false;
+	}
+	#endregion
+	
+	
 	// =======================
 	//  Convenience Overloads
 	// =======================
-
+	
 	#region Convenience Overloads
+	public static async Task<TEnum> ToEnum<TEnum>(
+		string promptName,
+		Input? input,
+		ModelProfile? modelProfile = null,
+		string? modelName = null,
+		bool includeEnumValues = false,
+		CancellationToken token = default) where TEnum : struct, Enum
+	{
+		List<Input>? inputs = (input is not null) ? (new List<Input>() { input }) : null;
+		return await ToEnum<TEnum>(promptName, inputs, modelProfile, modelName, includeEnumValues, token: token);
+	}
 	/// <summary>
 	/// Performs completion of the given prompt using the specified inputs and model profile.
 	/// </summary>
