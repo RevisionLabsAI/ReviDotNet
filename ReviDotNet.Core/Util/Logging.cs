@@ -65,7 +65,7 @@ public static partial class Util
 	/// </summary>
 	/// <param name="textToDump">The text to be saved into the file</param>
 	/// <param name="fileNamePrefix">The prefix to the file name</param>
-	public static async Task DumpLog(string? textToDump, string fileNamePrefix)
+ public static async Task DumpLog(string? textToDump, string fileNamePrefix)
 	{
 		if (string.IsNullOrEmpty(textToDump))
 			return;
@@ -94,12 +94,12 @@ public static partial class Util
 			{
 				// Formatting the filename
 				fileName = $"{fileNamePrefix}{fileSuffix}.txt";
-                
+				
 				// Create the file path
 				fullFilePath = Path.Combine(homeFolder, "ResenLogs", folder, fileName);
-
+				
 				fileSuffix = "_" + counter++;
-
+				
 				if (counter > 1000)
 				{
 					throw new Exception("Util.LogDump: Too many duplicate file names detected! Failing out...");
@@ -113,10 +113,56 @@ public static partial class Util
 			// Writing text to the file
 			await File.WriteAllTextAsync(fullFilePath, textToDump);
 			//Log($"Util.LogDump: Saved {fileName}");
-		} 
+		}
 		catch (Exception ex)
 		{
 			Log($"DumpLog failed! {ex.Message}");
+			throw;
+		}
+		finally
+		{
+			DumpLogSemaphore.Release();
+		}
+	}
+
+	/// <summary>
+	/// Dump binary image bytes to the same location/pattern as DumpLog, using provided prefix and image extension.
+	/// </summary>
+	/// <param name="imageBytes">Binary image content (e.g., PNG bytes)</param>
+	/// <param name="fileNamePrefix">Prefix for the dumped image file</param>
+	/// <param name="extension">Image extension without dot (defaults to "png")</param>
+	public static async Task DumpImage(byte[] imageBytes, string fileNamePrefix, string extension = "png")
+	{
+		if (imageBytes == null || imageBytes.Length == 0)
+			return;
+
+		await DumpLogSemaphore.WaitAsync();
+		try
+		{
+			var homeFolder = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+			var fileSuffix = "_1";
+			var counter = 2;
+			string fileName;
+			string fullFilePath;
+			string folder = $"session_{SessionTime:yyyy-MMM-dd_HH-mm-ss}";
+			string safeExt = string.IsNullOrWhiteSpace(extension) ? "png" : extension.TrimStart('.');
+
+			do
+			{
+				fileName = $"{fileNamePrefix}{fileSuffix}.{safeExt}";
+				fullFilePath = Path.Combine(homeFolder, "ResenLogs", folder, fileName);
+				fileSuffix = "_" + counter++;
+				if (counter > 1000)
+					throw new Exception("Util.DumpImage: Too many duplicate file names detected! Failing out...");
+			}
+			while (File.Exists(fullFilePath));
+
+			Directory.CreateDirectory(Path.GetDirectoryName(fullFilePath));
+			await File.WriteAllBytesAsync(fullFilePath, imageBytes);
+		}
+		catch (Exception ex)
+		{
+			Log($"DumpImage failed! {ex.Message}");
 			throw;
 		}
 		finally
