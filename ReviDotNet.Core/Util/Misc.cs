@@ -124,7 +124,13 @@ public static partial class Util
 			return result;
 		return defaultValue;
 	}
-	
+
+	/// <summary>
+	/// Calculates the cosine similarity between two strings based on their character frequency vectors.
+	/// </summary>
+	/// <param name="str1">The first string to compare.</param>
+	/// <param name="str2">The second string to compare.</param>
+	/// <returns>A float representing the cosine similarity, ranging from 0 (no similarity) to 1 (identical).</returns>
 	public static float CosineSimilarity(string str1, string str2)
 	{
 		var vector1 = GetCharacterFrequencyVector(str1);
