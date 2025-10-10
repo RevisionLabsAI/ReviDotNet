@@ -15,6 +15,7 @@ using System.Diagnostics;
 using System.Net.Mime;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -29,6 +30,12 @@ public static partial class Util
 	private static readonly object LogLock = new object();
 	private static readonly SemaphoreSlim DumpLogSemaphore = new SemaphoreSlim(1, 1);
 	private static readonly DateTime SessionTime = DateTime.Now;
+
+	public static void LogBuild(StringBuilder sb, string text)
+	{
+		sb.Append(text);
+		Log(text);
+	}
 	
 	public static void Log(string text,
 		[CallerFilePath] string? file = "",
@@ -58,6 +65,10 @@ public static partial class Util
 		}
 	}
 
+	public static async Task DumpLog(StringBuilder sb, string fileNamePrefix)
+	{
+		await DumpLog(sb.ToString(), fileNamePrefix);
+	}
 
 	/// <summary>
 	/// Dump the text into file and save it in format 'prefix-yyyy-MMM-dd-h:mm:sstt.txt' 
@@ -65,7 +76,7 @@ public static partial class Util
 	/// </summary>
 	/// <param name="textToDump">The text to be saved into the file</param>
 	/// <param name="fileNamePrefix">The prefix to the file name</param>
- public static async Task DumpLog(string? textToDump, string fileNamePrefix)
+	public static async Task DumpLog(string? textToDump, string fileNamePrefix)
 	{
 		if (string.IsNullOrEmpty(textToDump))
 			return;
@@ -100,7 +111,7 @@ public static partial class Util
 				
 				fileSuffix = "_" + counter++;
 				
-				if (counter > 1000)
+				if (counter > 100000)
 				{
 					throw new Exception("Util.LogDump: Too many duplicate file names detected! Failing out...");
 				}
