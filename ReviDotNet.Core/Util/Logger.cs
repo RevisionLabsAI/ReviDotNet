@@ -25,12 +25,36 @@ namespace Revi;
 
 // This file is bleh, please ignore how bleh this file is. Thank you. :) 
 
-public static partial class Util
+public enum LogLevel
+{
+	Debug,
+	Info,
+	Warning,
+	Error,
+	Fatal
+}
+
+public class Logger
 {
 	private static readonly object LogLock = new object();
 	private static readonly SemaphoreSlim DumpLogSemaphore = new SemaphoreSlim(1, 1);
 	private static readonly DateTime SessionTime = DateTime.Now;
 
+	public Rlog Info(string message)
+	{
+		return new Rlog(message, "INFO");
+	}
+	
+	public Rlog Info(string message)
+	{
+		return new Rlog(message, "INFO");
+	}
+
+	public static void Test()
+	{
+		Rlog rootNode = new("message");
+	}
+	
 	public static void LogBuild(StringBuilder sb, string text)
 	{
 		sb.Append(text);
@@ -65,11 +89,6 @@ public static partial class Util
 		}
 	}
 
-	public async Task DumpRlog(Rlog rlog)
-	{
-		await DumpLog(rlog.ToString(), "rlog");
-	}
-	
 	public static async Task DumpLog(StringBuilder sb, string fileNamePrefix)
 	{
 		await DumpLog(sb.ToString(), fileNamePrefix);

@@ -1,6 +1,6 @@
 namespace Revi;
 
-public static class Logger
+public static class Loggerf
 {
     public static LogNode LogNode(
         LogNode? parent, 
