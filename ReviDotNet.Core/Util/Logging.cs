@@ -65,9 +65,9 @@ public static partial class Util
 		}
 	}
 
-	public static async Task DumpRlog(Record record)
+	public static async Task DumpRlog(Rlog rlog)
 	{
-		await DumpLog(record.ToString(), record.Identifier);
+		await DumpLog(rlog.ToString(), rlog.Identifier);
 	}
 	
 	public static async Task DumpLog(StringBuilder sb, string fileNamePrefix)

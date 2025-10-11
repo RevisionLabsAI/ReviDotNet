@@ -19,7 +19,7 @@ namespace Revi;
 /// <summary>
 /// Represents a log event that can be published to external consumers
 /// </summary>
-public class LogEvent
+public class RlogEvent
 {
     [BsonId]
     [BsonRepresentation(BsonType.ObjectId)]

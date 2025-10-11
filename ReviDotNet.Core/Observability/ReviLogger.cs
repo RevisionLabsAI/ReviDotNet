@@ -22,26 +22,43 @@ using System.Text.Json.Serialization;
 using Microsoft.DeepDev;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
+using Revi.Configuration;
 
 namespace Revi;
 
-public class LogService : ILogService
+public class ReviLogger : IReviLogger
 {
 	private static readonly object LogLock = new object();
 	private static readonly SemaphoreSlim DumpLogSemaphore = new SemaphoreSlim(1, 1);
 	private static readonly DateTime SessionTime = DateTime.Now;
 	
-	private readonly ILogEventPublisher? _eventPublisher;
+	private readonly IRlogEventPublisher? _eventPublisher;
+	private readonly RlogConfiguration _rlogConfig;
 	
-	public LogLevel DefaultLogLevel { get; }
-	
-	public LogService(ILogEventPublisher? eventPublisher = null, LogLevel defaultLogLevel = LogLevel.Debug)
+	public ReviLogger(
+		IRlogEventPublisher? eventPublisher = null, 
+		RlogConfiguration? rlogConfig = null)
 	{
 		_eventPublisher = eventPublisher;
-		DefaultLogLevel = defaultLogLevel;
+		_rlogConfig = rlogConfig ?? GetDefaultRlogConfiguration();
 	}
 
-	public Record LogInfo(
+	/// <summary>
+	/// Gets the default Rlog configuration
+	/// </summary>
+	private static RlogConfiguration GetDefaultRlogConfiguration()
+	{
+		return new RlogConfiguration
+		{
+			Debug = new RlogLevelConfiguration { PrefixColor = "Green", TextColor = "Gray", ConsolePrint = false },
+			Info = new RlogLevelConfiguration { PrefixColor = "Blue", TextColor = "Gray", ConsolePrint = true },
+			Warning = new RlogLevelConfiguration { PrefixColor = "Yellow", TextColor = "Gray", ConsolePrint = true },
+			Error = new RlogLevelConfiguration { PrefixColor = "DarkYellow", TextColor = "DarkYellow", ConsolePrint = true },
+			Fatal = new RlogLevelConfiguration { PrefixColor = "Red", TextColor = "Red", ConsolePrint = true }
+		};
+	}
+
+	public Rlog LogInfo(
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -66,8 +83,8 @@ public class LogService : ILogService
 			line);
 	}
 	
-	public Record LogInfo(
-		Record parent, 
+	public Rlog LogInfo(
+		Rlog parent, 
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -92,7 +109,7 @@ public class LogService : ILogService
 			line);
 	}
 
-	public Record LogDebug(
+	public Rlog LogDebug(
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -118,8 +135,8 @@ public class LogService : ILogService
 		
 	}
 	
-	public Record LogDebug(
-		Record parent, 
+	public Rlog LogDebug(
+		Rlog parent, 
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -144,7 +161,7 @@ public class LogService : ILogService
 			line);
 	}
 	
-	public Record LogWarning(
+	public Rlog LogWarning(
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -169,8 +186,8 @@ public class LogService : ILogService
 			line);
 	}
 	
-	public Record LogWarning(
-		Record parent, 
+	public Rlog LogWarning(
+		Rlog parent, 
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -195,7 +212,7 @@ public class LogService : ILogService
 			line);
 	}
 	
-	public Record LogError(
+	public Rlog LogError(
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -220,8 +237,8 @@ public class LogService : ILogService
 			line);
 	}
 	
-	public Record LogError(
-		Record parent, 
+	public Rlog LogError(
+		Rlog parent, 
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -246,7 +263,7 @@ public class LogService : ILogService
 			line);
 	}
 	
-	public Record LogFatal(
+	public Rlog LogFatal(
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -271,8 +288,8 @@ public class LogService : ILogService
 			line);
 	}
 
-	public Record LogFatal(
-		Record parent,
+	public Rlog LogFatal(
+		Rlog parent,
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -297,8 +314,8 @@ public class LogService : ILogService
 			line);
 	}
 
-	public Record Log(
-		Record? parent,
+	public Rlog Log(
+		Rlog? parent,
 		LogLevel level,
 		string message, 
 		string? identifier = "", 
@@ -306,15 +323,15 @@ public class LogService : ILogService
 		string? tags = null,
 		object? object1 = null,
 		object? object2 = null,
-		[CallerFilePath] string? file = "",
-		[CallerMemberName] string? member = "",
-		[CallerLineNumber] int? line = 0)
+		string? file = "",
+		string? member = "",
+		int? line = 0)
 	{
 		// Traverse through all parents and append to StringBuilder as appropriate
 		// Optimized to avoid unnecessary traversal if no parent has a builder
 		if (parent?.Builder != null || parent?.Parent != null)
 		{
-			Record? selected = parent;
+			Rlog? selected = parent;
 			while (selected is not null)
 			{
 				selected.Builder?.AppendLine(message);
@@ -322,12 +339,12 @@ public class LogService : ILogService
 			}
 		}
 		
-		// Print if log level is enabled
-		if (level >= DefaultLogLevel)
+		// Print if log level is enabled and ConsolePrint is true for this level
+		if (ShouldPrintToConsole(level))
 		{
 			try
 			{
-				Console.WriteLine(message);
+				WriteColorizedConsoleLog(level, message);
 			}
 			catch
 			{
@@ -336,7 +353,7 @@ public class LogService : ILogService
 		}
 
 		// Create the Record first to get its Id
-		Record record = new(
+		Rlog rlog = new(
 			parent, 
 			level, 
 			message, 
@@ -354,9 +371,9 @@ public class LogService : ILogService
 		{
 			try
 			{
-				_eventPublisher.PublishLogEvent(new LogEvent
+				_eventPublisher.PublishLogEvent(new RlogEvent
 				{
-					Id = record.Id,
+					Id = rlog.Id,
 					ParentId = parent?.Id,
 					Timestamp = DateTime.UtcNow,
 					Level = level,
@@ -377,7 +394,108 @@ public class LogService : ILogService
 			}
 		}
 
-		return record;
+		return rlog;
+	}
+
+	/// <summary>
+	/// Determines whether the specified log level should print to console based on configuration
+	/// </summary>
+	/// <param name="level">The log level to check</param>
+	/// <returns>True if the level should print to console, false otherwise</returns>
+	private bool ShouldPrintToConsole(LogLevel level)
+	{
+		return level switch
+		{
+			LogLevel.Debug => _rlogConfig.Debug.ConsolePrint,
+			LogLevel.Info => _rlogConfig.Info.ConsolePrint,
+			LogLevel.Warning => _rlogConfig.Warning.ConsolePrint,
+			LogLevel.Error => _rlogConfig.Error.ConsolePrint,
+			LogLevel.Fatal => _rlogConfig.Fatal.ConsolePrint,
+			_ => true
+		};
+	}
+
+	/// <summary>
+	/// Writes a colorized log message to the console with appropriate prefix and colors based on log level.
+	/// </summary>
+	/// <param name="level">The log level</param>
+	/// <param name="message">The message to write</param>
+	private void WriteColorizedConsoleLog(LogLevel level, string message)
+	{
+		string prefix;
+		ConsoleColor prefixColor;
+		ConsoleColor textColor;
+
+		// Define prefixes and colors based on log level and configuration
+		switch (level)
+		{
+			case LogLevel.Debug:
+				prefix = "[DEBUG]";
+				prefixColor = ParseConsoleColor(_rlogConfig.Debug.PrefixColor);
+				textColor = ParseConsoleColor(_rlogConfig.Debug.TextColor);
+				break;
+			case LogLevel.Info:
+				prefix = "[INFO]";
+				prefixColor = ParseConsoleColor(_rlogConfig.Info.PrefixColor);
+				textColor = ParseConsoleColor(_rlogConfig.Info.TextColor);
+				break;
+			case LogLevel.Warning:
+				prefix = "[WARNING]";
+				prefixColor = ParseConsoleColor(_rlogConfig.Warning.PrefixColor);
+				textColor = ParseConsoleColor(_rlogConfig.Warning.TextColor);
+				break;
+			case LogLevel.Error:
+				prefix = "[ERROR]";
+				prefixColor = ParseConsoleColor(_rlogConfig.Error.PrefixColor);
+				textColor = ParseConsoleColor(_rlogConfig.Error.TextColor);
+				break;
+			case LogLevel.Fatal:
+				prefix = "[FATAL]";
+				prefixColor = ParseConsoleColor(_rlogConfig.Fatal.PrefixColor);
+				textColor = ParseConsoleColor(_rlogConfig.Fatal.TextColor);
+				break;
+			default:
+				prefix = "[UNKNOWN]";
+				prefixColor = ConsoleColor.Gray;
+				textColor = ConsoleColor.Gray;
+				break;
+		}
+
+		// Store original color
+		var originalColor = Console.ForegroundColor;
+
+		try
+		{
+			// Write prefix with its color
+			Console.ForegroundColor = prefixColor;
+			Console.Write(prefix);
+			Console.Write(" ");
+
+			// Write message with its color
+			Console.ForegroundColor = textColor;
+			Console.WriteLine(message);
+		}
+		finally
+		{
+			// Restore original color
+			Console.ForegroundColor = originalColor;
+		}
+	}
+
+	/// <summary>
+	/// Parses a color string to ConsoleColor enum value
+	/// </summary>
+	/// <param name="colorString">The color string to parse</param>
+	/// <returns>The corresponding ConsoleColor value, or Gray if parsing fails</returns>
+	private static ConsoleColor ParseConsoleColor(string colorString)
+	{
+		if (string.IsNullOrWhiteSpace(colorString))
+			return ConsoleColor.Gray;
+
+		if (Enum.TryParse<ConsoleColor>(colorString, true, out var color))
+			return color;
+
+		return ConsoleColor.Gray;
 	}
 	
 	public async Task DumpLog(StringBuilder sb, string fileNamePrefix)
@@ -386,44 +504,92 @@ public class LogService : ILogService
 	}
 
 	/// <summary>
-	/// Dump the text into file and save it in format 'prefix-yyyy-MMM-dd-h:mm:sstt.txt' 
-	/// inside a 'ResenLogs' folder in user's home directory
+	/// Writes the specified text into a file with a given prefix. The file is saved in the user's home directory
+	/// inside a 'ResenLogs' folder, formatted as 'prefix-yyyy-MMM-dd-h:mm:sstt.txt'. Optionally includes a log record.
 	/// </summary>
-	/// <param name="textToDump">The text to be saved into the file</param>
-	/// <param name="fileNamePrefix">The prefix to the file name</param>
-	public async Task DumpLog(string? textToDump, string fileNamePrefix)
+	/// <param name="textToDump">The text to be saved into the file. If null or empty, this method performs no action.</param>
+	/// <param name="fileNamePrefix">The prefix to use in the generated file name.</param>
+	/// <param name="record">Optional log record associated with the text being dumped.</param>
+	/// <returns>A task representing the asynchronous operation of writing the file.</returns>
+	public async Task DumpLog(string? textToDump, string fileNamePrefix, Rlog? record = null)
 	{
 		if (string.IsNullOrEmpty(textToDump))
 			return;
 
 		await DumpLogSemaphore.WaitAsync();
 
-		try 
+		try
 		{
 			// Capture stack trace
-			var stackTrace = EnhancedStackTrace.Current(); //new StackTrace(true);
+			EnhancedStackTrace stackTrace = EnhancedStackTrace.Current();
 			string stackTraceString = $"Stack Trace:\n{stackTrace}";
 
 			// Prepend stack trace to the text
 			textToDump = stackTraceString + "\n\n" + textToDump;
 			
-			var homeFolder = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-			var fileSuffix = "_1";
-			var counter = 2;
-			
-			string fileName;
-			string fullFilePath;
+			// Publish log event with "dump" tag containing the entire string message
+			if (_eventPublisher != null)
+			{
+				try
+				{
+					RlogEvent rlogEvent;
+					
+					if (record != null)
+					{
+						string tags = $"dump session_{SessionTime:yyyy-MMM-dd_HH-mm-ss} ";
+						tags += record.Tags?.ToString();
+						
+						rlogEvent = new RlogEvent
+						{
+							Id = record.Id,
+							ParentId = record.Parent?.Id,
+							Timestamp = record.Timestamp,
+							Level = record.Level,
+							Message = textToDump,
+							Identifier = record.Identifier,
+							Cycle = record.Cycle,
+							Tags = tags,
+							Object1 = record.Object1 != null ? JsonConvert.SerializeObject(record.Object1, Formatting.Indented, new StringEnumConverter()) : null,
+							Object2 = record.Object2 != null ? JsonConvert.SerializeObject(record.Object2, Formatting.Indented, new StringEnumConverter()) : null,
+							File = record.File,
+							Member = record.Member,
+							Line = record.Line
+						};
+					}
+					else
+					{
+						rlogEvent = new RlogEvent
+						{
+							Id = Guid.NewGuid().ToString(),
+							Level = LogLevel.Info,
+							Message = textToDump,
+							Tags = $"dump session_{SessionTime:yyyy-MMM-dd_HH-mm-ss}",
+							Timestamp = DateTime.UtcNow
+						};
+					}
 
+					await _eventPublisher.PublishLogEventAsync(rlogEvent);
+				}
+				catch
+				{
+					// Silently ignore event publishing failures to prevent logging from crashing the application
+				}
+			}
+			
+			string homeFolder = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+			string fileSuffix = "_1";
+			int counter = 2;
+			
+			string fullFilePath;
 			string folder = $"session_{SessionTime:yyyy-MMM-dd_HH-mm-ss}";
 			
 			do
 			{
 				// Formatting the filename
-				fileName = $"{fileNamePrefix}{fileSuffix}.txt";
+				string fileName = $"{fileNamePrefix}{fileSuffix}.txt";
 				
 				// Create the file path
 				fullFilePath = Path.Combine(homeFolder, "ResenLogs", folder, fileName);
-				
 				fileSuffix = "_" + counter++;
 				
 				if (counter > 100000)

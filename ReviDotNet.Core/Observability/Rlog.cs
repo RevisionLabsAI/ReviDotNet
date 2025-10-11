@@ -23,37 +23,42 @@ using Microsoft.DeepDev;
 
 namespace Revi;
 
-public class Record
+public class Rlog
 {
 	// Auto-generated
-	public string Id;
-	public DateTime Timestamp;
+	public readonly string Id;
+	public readonly DateTime Timestamp;
 	
-	public Record? Parent;
-	public LogLevel Level;
-	public string Identifier; // "Begin Loop" becomes "begin-loop"
-	public string Message;
-	public int Cycle;
-	public string[]? Tags;
+	public readonly Rlog? Parent;
+	public readonly LogLevel Level;
+	public readonly string Identifier; // "Begin Loop" becomes "begin-loop"
+	public readonly string Message;
+	public readonly int Cycle;
+	public readonly string[]? Tags;
 	
-	public object Object1;
-	public object Object2;
+	public readonly object? Object1;
+	public readonly object? Object2;
+	
+	public readonly string? File;
+	public readonly string? Member;
+	public readonly int? Line;
 
-	public StringBuilder? Builder;
+	public readonly StringBuilder? Builder;
 	
+
 	// Constructor
-	public Record(
-		Record? parent,
+	public Rlog(
+		Rlog? parent,
 		LogLevel level,
 		string message, 
 		string? identifier = "", 
 		int cycle = 0,
-		string tags = null,
+		string? tags = null,
 		object? object1 = null,
 		object? object2 = null,
-		string? file = "",
-		string? member = "",
-		int? line = 0)
+		string? file = null,
+		string? member = null,
+		int? line = null)
 	{
 		// Probably won't be a standard UUID but this is TBD
 		Id = Guid.NewGuid().ToString(); 
@@ -85,13 +90,22 @@ public class Record
 		Cycle = cycle; 
 		
 		// Process tags to a list of individual strings
-		Tags = tags.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+		Tags = string.IsNullOrEmpty(tags) ? [] : tags.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 		
 		// Convert all tags to lowercase
 		for (int i = 0; i < Tags.Length; i++)
 		{
 			Tags[i] = Tags[i].ToLower().Trim();
 		}
+		
+		Object1 = object1;
+		Object2 = object2;
+		
+		File = file;
+		Member = member;
+		Line = line;
+		
+		Builder = new StringBuilder();
 	}
 
 	public async Task Dump(string? fileNamePrefix = null)

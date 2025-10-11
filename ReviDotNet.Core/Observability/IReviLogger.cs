@@ -26,9 +26,9 @@ namespace Revi;
 // This file is bleh, please ignore how bleh this file is. Thank you. :) 
 
 
-public interface ILogService
+public interface IReviLogger
 {
-	public Record LogInfo(
+	public Rlog LogInfo(
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -39,8 +39,8 @@ public interface ILogService
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
 
-	public Record LogInfo(
-		Record parent,
+	public Rlog LogInfo(
+		Rlog parent,
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -51,7 +51,7 @@ public interface ILogService
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
 
-	public Record LogDebug(
+	public Rlog LogDebug(
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -62,8 +62,8 @@ public interface ILogService
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
 
-	public Record LogDebug(
-		Record parent,
+	public Rlog LogDebug(
+		Rlog parent,
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -74,7 +74,7 @@ public interface ILogService
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
 
-	public Record LogWarning(
+	public Rlog LogWarning(
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -85,8 +85,8 @@ public interface ILogService
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
 
-	public Record LogWarning(
-		Record parent,
+	public Rlog LogWarning(
+		Rlog parent,
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -97,7 +97,7 @@ public interface ILogService
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
 
-	public Record LogError(
+	public Rlog LogError(
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -108,8 +108,8 @@ public interface ILogService
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
 
-	public Record LogError(
-		Record parent,
+	public Rlog LogError(
+		Rlog parent,
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -120,7 +120,7 @@ public interface ILogService
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
 
-	public Record LogFatal(
+	public Rlog LogFatal(
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -131,8 +131,8 @@ public interface ILogService
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
 
-	public Record LogFatal(
-		Record parent,
+	public Rlog LogFatal(
+		Rlog parent,
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -144,7 +144,7 @@ public interface ILogService
 		[CallerLineNumber] int? line = 0);
 
 	public Task DumpLog(StringBuilder sb, string fileNamePrefix);
-	public Task DumpLog(string? textToDump, string fileNamePrefix);
+	public Task DumpLog(string? textToDump, string fileNamePrefix, Rlog? record = null);
 
 	/// <summary>
 	/// Dump binary image bytes to the same location/pattern as DumpLog, using provided prefix and image extension.

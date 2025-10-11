@@ -16,18 +16,18 @@ namespace Revi;
 /// <summary>
 /// Interface for publishing log events to external consumers
 /// </summary>
-public interface ILogEventPublisher
+public interface IRlogEventPublisher
 {
     /// <summary>
     /// Publishes a log event asynchronously
     /// </summary>
-    /// <param name="logEvent">The log event to publish</param>
+    /// <param name="rlogEvent">The log event to publish</param>
     /// <returns>A task representing the async operation</returns>
-    Task PublishLogEventAsync(LogEvent logEvent);
+    Task PublishLogEventAsync(RlogEvent rlogEvent);
     
     /// <summary>
     /// Publishes a log event synchronously (fire-and-forget)
     /// </summary>
-    /// <param name="logEvent">The log event to publish</param>
-    void PublishLogEvent(LogEvent logEvent);
+    /// <param name="rlogEvent">The log event to publish</param>
+    void PublishLogEvent(RlogEvent rlogEvent);
 }
