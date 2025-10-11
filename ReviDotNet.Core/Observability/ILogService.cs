@@ -28,7 +28,7 @@ namespace Revi;
 
 public interface ILogService
 {
-	public Record Info(
+	public Record LogInfo(
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -39,7 +39,7 @@ public interface ILogService
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
 
-	public Record Info(
+	public Record LogInfo(
 		Record parent,
 		string message,
 		string? identifier = "",
@@ -51,7 +51,7 @@ public interface ILogService
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
 
-	public Record Debug(
+	public Record LogDebug(
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -62,7 +62,7 @@ public interface ILogService
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
 
-	public Record Debug(
+	public Record LogDebug(
 		Record parent,
 		string message,
 		string? identifier = "",
@@ -74,7 +74,7 @@ public interface ILogService
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
 
-	public Record Warning(
+	public Record LogWarning(
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -85,7 +85,7 @@ public interface ILogService
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
 
-	public Record Warning(
+	public Record LogWarning(
 		Record parent,
 		string message,
 		string? identifier = "",
@@ -97,7 +97,7 @@ public interface ILogService
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
 
-	public Record Error(
+	public Record LogError(
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -108,7 +108,7 @@ public interface ILogService
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
 
-	public Record Error(
+	public Record LogError(
 		Record parent,
 		string message,
 		string? identifier = "",
@@ -120,7 +120,7 @@ public interface ILogService
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
 
-	public Record Fatal(
+	public Record LogFatal(
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -131,7 +131,7 @@ public interface ILogService
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
 
-	public Record Fatal(
+	public Record LogFatal(
 		Record parent,
 		string message,
 		string? identifier = "",

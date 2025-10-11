@@ -41,7 +41,7 @@ public class LogService : ILogService
 		DefaultLogLevel = defaultLogLevel;
 	}
 
-	public Record Info(
+	public Record LogInfo(
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -66,7 +66,7 @@ public class LogService : ILogService
 			line);
 	}
 	
-	public Record Info(
+	public Record LogInfo(
 		Record parent, 
 		string message,
 		string? identifier = "",
@@ -92,7 +92,7 @@ public class LogService : ILogService
 			line);
 	}
 
-	public Record Debug(
+	public Record LogDebug(
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -118,7 +118,7 @@ public class LogService : ILogService
 		
 	}
 	
-	public Record Debug(
+	public Record LogDebug(
 		Record parent, 
 		string message,
 		string? identifier = "",
@@ -144,7 +144,7 @@ public class LogService : ILogService
 			line);
 	}
 	
-	public Record Warning(
+	public Record LogWarning(
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -169,7 +169,7 @@ public class LogService : ILogService
 			line);
 	}
 	
-	public Record Warning(
+	public Record LogWarning(
 		Record parent, 
 		string message,
 		string? identifier = "",
@@ -195,7 +195,7 @@ public class LogService : ILogService
 			line);
 	}
 	
-	public Record Error(
+	public Record LogError(
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -220,7 +220,7 @@ public class LogService : ILogService
 			line);
 	}
 	
-	public Record Error(
+	public Record LogError(
 		Record parent, 
 		string message,
 		string? identifier = "",
@@ -246,7 +246,7 @@ public class LogService : ILogService
 			line);
 	}
 	
-	public Record Fatal(
+	public Record LogFatal(
 		string message,
 		string? identifier = "",
 		int cycle = 0,
@@ -271,7 +271,7 @@ public class LogService : ILogService
 			line);
 	}
 
-	public Record Fatal(
+	public Record LogFatal(
 		Record parent,
 		string message,
 		string? identifier = "",
