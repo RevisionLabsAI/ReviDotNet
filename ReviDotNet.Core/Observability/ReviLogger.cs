@@ -20,6 +20,7 @@ using System.Text.RegularExpressions;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.DeepDev;
+using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using Revi.Configuration;
@@ -36,11 +37,11 @@ public class ReviLogger : IReviLogger
 	private readonly RlogConfiguration _rlogConfig;
 	
 	public ReviLogger(
-		IRlogEventPublisher? eventPublisher = null, 
-		RlogConfiguration? rlogConfig = null)
+		IRlogEventPublisher eventPublisher,
+		IConfiguration configuration)
 	{
 		_eventPublisher = eventPublisher;
-		_rlogConfig = rlogConfig ?? GetDefaultRlogConfiguration();
+		_rlogConfig = configuration.GetSection("ReviLogger").Get<RlogConfiguration>() ?? GetDefaultRlogConfiguration();
 	}
 
 	/// <summary>
@@ -50,9 +51,9 @@ public class ReviLogger : IReviLogger
 	{
 		return new RlogConfiguration
 		{
-			Debug = new RlogLevelConfiguration { PrefixColor = "Green", TextColor = "Gray", ConsolePrint = false },
-			Info = new RlogLevelConfiguration { PrefixColor = "Blue", TextColor = "Gray", ConsolePrint = true },
-			Warning = new RlogLevelConfiguration { PrefixColor = "Yellow", TextColor = "Gray", ConsolePrint = true },
+			Debug = new RlogLevelConfiguration { PrefixColor = "Green", TextColor = "Gray", ConsolePrint = true },
+			Info = new RlogLevelConfiguration { PrefixColor = "Blue", TextColor = "White", ConsolePrint = true },
+			Warning = new RlogLevelConfiguration { PrefixColor = "Yellow", TextColor = "White", ConsolePrint = true },
 			Error = new RlogLevelConfiguration { PrefixColor = "DarkYellow", TextColor = "DarkYellow", ConsolePrint = true },
 			Fatal = new RlogLevelConfiguration { PrefixColor = "Red", TextColor = "Red", ConsolePrint = true }
 		};

@@ -218,10 +218,10 @@ public static class ModelManager
         if (minTier == null)
             minTier = ModelTier.C;
 
-        // Construct the query to find the model that is the least advanced but still meets or exceeds the minimum tier requirement
+        // Construct the query to find the model that is the best available but still meets or exceeds the minimum tier requirement
         return _models
             .Where(model => IsEligibleModel(model, minTier.Value, needsPromptCompletion))
-            .MinBy(model => model.Tier);
+            .MaxBy(model => model.Tier);
     }
     #endregion
 }

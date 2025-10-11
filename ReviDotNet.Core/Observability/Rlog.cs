@@ -20,6 +20,7 @@ using System.Text.RegularExpressions;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.DeepDev;
+using MongoDB.Bson;
 
 namespace Revi;
 
@@ -60,8 +61,8 @@ public class Rlog
 		string? member = null,
 		int? line = null)
 	{
-		// Probably won't be a standard UUID but this is TBD
-		Id = Guid.NewGuid().ToString(); 
+		// Generate MongoDB ObjectId compatible string
+		Id = ObjectId.GenerateNewId().ToString();
 		Timestamp = DateTime.Now;
 		
 		// Nullable property is allowed to be null
