@@ -18,6 +18,9 @@ namespace Revi.Configuration;
 /// </summary>
 public class RlogConfiguration
 {
+    // When true, console log messages will be prefixed with the calling member name and line number
+    public bool IncludeCallerInPrefix { get; set; } = false;
+
     public RlogLevelConfiguration Debug { get; set; } = new() { ConsolePrint = false };
     public RlogLevelConfiguration Info { get; set; } = new() { ConsolePrint = true };
     public RlogLevelConfiguration Warning { get; set; } = new() { ConsolePrint = true };

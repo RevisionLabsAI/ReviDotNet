@@ -340,12 +340,24 @@ public class ReviLogger : IReviLogger
 			}
 		}
 		
+		// Optionally prefix message with caller info
+		string consoleMessage = message;
+		if (_rlogConfig.IncludeCallerInPrefix)
+		{
+			string caller = string.IsNullOrWhiteSpace(member) ? "" : member!;
+			string lineStr = (line ?? 0).ToString();
+			if (!string.IsNullOrWhiteSpace(caller))
+			{
+				consoleMessage = $"{caller}:{lineStr} - {message}";
+			}
+		}
+
 		// Print if log level is enabled and ConsolePrint is true for this level
 		if (ShouldPrintToConsole(level))
 		{
 			try
 			{
-				WriteColorizedConsoleLog(level, message);
+				WriteColorizedConsoleLog(level, consoleMessage);
 			}
 			catch
 			{
