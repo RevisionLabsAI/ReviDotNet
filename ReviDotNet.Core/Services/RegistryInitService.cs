@@ -1,0 +1,65 @@
+﻿// =================================================================================
+//   Copyright © 2025 Revision Labs, Inc. - All Rights Reserved
+// =================================================================================
+//   This is proprietary and confidential source code of Revision Labs, Inc., and
+//   is safeguarded by international copyright laws. Unauthorized use, copying, 
+//   modification, or distribution is strictly forbidden.
+//
+//   If you are not authorized and have this file, notify Revision Labs at 
+//   contact@rlab.ai and delete it immediately.
+//
+//   See LICENSE.txt in the project root for full license information.
+// =================================================================================
+
+using System.Reflection;
+using Microsoft.Extensions.Hosting;
+
+namespace Revi;
+
+/// <summary>
+/// Initializes Revi registries at app startup using the existing static loader methods.
+/// This allows the rest of the app to consume the registries via DI interfaces.
+/// </summary>
+public sealed class RegistryInitService : IHostedService
+{
+    private readonly IReviLogger _logger;
+    private readonly Assembly? _appAssembly;
+
+    // Backward-compatible constructor
+    public RegistryInitService(IReviLogger logger)
+    {
+        _logger = logger;
+    }
+
+    // Preferred constructor: accept the launching application's assembly
+    public RegistryInitService(IReviLogger logger, Assembly appAssembly)
+    {
+        _logger = logger;
+        _appAssembly = appAssembly;
+    }
+
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Prefer the assembly provided by the hosting application; fall back to this library's assembly
+            Assembly assembly = _appAssembly ?? typeof(RegistryInitService).Assembly;
+            _logger.LogInfo($"Initializing Revi registries from assembly {assembly.FullName}");
+
+            ProviderManager.Load(assembly);
+            ModelManager.Load(assembly);
+            PromptManager.Load(assembly);
+
+            _logger.LogInfo("Revi registries initialized.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Failed to initialize Revi registries", object1: ex);
+            throw;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}
