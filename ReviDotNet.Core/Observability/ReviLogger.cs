@@ -50,15 +50,23 @@ public class ReviLogger : IReviLogger
 	/// <summary>
 	/// Gets the default Rlog configuration
 	/// </summary>
-	private static RlogConfiguration GetDefaultRlogConfiguration()
+ private static RlogConfiguration GetDefaultRlogConfiguration()
 	{
+		// Enable stack-based legacy type resolution by default in Development environments
+		string? env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
+			?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
+		bool isDevelopment = string.Equals(env, "Development", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(env, "Dev", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(env, "Local", StringComparison.OrdinalIgnoreCase);
+
 		return new RlogConfiguration
 		{
 			Debug = new RlogLevelConfiguration { PrefixColor = "Green", TextColor = "Gray", ConsolePrint = true },
 			Info = new RlogLevelConfiguration { PrefixColor = "Blue", TextColor = "White", ConsolePrint = true },
 			Warning = new RlogLevelConfiguration { PrefixColor = "Yellow", TextColor = "White", ConsolePrint = true },
 			Error = new RlogLevelConfiguration { PrefixColor = "DarkYellow", TextColor = "DarkYellow", ConsolePrint = true },
-			Fatal = new RlogLevelConfiguration { PrefixColor = "Red", TextColor = "Red", ConsolePrint = true }
+			Fatal = new RlogLevelConfiguration { PrefixColor = "Red", TextColor = "Red", ConsolePrint = true },
+			ResolveLegacyTypeFromStack = isDevelopment
 		};
 	}
 
@@ -349,6 +357,28 @@ public class ReviLogger : IReviLogger
 		string lineStr = (line ?? 0).ToString();
 		bool haveCaller = !string.IsNullOrWhiteSpace(caller);
 		string? typeName = _rlogConfig.IncludeTypeInPrefix ? (CategoryName ?? null) : null;
+		
+		// Special-case: legacy Util.Log calls: optionally resolve originating class via stack when enabled
+		if (typeName == null && _rlogConfig.IncludeTypeInPrefix)
+		{
+			if (!string.IsNullOrWhiteSpace(tags) && tags.Contains("legacyutil", StringComparison.OrdinalIgnoreCase))
+			{
+				// Prefer stack-based discovery when configured; fall back to generic UtilLog
+				if (_rlogConfig.ResolveLegacyTypeFromStack)
+				{
+					try
+					{
+						string? resolved = TryResolveLegacyCallerTypeFromStack();
+						if (!string.IsNullOrWhiteSpace(resolved))
+							typeName = resolved;
+					}
+					catch { /* ignore stack resolution failures */ }
+				}
+				if (typeName == null)
+					typeName = "UtilLog";
+			}
+		}
+		
 		if (typeName != null)
 		{
 			if (_rlogConfig.IncludeCallerInPrefix && haveCaller)
@@ -525,6 +555,58 @@ public class ReviLogger : IReviLogger
 			return color;
 
 		return ConsoleColor.Gray;
+	}
+
+	/// <summary>
+	/// Attempts to resolve the originating caller type for legacy Util.Log calls by inspecting the current stack trace.
+	/// Skips frames belonging to logging infrastructure and platform namespaces.
+	/// </summary>
+	/// <returns>Type name if found; otherwise null.</returns>
+	private static string? TryResolveLegacyCallerTypeFromStack()
+	{
+		try
+		{
+			var st = new StackTrace();
+			for (int i = 0; i < st.FrameCount; i++)
+			{
+				var frame = st.GetFrame(i);
+				var method = frame?.GetMethod();
+				var type = method?.DeclaringType;
+				if (type == null)
+					continue;
+
+				string ns = type.Namespace ?? string.Empty;
+				string tn = type.Name ?? string.Empty;
+
+				// Exclude obvious infrastructure namespaces/types
+				if (ns.StartsWith("System", StringComparison.Ordinal)
+					|| ns.StartsWith("Microsoft", StringComparison.Ordinal)
+					|| ns.StartsWith("Newtonsoft", StringComparison.Ordinal)
+					|| ns.StartsWith("Serilog", StringComparison.Ordinal))
+					continue;
+
+				// Exclude our own logging/utilities
+				if (ns.StartsWith("Revi", StringComparison.Ordinal))
+				{
+					if (tn.Contains("ReviLogger", StringComparison.Ordinal)
+						|| tn.Equals("Util", StringComparison.Ordinal)
+						|| tn.Contains("ReviServiceLocator", StringComparison.Ordinal))
+						continue;
+				}
+
+				// Exclude compiler generated artifacts
+				if (tn.StartsWith("<", StringComparison.Ordinal))
+					continue;
+
+				// First remaining candidate is our caller
+				return tn;
+			}
+		}
+		catch
+		{
+			// ignore and return null
+		}
+		return null;
 	}
 	
 	public async Task DumpLog(StringBuilder sb, string fileNamePrefix)

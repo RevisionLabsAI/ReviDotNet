@@ -27,6 +27,11 @@ public class RlogConfiguration
     //  - If both IncludeTypeInPrefix and IncludeCallerInPrefix: "TypeName.Caller:Line - message"
     public bool IncludeTypeInPrefix { get; set; } = false;
 
+    // When true, legacy Util.Log calls will attempt to resolve the originating class/type
+    // via stacktrace inspection and use it in the prefix when IncludeTypeInPrefix is enabled.
+    // Recommended: enabled in Development, disabled in Production.
+    public bool ResolveLegacyTypeFromStack { get; set; } = false;
+
     public RlogLevelConfiguration Debug { get; set; } = new() { ConsolePrint = false };
     public RlogLevelConfiguration Info { get; set; } = new() { ConsolePrint = true };
     public RlogLevelConfiguration Warning { get; set; } = new() { ConsolePrint = true };

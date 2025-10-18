@@ -143,6 +143,19 @@ public interface IReviLogger
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
 
+	public Rlog Log(
+		Rlog? parent,
+		LogLevel level,
+		string message,
+		string? identifier = "",
+		int cycle = 0,
+		string? tags = null,
+		object? object1 = null,
+		object? object2 = null,
+		string? file = "",
+		string? member = "",
+		int? line = 0);
+
 	public Task DumpLog(StringBuilder sb, string fileNamePrefix);
 	public Task DumpLog(string? textToDump, string fileNamePrefix, Rlog? record = null);
 
