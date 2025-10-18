@@ -37,11 +37,18 @@ public static partial class Util
 		Log(text);
 	}
 	
-	public static void Log(string text,
+ public static void Log(string text,
 		[CallerFilePath] string? file = "",
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0)
 	{
+		// If ReviLogger is available via DI, route through it for consistent observability
+		if (ReviServiceLocator.TryGetLogger(out IReviLogger? logger) && logger != null)
+		{
+			logger.LogInfo(text);
+			return;
+		}
+		
 		bool debug = false;
 
 		lock (LogLock)
@@ -70,8 +77,13 @@ public static partial class Util
 		await DumpLog(rlog.ToString(), rlog.Identifier);
 	}
 	
-	public static async Task DumpLog(StringBuilder sb, string fileNamePrefix)
+ public static async Task DumpLog(StringBuilder sb, string fileNamePrefix)
 	{
+		if (ReviServiceLocator.TryGetLogger(out IReviLogger? logger) && logger != null)
+		{
+			await logger.DumpLog(sb, fileNamePrefix);
+			return;
+		}
 		await DumpLog(sb.ToString(), fileNamePrefix);
 	}
 
@@ -81,10 +93,17 @@ public static partial class Util
 	/// </summary>
 	/// <param name="textToDump">The text to be saved into the file</param>
 	/// <param name="fileNamePrefix">The prefix to the file name</param>
-	public static async Task DumpLog(string? textToDump, string fileNamePrefix)
+ public static async Task DumpLog(string? textToDump, string fileNamePrefix)
 	{
 		if (string.IsNullOrEmpty(textToDump))
 			return;
+
+		// Prefer ReviLogger if available
+		if (ReviServiceLocator.TryGetLogger(out IReviLogger? logger) && logger != null)
+		{
+			await logger.DumpLog(textToDump, fileNamePrefix);
+			return;
+		}
 
 		await DumpLogSemaphore.WaitAsync();
 

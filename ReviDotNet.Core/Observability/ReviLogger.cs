@@ -36,6 +36,9 @@ public class ReviLogger : IReviLogger
 	private readonly IRlogEventPublisher? _eventPublisher;
 	private readonly RlogConfiguration _rlogConfig;
 	
+	// Overridable category/type name used for prefix formatting; generic logger overrides this
+	protected virtual string? CategoryName => null;
+	
 	public ReviLogger(
 		IRlogEventPublisher eventPublisher,
 		IConfiguration configuration)
@@ -340,16 +343,26 @@ public class ReviLogger : IReviLogger
 			}
 		}
 		
-		// Optionally prefix message with caller info
+		// Optionally prefix message with type/caller info
 		string consoleMessage = message;
-		if (_rlogConfig.IncludeCallerInPrefix)
+		string caller = string.IsNullOrWhiteSpace(member) ? "" : member!;
+		string lineStr = (line ?? 0).ToString();
+		bool haveCaller = !string.IsNullOrWhiteSpace(caller);
+		string? typeName = _rlogConfig.IncludeTypeInPrefix ? (CategoryName ?? null) : null;
+		if (typeName != null)
 		{
-			string caller = string.IsNullOrWhiteSpace(member) ? "" : member!;
-			string lineStr = (line ?? 0).ToString();
-			if (!string.IsNullOrWhiteSpace(caller))
+			if (_rlogConfig.IncludeCallerInPrefix && haveCaller)
 			{
-				consoleMessage = $"{caller}:{lineStr} - {message}";
+				consoleMessage = $"{typeName}.{caller}:{lineStr} - {message}";
 			}
+			else
+			{
+				consoleMessage = $"{typeName}:{lineStr} - {message}";
+			}
+		}
+		else if (_rlogConfig.IncludeCallerInPrefix && haveCaller)
+		{
+			consoleMessage = $"{caller}:{lineStr} - {message}";
 		}
 
 		// Print if log level is enabled and ConsolePrint is true for this level

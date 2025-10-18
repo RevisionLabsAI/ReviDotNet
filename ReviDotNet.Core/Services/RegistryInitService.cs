@@ -22,17 +22,17 @@ namespace Revi;
 /// </summary>
 public sealed class RegistryInitService : IHostedService
 {
-    private readonly IReviLogger _logger;
+    private readonly IReviLogger<RegistryInitService> _logger;
     private readonly Assembly? _appAssembly;
 
     // Backward-compatible constructor
-    public RegistryInitService(IReviLogger logger)
+    public RegistryInitService(IReviLogger<RegistryInitService> logger)
     {
         _logger = logger;
     }
 
     // Preferred constructor: accept the launching application's assembly
-    public RegistryInitService(IReviLogger logger, Assembly appAssembly)
+    public RegistryInitService(IReviLogger<RegistryInitService> logger, Assembly appAssembly)
     {
         _logger = logger;
         _appAssembly = appAssembly;
@@ -50,7 +50,7 @@ public sealed class RegistryInitService : IHostedService
             ModelManager.Load(assembly);
             PromptManager.Load(assembly);
 
-            _logger.LogInfo("Revi registries initialized.");
+            _logger.LogInfo("Revi registries initialized");
         }
         catch (Exception ex)
         {

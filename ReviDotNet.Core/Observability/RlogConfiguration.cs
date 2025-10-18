@@ -21,6 +21,12 @@ public class RlogConfiguration
     // When true, console log messages will be prefixed with the calling member name and line number
     public bool IncludeCallerInPrefix { get; set; } = false;
 
+    // When true and using ReviLogger<T>, console log messages will include the generic type name in the prefix
+    // Formatting rules:
+    //  - If IncludeTypeInPrefix only: "TypeName:Line - message"
+    //  - If both IncludeTypeInPrefix and IncludeCallerInPrefix: "TypeName.Caller:Line - message"
+    public bool IncludeTypeInPrefix { get; set; } = false;
+
     public RlogLevelConfiguration Debug { get; set; } = new() { ConsolePrint = false };
     public RlogLevelConfiguration Info { get; set; } = new() { ConsolePrint = true };
     public RlogLevelConfiguration Warning { get; set; } = new() { ConsolePrint = true };
