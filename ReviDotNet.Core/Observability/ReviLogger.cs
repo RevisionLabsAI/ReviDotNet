@@ -462,24 +462,27 @@ public class ReviLogger : IReviLogger
 				break;
 		}
 
-		// Store original color
-		var originalColor = Console.ForegroundColor;
-
-		try
+		// Ensure console writes are atomic across threads
+		lock (LogLock)
 		{
-			// Write prefix with its color
-			Console.ForegroundColor = prefixColor;
-			Console.Write(prefix);
-			Console.Write(" ");
+			// Store original color
+			var originalColor = Console.ForegroundColor;
+			try
+			{
+				// Write prefix with its color
+				Console.ForegroundColor = prefixColor;
+				Console.Write(prefix);
+				Console.Write(" ");
 
-			// Write message with its color
-			Console.ForegroundColor = textColor;
-			Console.WriteLine(message);
-		}
-		finally
-		{
-			// Restore original color
-			Console.ForegroundColor = originalColor;
+				// Write message with its color
+				Console.ForegroundColor = textColor;
+				Console.WriteLine(message);
+			}
+			finally
+			{
+				// Restore original color
+				Console.ForegroundColor = originalColor;
+			}
 		}
 	}
 

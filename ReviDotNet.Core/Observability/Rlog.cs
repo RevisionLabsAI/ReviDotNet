@@ -91,9 +91,12 @@ public class Rlog
 		Cycle = cycle; 
 		
 		// Process tags to a list of individual strings
-		Tags = string.IsNullOrEmpty(tags) ? [] : tags.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+		// Accept both spaces and commas as separators
+		Tags = string.IsNullOrEmpty(tags)
+			? []
+			: tags.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
 		
-		// Convert all tags to lowercase
+		// Normalize all tags: lowercase and trim
 		for (int i = 0; i < Tags.Length; i++)
 		{
 			Tags[i] = Tags[i].ToLower().Trim();
