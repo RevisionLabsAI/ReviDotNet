@@ -70,4 +70,13 @@ public class RlogEvent
     [BsonElement("line")]
     [BsonIgnoreIfNull]
     public int? Line { get; set; }
+
+    // Machine and instance identifiers for observability
+    [BsonElement("machineId")]
+    [BsonIgnoreIfNull]
+    public string? MachineId { get; set; }
+
+    [BsonElement("instanceId")]
+    [BsonIgnoreIfNull]
+    public string? InstanceId { get; set; }
 }

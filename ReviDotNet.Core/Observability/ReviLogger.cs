@@ -33,8 +33,11 @@ public class ReviLogger : IReviLogger
 	private static readonly SemaphoreSlim DumpLogSemaphore = new SemaphoreSlim(1, 1);
 	private static readonly DateTime SessionTime = DateTime.Now;
 	
-	private readonly IRlogEventPublisher? _eventPublisher;
+ private readonly IRlogEventPublisher? _eventPublisher;
 	private readonly RlogConfiguration _rlogConfig;
+	private readonly string _machineId;
+	private readonly string _instanceId;
+	private readonly DateTimeOffset _instanceStartUtc;
 	
 	// Overridable category/type name used for prefix formatting; generic logger overrides this
 	protected virtual string? CategoryName => null;
@@ -45,6 +48,9 @@ public class ReviLogger : IReviLogger
 	{
 		_eventPublisher = eventPublisher;
 		_rlogConfig = configuration.GetSection("ReviLogger").Get<RlogConfiguration>() ?? GetDefaultRlogConfiguration();
+		// Initialize identity
+		_instanceId = NodeIdentity.InstanceIdUtc(out _instanceStartUtc);
+		_machineId = NodeIdentity.GetMachineId(appName: TryGetAppName(), machineWide: true);
 	}
 
 	/// <summary>
@@ -441,7 +447,9 @@ public class ReviLogger : IReviLogger
 					Object2 = object2 != null ? JsonConvert.SerializeObject(object2, Formatting.Indented, new StringEnumConverter()) : null,
 					File = file,
 					Member = member,
-					Line = line
+					Line = line,
+					MachineId = _machineId,
+					InstanceId = _instanceId
 				});
 			}
 			catch
@@ -476,6 +484,16 @@ public class ReviLogger : IReviLogger
 	/// </summary>
 	/// <param name="level">The log level</param>
 	/// <param name="message">The message to write</param>
+	private static string TryGetAppName()
+	{
+		try
+		{
+			var asm = Assembly.GetEntryAssembly() ?? typeof(ReviLogger).Assembly;
+			return asm.GetName().Name ?? "ReviDotNet";
+		}
+		catch { return "ReviDotNet"; }
+	}
+
 	private void WriteColorizedConsoleLog(LogLevel level, string message)
 	{
 		string prefix;
