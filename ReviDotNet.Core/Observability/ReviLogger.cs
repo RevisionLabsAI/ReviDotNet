@@ -359,7 +359,7 @@ public class ReviLogger : IReviLogger
 		
 		// Optionally prefix message with type/caller info
 		string consoleMessage = message;
-		string caller = string.IsNullOrWhiteSpace(member) ? "" : member!;
+		string caller = string.IsNullOrWhiteSpace(member) ? "" : NormalizeMember(member)!;
 		string lineStr = (line ?? 0).ToString();
 		bool haveCaller = !string.IsNullOrWhiteSpace(caller);
 		string? typeName = _rlogConfig.IncludeTypeInPrefix ? (CategoryName ?? null) : null;
@@ -425,7 +425,7 @@ public class ReviLogger : IReviLogger
 			object1, 
 			object2, 
 			file ?? "", 
-			member ?? "", 
+			NormalizeMember(member) ?? "", 
 			line ?? 0);
 
 		// Only create and publish LogEvent if there's an event publisher configured
@@ -446,7 +446,7 @@ public class ReviLogger : IReviLogger
 					Object1 = object1 != null ? JsonConvert.SerializeObject(object1, Formatting.Indented, new StringEnumConverter()) : null,
 					Object2 = object2 != null ? JsonConvert.SerializeObject(object2, Formatting.Indented, new StringEnumConverter()) : null,
 					File = file,
-					Member = member,
+					Member = NormalizeMember(member),
 					Line = line,
 					MachineId = _machineId,
 					InstanceId = _instanceId
@@ -492,6 +492,17 @@ public class ReviLogger : IReviLogger
 			return asm.GetName().Name ?? "ReviDotNet";
 		}
 		catch { return "ReviDotNet"; }
+	}
+
+	// Normalizes member names for readability in logs.
+	// - ".ctor"  -> "Constructor"
+	// - "<Main>$" -> "Main"
+	private static string? NormalizeMember(string? member)
+	{
+		if (string.IsNullOrWhiteSpace(member)) return member;
+		if (string.Equals(member, ".ctor", StringComparison.Ordinal)) return "Constructor";
+		if (string.Equals(member, "<Main>$", StringComparison.Ordinal)) return "Main";
+		return member;
 	}
 
 	private void WriteColorizedConsoleLog(LogLevel level, string message)
