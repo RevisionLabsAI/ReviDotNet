@@ -73,8 +73,11 @@ public class Prompt
     [JsonProperty("use-search-grounding"), RConfigProperty("settings_use-search-grounding")]
     public bool? UseSearchGrounding { get; set; }
 
-    [JsonProperty("model-pref"), RConfigProperty("settings_model-pref")]
-    public string? ModelPref { get; set; }
+    [JsonProperty("preferred-models"), RConfigProperty("settings_preferred-models")]
+    public List<string>? PreferredModels { get; set; }
+
+    [JsonProperty("blocked-models"), RConfigProperty("settings_blocked-models")]
+    public List<string>? BlockedModels { get; set; }
 
     [JsonProperty("min-tier"), RConfigProperty("settings_min-tier")]
     public string? MinTier { get; set; }
@@ -166,7 +169,8 @@ public class Prompt
         bool? RequestJson = false, 
         GuidanceSchemaType? GuidanceSchema = null,
         int? FewShotExamples = null,
-        string? ModelPref = null, 
+        List<string>? PreferredModels = null, 
+        List<string>? BlockedModels = null,
         string? MinTier = null,
         string? CompletionType = null,
         float? Temperature = null, 
@@ -196,7 +200,8 @@ public class Prompt
         this.RetryAttempts = RetryAttempts;
         this.RetryPrompt = RetryPrompt;
         this.FewShotExamples = FewShotExamples;
-        this.ModelPref = ModelPref;
+        this.PreferredModels = PreferredModels;
+        this.BlockedModels = BlockedModels;
         this.MinTier = MinTier;
         this.CompletionType = CompletionType;
         this.Temperature = Temperature;
@@ -232,7 +237,8 @@ public class Prompt
         RetryAttempts = original.RetryAttempts;
         RetryPrompt = original.RetryPrompt;
         FewShotExamples = original.FewShotExamples;
-        ModelPref = original.ModelPref;
+        PreferredModels = original.PreferredModels != null ? new List<string>(original.PreferredModels) : null;
+        BlockedModels = original.BlockedModels != null ? new List<string>(original.BlockedModels) : null;
         MinTier = original.MinTier;
         CompletionType = original.CompletionType;
 

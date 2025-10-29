@@ -195,7 +195,7 @@ public static class ModelManager
     }
     
     /// <summary>
-    /// Finds the highest-tier model that is enabled, meets or exceeds the specified minimum tier, and optionally checks if the provider supports completions.
+    /// Finds the lowest-tier model that is enabled, meets or exceeds the specified minimum tier, and optionally checks if the provider supports completions.
     /// </summary>
     /// <param name="minTier">The minimum tier required. If null, defaults to ModelTier.C.</param>
     /// <param name="needsPromptCompletion">If true, filters models to include only those whose providers support completions.</param>
@@ -204,6 +204,20 @@ public static class ModelManager
     {
         Enum.TryParse(minTier ?? "", out ModelTier foundTier);
         return Find(foundTier, needsPromptCompletion);
+    }
+
+    /// <summary>
+    /// Finds the lowest-tier model that is enabled, meets or exceeds the specified minimum tier, 
+    /// optionally checks if the provider supports completions, and excludes models in the blocked list.
+    /// </summary>
+    /// <param name="minTier">The minimum tier required. If null, defaults to ModelTier.C.</param>
+    /// <param name="needsPromptCompletion">If true, filters models to include only those whose providers support completions.</param>
+    /// <param name="blockedModels">List of model names to exclude from selection.</param>
+    /// <returns>The best matching model if one exists, otherwise null.</returns>
+    public static ModelProfile? Find(string? minTier, bool needsPromptCompletion, List<string>? blockedModels)
+    {
+        Enum.TryParse(minTier ?? "", out ModelTier foundTier);
+        return Find(foundTier, needsPromptCompletion, blockedModels);
     }
     
     /// <summary>
@@ -221,7 +235,29 @@ public static class ModelManager
         // Construct the query to find the model that is the best available but still meets or exceeds the minimum tier requirement
         return _models
             .Where(model => IsEligibleModel(model, minTier.Value, needsPromptCompletion))
-            .MaxBy(model => model.Tier);
+            .MinBy(model => model.Tier);
+    }
+
+    /// <summary>
+    /// Finds the lowest-tier model that is enabled, meets or exceeds the specified minimum tier, 
+    /// optionally checks if the provider supports completions, and excludes models in the blocked list.
+    /// </summary>
+    /// <param name="minTier">The minimum tier required. If null, defaults to ModelTier.C.</param>
+    /// <param name="needsPromptCompletion">If true, filters models to include only those whose providers support completions.</param>
+    /// <param name="blockedModels">List of model names to exclude from selection.</param>
+    /// <returns>The best matching model if one exists, otherwise null.</returns>
+    public static ModelProfile? Find(ModelTier? minTier, bool needsPromptCompletion, List<string>? blockedModels)
+    {
+        // Ensure a default minimum tier is set if none provided
+        if (minTier == null)
+            minTier = ModelTier.C;
+
+        // Construct the query to find the model that is the best available but still meets or exceeds the minimum tier requirement
+        // and is not in the blocked list
+        return _models
+            .Where(model => IsEligibleModel(model, minTier.Value, needsPromptCompletion))
+            .Where(model => blockedModels == null || !blockedModels.Contains(model.Name))
+            .MinBy(model => model.Tier);
     }
     #endregion
 }

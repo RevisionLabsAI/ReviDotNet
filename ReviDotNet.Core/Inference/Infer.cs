@@ -1383,29 +1383,33 @@ public class Infer
 			throw new Exception($"Specified modelString but an enabled model named '{modelName}' could not be found.");
 		}
 		
-		// Nope, check to see if the prompt had a model preference we can use
-		if (!string.IsNullOrEmpty(prompt.ModelPref))
-		{
-			foundModel = ModelManager.Get(prompt.ModelPref);
-			if ((foundModel is not null) && foundModel.Enabled)
-				return foundModel;
-		}
+ 	// Check if the prompt has a list of preferred models
+ 	if (prompt.PreferredModels != null && prompt.PreferredModels.Any())
+ 	{
+ 		// Try each preferred model in order
+ 		foreach (var preferredModelName in prompt.PreferredModels)
+ 		{
+ 			foundModel = ModelManager.Get(preferredModelName);
+ 			if ((foundModel is not null) && foundModel.Enabled)
+ 				return foundModel;
+ 		}
+ 	}
 
-		// Still nope, check to see if we can find any compatible models which are available
-		// TODO: Allow global setting that forces chat completion for prompt completion prompts
-		foundModel = ModelManager.Find(prompt.MinTier, prompt.IsCompletion());
-		if ((foundModel is not null) && foundModel.Enabled)
-			return foundModel;
+ 	// No preferred models available, check to see if we can find any compatible models which are available
+ 	// TODO: Allow global setting that forces chat completion for prompt completion prompts
+ 	foundModel = ModelManager.Find(prompt.MinTier, prompt.IsCompletion(), prompt.BlockedModels);
+ 	if ((foundModel is not null) && foundModel.Enabled)
+ 		return foundModel;
 		
-		// TODO: Global setting which allows using sub-par models when other models are unavailable
-		foundModel = ModelManager.Find(ModelTier.C, false);
-		if ((foundModel is not null) && foundModel.Enabled)
-		{
-			//Util.Log(
-			//	$"WARNING: Using sub-par model (prompt '{prompt.Name}' wants tier '{prompt.MinTier}' but we " + 
-			//         $"had to settle for model '{foundModel.Name}' which is tier '{foundModel.Tier}'");
-			return foundModel;
-		}
+ 	// TODO: Global setting which allows using sub-par models when other models are unavailable
+ 	foundModel = ModelManager.Find(ModelTier.C, false, prompt.BlockedModels);
+ 	if ((foundModel is not null) && foundModel.Enabled)
+ 	{
+ 		//Util.Log(
+ 		//	$"WARNING: Using sub-par model (prompt '{prompt.Name}' wants tier '{prompt.MinTier}' but we " + 
+ 		//         $"had to settle for model '{foundModel.Name}' which is tier '{foundModel.Tier}'");
+ 		return foundModel;
+ 	}
 
 		// Everything failed, we're boned
 		throw new AggregateException($"Could not find model for prompt '{prompt.Name}'");

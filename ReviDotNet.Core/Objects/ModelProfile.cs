@@ -86,8 +86,11 @@ public class ModelProfile
     [RConfigProperty("override-settings_max-tokens")]
     public string? MaxTokens { get; set; }
     
-    [RConfigProperty("override-settings_model-pref")]
-    public string? ModelPref { get; set; }
+    [RConfigProperty("override-settings_preferred-models")]
+    public List<string>? PreferredModels { get; set; }
+    
+    [RConfigProperty("override-settings_blocked-models")]
+    public List<string>? BlockedModels { get; set; }
     
     // Model-level override for Gemini Search Grounding: "true" / "false" / "disabled"
     [RConfigProperty("override-settings_use-search-grounding")]
