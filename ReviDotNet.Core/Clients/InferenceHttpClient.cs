@@ -41,7 +41,8 @@ internal class InferenceHttpClient : IDisposable
     public async Task<Dictionary<string, string>> ExecuteRequest(
         string endpoint,
         Dictionary<string, object> payload,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? inactivityTimeoutSeconds = null)
     {
         await _clientSemaphore.WaitAsync(cancellationToken);
         try
@@ -59,9 +60,8 @@ internal class InferenceHttpClient : IDisposable
                 }
             }
             
-            var content = new StringContent(JsonConvert.SerializeObject(payload), System.Text.Encoding.UTF8,
-                "application/json");
-            return await MakeRequestAsync(endpoint, content, cancellationToken);
+            string body = JsonConvert.SerializeObject(payload);
+            return await MakeRequestAsync(endpoint, body, cancellationToken, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds);
         }
         finally
         {
@@ -83,56 +83,92 @@ internal class InferenceHttpClient : IDisposable
     /// </remarks>
     private async Task<Dictionary<string, string>> MakeRequestAsync(
         string endpoint,
-        StringContent content,
-        CancellationToken cancellationToken)
+        string body,
+        CancellationToken cancellationToken,
+        int? inactivityTimeoutSeconds = null)
     {
-        int retryAttempt = 0; // Counter for the current attempt number
+        int attempt = 0;
+        HttpResponseMessage? response = null;
+        TimeSpan inactivity = TimeSpan.FromSeconds(Math.Max(1, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds));
+        string uri = (_httpClient.BaseAddress?.ToString() ?? string.Empty) + endpoint;
 
-        HttpResponseMessage response = await _httpClient.PostAsync(endpoint, content, cancellationToken);
-        
-        // We got an unsuccessful response back... try again? 
-        while (!response.IsSuccessStatusCode)
+        while (true)
         {
-            // Get the error message
-            string responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            string errorMessage;
-            
-            // End if we're at our retry attempt limit
-            if (retryAttempt >= _config.RetryAttemptLimit)
+            HttpRequestMessage? request = null;
+            try
             {
-                errorMessage = $"API request failed after {retryAttempt} retries: \n" +
-                               $" - Reason: {response.ReasonPhrase} ({(int)response.StatusCode})\n" +
-                               $" - Message: '{responseContent}'\n";
-                
-                Util.Log(errorMessage);
-                await Util.DumpLog(
-                    errorMessage +
-                    $" - Response:\n'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''\n",
-                    "ic-api-failure");
-                
-                throw new Exception(errorMessage);
+                // Build request and content fresh each attempt to avoid disposed content reuse
+                request = new HttpRequestMessage(HttpMethod.Post, endpoint)
+                {
+                    Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
+                };
+
+                using CancellationTokenSource sendCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                Task<HttpResponseMessage> sendTask = _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, sendCts.Token);
+                Task delayTask = Task.Delay(inactivity, cancellationToken);
+                Task completed = await Task.WhenAny(sendTask, delayTask);
+                if (completed == delayTask)
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                        throw new OperationCanceledException(cancellationToken);
+                    sendCts.Cancel();
+                    throw new TimeoutException($"[{attempt + 1}/{_config.RetryAttemptLimit}] Did not receive response headers from '{uri}' within {inactivity.TotalSeconds}s.");
+                }
+                response = await sendTask;
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    string responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                    if (attempt >= _config.RetryAttemptLimit)
+                    {
+                        string msg = $"[{attempt + 1}] API request failed: {response.ReasonPhrase} ({(int)response.StatusCode}) from '{uri}'. Body: '{responseContent}'";
+                        Util.Log(msg);
+                        await Util.DumpLog(msg + $"\nResponse:\n'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''\n", "ic-api-failure");
+                        throw new Exception(msg);
+                    }
+
+                    double delaySeconds = _config.RetryInitialDelaySeconds * Math.Pow(2, attempt);
+                    string retryMsg = $"[{attempt + 1}] Non-success response from '{uri}', retrying in {delaySeconds}s: {response.ReasonPhrase} ({(int)response.StatusCode})";
+                    Util.Log(retryMsg);
+                    await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
+                    attempt++;
+                    response.Dispose();
+                    continue; // retry
+                }
+
+                // Success -> process body without inactivity watchdog (slow bodies are allowed)
+                        Dictionary<string, string> result = await ProcessHttpResponseAsync(response, cancellationToken);
+                response.Dispose();
+                return result;
             }
-            
-            // Calculate the delay using exponential back-off
-            double delaySeconds = _config.RetryInitialDelaySeconds * Math.Pow(2, retryAttempt);
-            errorMessage = $"API request failed, trying again in {delaySeconds} seconds:\n" +
-                           $" - URI: {_httpClient.BaseAddress + endpoint}\n" +
-                           $" - Reason: {response.ReasonPhrase} ({(int)response.StatusCode})\n" +
-                           $" - Message: '{responseContent}'\n";
+            catch (OperationCanceledException)
+            {
+                response?.Dispose();
+                request?.Dispose();
+                throw;
+            }
+            catch (Exception ex) when (ex is HttpRequestException || ex is TimeoutException)
+            {
+                response?.Dispose();
+                request?.Dispose();
 
-            Util.Log(errorMessage);
-            
-            // Delay the next attempt
-            await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
-            
-            // Increase retry attempt
-            retryAttempt++;
-
-            // Try again
-            response = await _httpClient.PostAsync(endpoint, content, cancellationToken);
+                if (attempt >= _config.RetryAttemptLimit)
+                {
+                    string msg = $"[{attempt + 1}] Request to '{uri}' failed: {ex.Message}";
+                    Util.Log(msg);
+                    throw;
+                }
+                double delaySeconds = _config.RetryInitialDelaySeconds * Math.Pow(2, attempt);
+                Util.Log($"[{attempt + 1}] Transient exception contacting '{uri}', retrying in {delaySeconds}s: {ex.Message}");
+                await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
+                attempt++;
+                continue;
+            }
+            finally
+            {
+                // Do not dispose response on success until content has been read above
+            }
         }
-
-        return ProcessHttpResponse(response);
     }
 
     /// <summary>
@@ -140,35 +176,34 @@ internal class InferenceHttpClient : IDisposable
     /// </summary>
     /// <param name="response">The HTTP response returned by the server.</param>
     /// <returns>A dictionary containing the extracted information from the response.</returns>
-    private Dictionary<string, string> ProcessHttpResponse(HttpResponseMessage response)
+    private async Task<Dictionary<string, string>> ProcessHttpResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
-        var data = response.Content.ReadFromJsonAsync<Dictionary<string, JsonElement>>().Result;
-        //Util.Log($"Response: {System.Text.Json.JsonSerializer.Serialize(data)}");
+        Dictionary<string, JsonElement>? data = await response.Content.ReadFromJsonAsync<Dictionary<string, JsonElement>>(cancellationToken: cancellationToken);
         
         if (data == null)
             throw new Exception($"ProcessHttpResponse: Invalid response (data null):\n'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''\n");
 
-        var result = new Dictionary<string, string>();
+        Dictionary<string, string> result = new Dictionary<string, string>();
 
         // Handle Gemini response format
         if (_config.Protocol == Protocol.Gemini)
         {
-            if (data.TryGetValue("candidates", out var candidates) && 
+            if (data.TryGetValue("candidates", out JsonElement candidates) && 
                 candidates.ValueKind == JsonValueKind.Array)
             {
-                var firstCandidate = candidates[0];
-                if (firstCandidate.TryGetProperty("content", out var content) &&
-                    content.TryGetProperty("parts", out var parts) &&
+                JsonElement firstCandidate = candidates[0];
+                if (firstCandidate.TryGetProperty("content", out JsonElement content) &&
+                    content.TryGetProperty("parts", out JsonElement parts) &&
                     parts.ValueKind == JsonValueKind.Array)
                 {
-                    var firstPart = parts[0];
-                    if (firstPart.TryGetProperty("text", out var textElement))
+                    JsonElement firstPart = parts[0];
+                    if (firstPart.TryGetProperty("text", out JsonElement textElement))
                     {
                         result.Add("text", textElement.GetString() ?? "");
                     }
                 }
                 
-                if (firstCandidate.TryGetProperty("finishReason", out var finishReason))
+                if (firstCandidate.TryGetProperty("finishReason", out JsonElement finishReason))
                 {
                     result.Add("finish_reason", finishReason.GetString() ?? string.Empty);
                 }
@@ -177,24 +212,24 @@ internal class InferenceHttpClient : IDisposable
         else
         {
             // Standard OpenAI/vLLM format
-            if (!data.TryGetValue("choices", out var choices))
+            if (!data.TryGetValue("choices", out JsonElement choices))
                 throw new Exception($"ProcessHttpResponse: Invalid response (missing choices):\n'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''\n");
 
-            if (choices[0].TryGetProperty("text", out var textElement))
+            if (choices[0].TryGetProperty("text", out JsonElement textElement))
             {
                 result.Add("text", textElement.GetString() ?? "");
             }
             else
             {
                 // Extracting message content from the chat completion response
-                if (choices[0].TryGetProperty("message", out var messageElement) &&
-                    messageElement.TryGetProperty("content", out var contentElement))
+                if (choices[0].TryGetProperty("message", out JsonElement messageElement) &&
+                    messageElement.TryGetProperty("content", out JsonElement contentElement))
                 {
                     result.Add("text", contentElement.GetString() ?? "");
                 }
             }
             
-            if (choices[0].TryGetProperty("finish_reason", out var finishReason))
+            if (choices[0].TryGetProperty("finish_reason", out JsonElement finishReason))
                 result.Add("finish_reason", finishReason.GetString() ?? string.Empty);
         }
 

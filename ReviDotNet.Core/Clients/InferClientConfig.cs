@@ -16,4 +16,6 @@ public class InferClientConfig
     public bool SupportsGuidance { get; set; }
     public GuidanceType? DefaultGuidanceType { get; set; }
     public string? DefaultGuidanceString { get; set; }
+    // Inactivity timeout for non-responsive providers (seconds)
+    public int InactivityTimeoutSeconds { get; set; } = 60;
 }

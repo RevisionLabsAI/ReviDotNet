@@ -36,14 +36,14 @@ internal class StreamingProcessor
         Func<StreamingMetadata, string, Task>? onCompletionCallback = null,
         Func<Exception, Task>? onErrorCallback = null)
     {
-        var startTime = DateTime.UtcNow;
-        var metadataTracker = new StreamingMetadataTracker(startTime);
-        var responseBuilder = new StringBuilder();
+        DateTime startTime = DateTime.UtcNow;
+        StreamingMetadataTracker metadataTracker = new StreamingMetadataTracker(startTime);
+        StringBuilder responseBuilder = new StringBuilder();
     
-        var trackedStream = TrackStreamingMetadata(sourceStream, metadataTracker, cancellationToken, responseBuilder);
+        IAsyncEnumerable<string> trackedStream = TrackStreamingMetadata(sourceStream, metadataTracker, cancellationToken, responseBuilder);
         
         // Set up completion task to handle callbacks when streaming finishes
-        var completionTask = HandleStreamingCompletion(metadataTracker.CompletionTask, responseBuilder, onCompletionCallback, onErrorCallback);
+        Task<StreamingMetadata> completionTask = HandleStreamingCompletion(metadataTracker.CompletionTask, responseBuilder, onCompletionCallback, onErrorCallback);
         
         // IMPORTANT: Ensure the completion task runs even if no one awaits it
         // This fire-and-forget approach ensures callbacks are executed
@@ -78,8 +78,8 @@ internal class StreamingProcessor
     {
         try
         {
-            var metadata = await originalCompletion;
-            var fullResponse = responseBuilder.ToString();
+            StreamingMetadata metadata = await originalCompletion;
+            string fullResponse = responseBuilder.ToString();
             
             // Call completion callback for any completion that has response data (including cancellations)
             if (onCompletionCallback != null && !string.IsNullOrEmpty(fullResponse))
@@ -139,14 +139,14 @@ internal class StreamingProcessor
         [EnumeratorCancellation] CancellationToken cancellationToken,
         StringBuilder responseBuilder)
     {
-        var enumerator = sourceStream.GetAsyncEnumerator(cancellationToken);
+        IAsyncEnumerator<string> enumerator = sourceStream.GetAsyncEnumerator(cancellationToken);
         bool completedSuccessfully = false;
         
         try
         {
             while (await MoveNextSafely(enumerator, tracker))
             {
-                var chunk = enumerator.Current;
+                string chunk = enumerator.Current;
                 responseBuilder.Append(chunk); // Collect chunks as they're yielded
                 yield return chunk;
             }
@@ -184,7 +184,7 @@ internal class StreamingProcessor
     {
         try
         {
-            var hasNext = await enumerator.MoveNextAsync();
+            bool hasNext = await enumerator.MoveNextAsync();
             if (hasNext)
             {
                 tracker.IncrementChunkCount();
@@ -215,48 +215,35 @@ internal class StreamingProcessor
     public async IAsyncEnumerable<string> ExecuteStreamingRequest(
         string endpoint,
         Dictionary<string, object> payload,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken,
+        int? inactivityTimeoutSeconds = null)
     {
-        //Util.Log($"[DEBUG] ExecuteStreamingRequest started - Endpoint: {endpoint}");
-        //Util.Log($"[DEBUG] Waiting for client semaphore...");
-        
         await _clientSemaphore.WaitAsync(cancellationToken);
         try
         {
-            //Util.Log($"[DEBUG] Semaphore acquired, checking rate limit...");
             await _rateLimiter.EnsureRateLimit();
-            //Util.Log($"[DEBUG] Rate limit passed");
             
             // Handle Gemini-specific payload transformation
             if (_config.Protocol == Protocol.Gemini)
             {
-                //Util.Log($"[DEBUG] Transforming payload for Gemini protocol");
                 payload = _payloadTransformer.TransformToGeminiPayload(payload);
                 // Add API key to endpoint for Gemini
                 if (_config.UseApiKey && !endpoint.Contains("key="))
                 {
                     endpoint += (endpoint.Contains("?") ? "&" : "?") + $"key={_config.ApiKey}";
-                    //Util.Log($"[DEBUG] Added API key to endpoint");
                 }
             }
             
-            //Util.Log($"[DEBUG] Creating request content, payload size: {JsonConvert.SerializeObject(payload).Length} chars");
-            var content = new StringContent(JsonConvert.SerializeObject(payload), System.Text.Encoding.UTF8,
-                "application/json");
-            
-            //Util.Log($"[DEBUG] Starting streaming request...");
+            string body = JsonConvert.SerializeObject(payload);
             int chunkCount = 0;
-            await foreach (var chunk in MakeStreamingRequestAsync(endpoint, content, cancellationToken))
+            await foreach (string chunk in MakeStreamingRequestAsync(endpoint, body, cancellationToken, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds))
             {
                 chunkCount++;
-                //Util.Log($"[DEBUG] Yielding chunk #{chunkCount}, length: {chunk.Length}");
                 yield return chunk;
             }
-            //Util.Log($"[DEBUG] Streaming completed, total chunks: {chunkCount}");
         }
         finally
         {
-            //Util.Log($"[DEBUG] Releasing semaphore");
             _clientSemaphore.Release();
         }
     }
@@ -270,19 +257,17 @@ internal class StreamingProcessor
     /// <returns>An async enumerable that yields text chunks from the streaming response.</returns>
     private async IAsyncEnumerable<string> MakeStreamingRequestAsync(
         string endpoint,
-        StringContent content,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
+        string body,
+        [EnumeratorCancellation] CancellationToken cancellationToken,
+        int? inactivityTimeoutSeconds = null)
     {
         HttpResponseMessage? response = null;
-        
         try
         {
-            response = await EstablishStreamingConnection(endpoint, content, cancellationToken);
-            //Util.Log("[DEBUG] Streaming connection established, starting to process response...");
+            response = await EstablishStreamingConnection(endpoint, body, cancellationToken, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds);
             
-            await foreach (var chunk in ProcessStreamingResponse(response, cancellationToken))
+            await foreach (string chunk in ProcessStreamingResponse(response, cancellationToken, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds))
             {
-                //Util.Log($"[DEBUG] MakeStreamingRequestAsync: Yielding chunk, length: {chunk.Length}");
                 yield return chunk;
             }
         }
@@ -297,8 +282,9 @@ internal class StreamingProcessor
     /// </summary>
     private async Task<HttpResponseMessage> EstablishStreamingConnection(
         string endpoint,
-        StringContent content,
-        CancellationToken cancellationToken)
+        string body,
+        CancellationToken cancellationToken,
+        int inactivityTimeoutSeconds)
     {
         //Util.Log($"[DEBUG] EstablishStreamingConnection started");
         int retryAttempt = 0;
@@ -312,18 +298,32 @@ internal class StreamingProcessor
                 response?.Dispose(); // Dispose previous attempt if any
                 
                 //Util.Log($"[DEBUG] Sending HTTP request to: {endpoint}");
-                var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
+                HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, endpoint)
                 {
-                    Content = content
+                    Content = new StringContent(body, Encoding.UTF8, "application/json")
                 };
                 // Ensure we negotiate for SSE
                 request.Headers.Accept.Clear();
                 request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
                 // ... existing code ...
-                response = await _httpClient.SendAsync(
+                // Wait for response headers with inactivity watchdog
+                TimeSpan inactivity = TimeSpan.FromSeconds(Math.Max(1, inactivityTimeoutSeconds));
+                using CancellationTokenSource sendCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                Task<HttpResponseMessage> sendTask = _httpClient.SendAsync(
                     request,
                     HttpCompletionOption.ResponseHeadersRead,
-                    cancellationToken);
+                    sendCts.Token);
+                Task delayTask = Task.Delay(inactivity, cancellationToken);
+                Task completed = await Task.WhenAny(sendTask, delayTask);
+                if (completed == delayTask)
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                        throw new OperationCanceledException(cancellationToken);
+                    sendCts.Cancel();
+                    string uri = (_httpClient.BaseAddress?.ToString() ?? string.Empty) + endpoint;
+                    throw new TimeoutException($"[{retryAttempt + 1}/{_config.RetryAttemptLimit}] Did not receive streaming response headers from '{uri}' within {inactivity.TotalSeconds}s.");
+                }
+                response = await sendTask;
 
                 //Util.Log($"[DEBUG] HTTP response received - Status: {response.StatusCode} ({response.ReasonPhrase})");
                 
@@ -380,25 +380,39 @@ internal class StreamingProcessor
     /// </summary>
     private async IAsyncEnumerable<string> ProcessStreamingResponse(
         HttpResponseMessage response,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken,
+        int inactivityTimeoutSeconds)
     {
         //Util.Log($"[DEBUG] ProcessStreamingResponse started");
-        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var reader = new StreamReader(stream);
+        using Stream stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using StreamReader reader = new StreamReader(stream);
         
         //Util.Log($"[DEBUG] Stream reader created, starting to read lines...");
         string? line;
         int lineCount = 0;
-        while ((line = await reader.ReadLineAsync(cancellationToken)) != null)
+        TimeSpan inactivity = TimeSpan.FromSeconds(inactivityTimeoutSeconds);
+        while (true)
         {
-            lineCount++;
             if (cancellationToken.IsCancellationRequested)
+                throw new OperationCanceledException(cancellationToken);
+            
+            Task<string?> readTask = reader.ReadLineAsync(cancellationToken).AsTask();
+            Task delayTask = Task.Delay(inactivity, cancellationToken);
+            Task completed = await Task.WhenAny(readTask, delayTask);
+            if (completed == delayTask)
             {
-                //Util.Log($"[DEBUG] Cancellation requested, breaking out of loop");
-                yield break;
+                if (cancellationToken.IsCancellationRequested)
+                    throw new OperationCanceledException(cancellationToken);
+                string uri = response.RequestMessage?.RequestUri?.ToString() ?? "(unknown)";
+                throw new TimeoutException($"No streaming data received from '{uri}' for {inactivity.TotalSeconds} seconds.");
             }
+            line = await readTask;
+            if (line is null)
+                yield break;
+            
+            lineCount++;
 
-            var trimmed = line.Trim();
+            string trimmed = line.Trim();
 
             // Skip keep-alives or empty event lines (valid in SSE)
             if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith(":"))

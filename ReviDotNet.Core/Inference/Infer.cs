@@ -73,6 +73,8 @@ public class Infer
 				out GuidanceType? guidanceType, 
 				out string? guidanceString);
 
+            int? inactivityTimeoutSeconds = GetEffectiveInactivityTimeoutSeconds(prompt, model);
+
 			switch (promptObject)
 			{
 				case string promptString:
@@ -85,7 +87,7 @@ public class Infer
 						throw new Exception("Too many tokens!");
 
 					// Prompt completion
-                    response = await model.Provider.InferenceClient.GenerateAsync(
+					response = await model.Provider.InferenceClient.GenerateAsync(
 						prompt: promptString,
 						model: model.ModelString,
 						temperature: (float?)SelectParam(model.Temperature, prompt.Temperature),
@@ -102,7 +104,8 @@ public class Infer
 						guidanceType: guidanceType,
 						guidanceString: guidanceString,
 						useSearchGrounding: (bool?)SelectParam(model.UseSearchGrounding, prompt.UseSearchGrounding),
-						cancellationToken: token);
+						cancellationToken: token,
+                        inactivityTimeoutSeconds: inactivityTimeoutSeconds);
 					break;
 				}
 
@@ -133,7 +136,8 @@ public class Infer
 						guidanceType: guidanceType,
 						guidanceString: guidanceString,
 						useSearchGrounding: (bool?)SelectParam(model.UseSearchGrounding, prompt.UseSearchGrounding),
-						cancellationToken: token);
+						cancellationToken: token,
+                        inactivityTimeoutSeconds: inactivityTimeoutSeconds);
 					break;
 				}
 			}
@@ -145,8 +149,8 @@ public class Infer
 		
 		// Logging and Observability
 		// Update to match new response object
-		var providerString = ""; //= JsonConvert.SerializeObject(providerInfo, Formatting.Indented);
-		var dump =
+		string providerString = ""; //= JsonConvert.SerializeObject(providerInfo, Formatting.Indented);
+		string dump =
 			$"CallInference:\n\nProviderInfo:\n{providerString}\n\nMessages:\n{prompt}\n\nOutput:\n";
 		await Util.DumpLog(dump, "inference");
 
@@ -160,6 +164,58 @@ public class Infer
 			throw new Exception($"Could not find specified prompt: {name}");
 		
 		return foundPrompt;
+	}
+	
+	private static int? GetEffectiveInactivityTimeoutSeconds(Prompt prompt, ModelProfile model)
+	{
+		// ModelProfile.Timeout is a string; allow formats like "60", "60s", "2m", "1h".
+		int? modelSeconds = ParseTimeoutStringToSeconds(model.Timeout);
+		int? promptSeconds = prompt.Timeout; // already in seconds
+		var effective = modelSeconds ?? promptSeconds; // model overrides prompt if provided
+		return ClampPositiveSeconds(effective);
+	}
+	
+	private static int? ClampPositiveSeconds(int? secs)
+	{
+		if (secs is null) return null;
+		return Math.Max(1, secs.Value);
+	}
+	
+	private static int? ParseTimeoutStringToSeconds(string? value)
+	{
+		if (string.IsNullOrWhiteSpace(value))
+			return null;
+		var s = value.Trim().ToLowerInvariant();
+		// pure integer -> seconds
+		if (int.TryParse(s, out int secs))
+			return secs;
+		try
+		{
+			if (s.EndsWith("ms"))
+			{
+				if (int.TryParse(s[..^2], out int ms))
+					return Math.Max(1, ms / 1000);
+			}
+			if (s.EndsWith("s"))
+			{
+				if (int.TryParse(s[..^1], out int sVal))
+					return sVal;
+			}
+			if (s.EndsWith("m") || s.EndsWith("min") || s.EndsWith("mins"))
+			{
+				var num = s.TrimEnd('m','i','n','s');
+				if (int.TryParse(num, out int mVal))
+					return mVal * 60;
+			}
+			if (s.EndsWith("h") || s.EndsWith("hr") || s.EndsWith("hrs") || s.EndsWith("hour") || s.EndsWith("hours"))
+			{
+				var num = new string(s.TakeWhile(char.IsDigit).ToArray());
+				if (int.TryParse(num, out int hVal))
+					return hVal * 3600;
+			}
+		}
+		catch { }
+		return null;
 	}
 	
 	public static ProviderProfile FindProvider(Prompt prompt, string provider)
@@ -290,6 +346,8 @@ public class Infer
 			out GuidanceType? guidanceType, 
 			out string? guidanceString);
 
+        int? inactivityTimeoutSeconds = GetEffectiveInactivityTimeoutSeconds(prompt, model);
+
 		try
 		{
 			switch (promptObject)
@@ -302,7 +360,7 @@ public class Infer
 						throw new Exception("Too many tokens!");
 
 					// Streaming prompt completion
-					streamResult = model.Provider.InferenceClient.GenerateStreamAsync(
+     streamResult = model.Provider.InferenceClient.GenerateStreamAsync(
 						prompt: promptString,
 						model: model.ModelString,
 						temperature: (float?)SelectParam(model.Temperature, prompt.Temperature),
@@ -319,7 +377,8 @@ public class Infer
 						guidanceType: guidanceType,
 						guidanceString: guidanceString,
 						useSearchGrounding: (bool?)SelectParam(model.UseSearchGrounding, prompt.UseSearchGrounding),
-						cancellationToken: token);
+						cancellationToken: token,
+                        inactivityTimeoutSeconds: inactivityTimeoutSeconds);
 					break;
 				}
 
@@ -348,7 +407,8 @@ public class Infer
 						guidanceType: guidanceType,
 						guidanceString: guidanceString,
 						useSearchGrounding: (bool?)SelectParam(model.UseSearchGrounding, prompt.UseSearchGrounding),
-						cancellationToken: token);
+						cancellationToken: token,
+                        inactivityTimeoutSeconds: inactivityTimeoutSeconds);
 					break;
 				}
 

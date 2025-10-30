@@ -211,13 +211,14 @@ public class InferClient : IDisposable
         GuidanceType? guidanceType = GuidanceType.Disabled,
         string? guidanceString = null,
         bool? useSearchGrounding = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int? inactivityTimeoutSeconds = null)
     {
         if (_config.SupportsCompletion is false)
             throw new Exception("Attempting prompt completion on provider that does not support it");
 
         model = model == "default" ? _config.DefaultModel : model;
-        var parameters = new Dictionary<string, object>
+        Dictionary<string, object> parameters = new Dictionary<string, object>
         {
             { "model", model },
             { "prompt", prompt }
@@ -252,7 +253,7 @@ public class InferClient : IDisposable
         
         try
         {
-            Dictionary<string, string> serverResponse = await _inferenceHttpClient.ExecuteRequest(endpoint, parameters, cancellationToken);
+            Dictionary<string, string> serverResponse = await _inferenceHttpClient.ExecuteRequest(endpoint, parameters, cancellationToken, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds);
             response = BuildResponse(prompt, serverResponse);
         }
 
@@ -288,7 +289,7 @@ public class InferClient : IDisposable
     private CompletionResponse BuildResponse(string prompt, Dictionary<string, string> serverResponse)
     {
         // This method processes the server response and creates a Response object
-        var outputs = new List<string>();
+        List<string> outputs = new List<string>();
         string selected = serverResponse.GetValueOrDefault("text", "");
         string finishReason = serverResponse.GetValueOrDefault("finish_reason", "");
 
@@ -339,10 +340,11 @@ public class InferClient : IDisposable
         GuidanceType? guidanceType = GuidanceType.Disabled,
         string? guidanceString = null,
         bool? useSearchGrounding = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int? inactivityTimeoutSeconds = null)
     {
         model = model == "default" ? _config.DefaultModel : model;
-        var parameters = new Dictionary<string, object>
+        Dictionary<string, object> parameters = new Dictionary<string, object>
         {
             { "model", model },
             { "messages", messages }
@@ -379,7 +381,7 @@ public class InferClient : IDisposable
 
         try
         {
-            Dictionary<string, string> serverResponse = await _inferenceHttpClient.ExecuteRequest(endpoint, parameters, cancellationToken);
+            Dictionary<string, string> serverResponse = await _inferenceHttpClient.ExecuteRequest(endpoint, parameters, cancellationToken, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds);
             response = BuildResponse(messages, serverResponse);
         }
         
@@ -460,7 +462,8 @@ public class InferClient : IDisposable
         GuidanceType? guidanceType = GuidanceType.Disabled,
         string? guidanceString = null,
         bool? useSearchGrounding = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int? inactivityTimeoutSeconds = null)
     {
         if (_config.SupportsCompletion is false)
         {
@@ -513,7 +516,7 @@ public class InferClient : IDisposable
         
         try
         {
-            var streamingEnumerable = _streamingProcessor.ExecuteStreamingRequest(endpoint, parameters, cancellationToken);
+            IAsyncEnumerable<string> streamingEnumerable = _streamingProcessor.ExecuteStreamingRequest(endpoint, parameters, cancellationToken, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds);
             return _streamingProcessor.CreateStreamingResultWrapper(streamingEnumerable, cancellationToken, 
                 async (completion, fullResponse) => {
                     // This callback will be called when streaming completes with the full response
@@ -586,7 +589,8 @@ public class InferClient : IDisposable
         GuidanceType? guidanceType = GuidanceType.Disabled,
         string? guidanceString = null,
         bool? useSearchGrounding = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int? inactivityTimeoutSeconds = null)
     {
         model = model == "default" ? _config.DefaultModel : model;
         var parameters = new Dictionary<string, object>
@@ -629,7 +633,7 @@ public class InferClient : IDisposable
 
         try
         {
-            var streamingEnumerable = _streamingProcessor.ExecuteStreamingRequest(endpoint, parameters, cancellationToken);
+            var streamingEnumerable = _streamingProcessor.ExecuteStreamingRequest(endpoint, parameters, cancellationToken, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds);
             return _streamingProcessor.CreateStreamingResultWrapper(streamingEnumerable, cancellationToken,
                 async (completion, fullResponse) => {
                     // This callback will be called when streaming completes with the full response
