@@ -525,7 +525,7 @@ public class ReviLogger : IReviLogger
 				textColor = ParseConsoleColor(_rlogConfig.Info.TextColor);
 				break;
 			case LogLevel.Warning:
-				prefix = "[WARNING]";
+				prefix = "[WARN]";
 				prefixColor = ParseConsoleColor(_rlogConfig.Warning.PrefixColor);
 				textColor = ParseConsoleColor(_rlogConfig.Warning.TextColor);
 				break;
