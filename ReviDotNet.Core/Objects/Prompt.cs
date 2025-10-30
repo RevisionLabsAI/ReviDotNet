@@ -70,6 +70,9 @@ public class Prompt
     [JsonProperty("max-tokens"), RConfigProperty("settings_max-tokens")]
     public int? MaxTokens { get; set; }
     
+    [JsonProperty("timeout"), RConfigProperty("settings_timeout")]
+    public int? Timeout { get; set; }
+    
     [JsonProperty("use-search-grounding"), RConfigProperty("settings_use-search-grounding")]
     public bool? UseSearchGrounding { get; set; }
 

@@ -86,6 +86,9 @@ public class ModelProfile
     [RConfigProperty("override-settings_max-tokens")]
     public string? MaxTokens { get; set; }
     
+    [RConfigProperty("override-settings_timeout")]
+    public string? Timeout { get; set; }
+    
     [RConfigProperty("override-settings_preferred-models")]
     public List<string>? PreferredModels { get; set; }
     
