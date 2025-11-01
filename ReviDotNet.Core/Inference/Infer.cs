@@ -157,7 +157,7 @@ public class Infer
 		return response;
 	}
 
-	private static Prompt FindPrompt(string name)
+	public static Prompt FindPrompt(string name)
 	{
 		Prompt? foundPrompt = PromptManager.Get(name);
 		if (foundPrompt is null)
@@ -360,7 +360,7 @@ public class Infer
 						throw new Exception("Too many tokens!");
 
 					// Streaming prompt completion
-     streamResult = model.Provider.InferenceClient.GenerateStreamAsync(
+					streamResult = model.Provider.InferenceClient.GenerateStreamAsync(
 						prompt: promptString,
 						model: model.ModelString,
 						temperature: (float?)SelectParam(model.Temperature, prompt.Temperature),
@@ -422,27 +422,27 @@ public class Infer
 			throw;
 		}
 		
-    bool hasYieldedAnyChunks = false;
-    
-    await foreach (var chunk in streamResult.Stream)
-    {
-        hasYieldedAnyChunks = true;
-        yield return chunk;
-    }
-    
-    var metadata = await streamResult.Completion;
-    if (!metadata.IsSuccess)
-    {
-        string errorMsg = $"Streaming failed: {metadata.ErrorMessage}";
-        Util.Log(errorMsg);
-        
-        // If we haven't yielded anything yet, this is likely a complete failure
-        if (!hasYieldedAnyChunks)
-        {
-            throw new Exception($"Streaming inference failed: {metadata.ErrorMessage}");
-        }
-    }
-}
+	    bool hasYieldedAnyChunks = false;
+	    
+	    await foreach (string chunk in streamResult.Stream.WithCancellation(token))
+	    {
+	        hasYieldedAnyChunks = true;
+	        yield return chunk;
+	    }
+	    
+	    StreamingMetadata metadata = await streamResult.Completion;
+	    if (!metadata.IsSuccess)
+	    {
+	        string errorMsg = $"Streaming failed: {metadata.ErrorMessage}";
+	        Util.Log(errorMsg);
+	        
+	        // If we haven't yielded anything yet, this is likely a complete failure
+	        if (!hasYieldedAnyChunks)
+	        {
+	            throw new Exception($"Streaming inference failed: {metadata.ErrorMessage}");
+	        }
+	    }
+	}
 
 	/// <summary>
 	/// Generates streaming completion response based on the provided prompt, inputs, model profile, model name, and output object.
@@ -1227,8 +1227,8 @@ public class Infer
 		
 		try
 		{
-			var prompt = FindPrompt(promptName);
-			var streamResult = CompletionStream(
+			Prompt prompt = FindPrompt(promptName);
+			IAsyncEnumerable<string> streamResult = CompletionStream(
 				prompt, 
 				inputs, 
 				modelProfile, 
@@ -1236,7 +1236,7 @@ public class Infer
 				null, 
 				internalCts.Token); // Use our internal cancellation token
 			
-			await foreach (var chunk in streamResult)
+			await foreach (string chunk in streamResult)
 			{
 				//Util.Log($"Chunk received: {chunk}");
 				allContent.Append(chunk);
@@ -1247,7 +1247,7 @@ public class Infer
 					if (c == '\n')
 					{
 						// Complete the current line and add it to the list
-						var completedLine = currentLine.ToString().Trim();
+						string completedLine = currentLine.ToString().Trim();
 						if (!string.IsNullOrEmpty(completedLine))
 						{
 							lines.Add(completedLine);
