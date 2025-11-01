@@ -1279,7 +1279,7 @@ public class Infer
 			}
 			
 			// Add any remaining content as the last line
-			var finalLine = currentLine.ToString().Trim();
+			string finalLine = currentLine.ToString().Trim();
 			if (!string.IsNullOrEmpty(finalLine))
 			{
 				lines.Add(finalLine);
@@ -1289,7 +1289,7 @@ public class Infer
 		{
 			// This is our internal cancellation (we got what we needed), not an external cancellation
 			// Add any remaining content as the last line before returning
-			var finalLine = currentLine.ToString().Trim();
+			string finalLine = currentLine.ToString().Trim();
 			if (!string.IsNullOrEmpty(finalLine))
 			{
 				lines.Add(finalLine);
