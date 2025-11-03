@@ -25,7 +25,7 @@ using Newtonsoft.Json;
 /// <summary>
 /// Provides asynchronous client functionality for interacting with an AI embeddings service.
 /// </summary>
-public class AsyncEmbeddingsClient : IDisposable
+public class EmbedClient : IDisposable
 {
     // ==============
     //  Declarations
@@ -44,12 +44,6 @@ public class AsyncEmbeddingsClient : IDisposable
     private readonly int _delayBetweenRequestsMs;
     private readonly int _retryAttemptLimit;
     private readonly int _retryInitialDelaySeconds;
-
-    private readonly bool _supportsCompletion;
-    
-    private readonly bool _supportsGuidance;
-    private readonly GuidanceType? _defaultGuidanceType;
-    private readonly string? _defaultGuidanceString;
     #endregion
     
 
@@ -59,31 +53,29 @@ public class AsyncEmbeddingsClient : IDisposable
     
     #region Constructor
     /// <summary>
-    /// Initializes a new instance of the AsyncInferenceClient class that handles requests to an AI model inference API.
+    /// Initializes a new instance of the EmbedClient class that handles requests to an AI embeddings API.
     /// </summary>
-    /// <param name="apiUrl">The base URL of the AI inference API.</param>
-    /// <param name="apiKey">The API key used for authenticating with the inference API. If not specified, authentication is disabled.</param>
-    /// <param name="defaultModel">The identifier for the default model used for inference requests. Default is "mistralai/Mistral-7B-Instruct-v0.1".</param>
+    /// <param name="apiUrl">The base URL of the AI embeddings API.</param>
+    /// <param name="apiKey">The API key used for authenticating with the embeddings API. If not specified, authentication is disabled.</param>
+    /// <param name="protocol">The protocol to use (OpenAI or Gemini).</param>
+    /// <param name="defaultModel">The identifier for the default model used for embedding requests. Default is "text-embedding-ada-002".</param>
     /// <param name="timeoutSeconds">The timeout in seconds for HTTP requests to the API. Default is 100 seconds.</param>
     /// <param name="delayBetweenRequestsMs">The minimum delay in milliseconds between subsequent requests to the API to avoid rate limits. Default is 0 ms.</param>
     /// <param name="retryAttemptLimit">The maximum number of retry attempts for a request in case of failures. Default is 5 attempts.</param>
     /// <param name="retryInitialDelaySeconds">The initial delay in seconds before the first retry attempt. Default is 5 seconds.</param>
     /// <param name="simultaneousRequests">The maximum number of simultaneous requests allowed to the API. Default is 10.</param>
-    /// <param name="supportsCompletion">Indicates whether the client supports prompt completion instead of just chat completion. Default is false.</param>
-    public AsyncEmbeddingsClient(
+    /// <param name="httpClientOverride">Optional HttpClient to use instead of creating a new one (for testing purposes).</param>
+    public EmbedClient(
         string apiUrl,
         string apiKey = "",
-        Protocol protocol = Protocol.vLLM,
-        string defaultModel = "mistralai/Mistral-7B-Instruct-v0.1",
+        Protocol protocol = Protocol.OpenAI,
+        string defaultModel = "text-embedding-ada-002",
         int timeoutSeconds = 100,
         int delayBetweenRequestsMs = 0,
         int retryAttemptLimit = 5,
         int retryInitialDelaySeconds = 5,
         int simultaneousRequests = 10,
-        bool supportsCompletion = false,
-        bool supportsGuidance = false,
-        GuidanceType? defaultGuidanceType = GuidanceType.Disabled,
-        string? defaultGuidanceString = null)
+        HttpClient? httpClientOverride = null)
     {
         // Rate Limiting
         _delayBetweenRequestsMs = delayBetweenRequestsMs;
@@ -99,25 +91,21 @@ public class AsyncEmbeddingsClient : IDisposable
         
         // Model 
         _defaultModel = defaultModel;
-        _supportsCompletion = supportsCompletion;
-        
-        // Guidance
-        _supportsGuidance = supportsGuidance;
-        _defaultGuidanceType = defaultGuidanceType;
-        _defaultGuidanceString = defaultGuidanceString;
-        
         
         // HTTP Client Setup
         _protocol = protocol;
         apiUrl = apiUrl.TrimEnd('/');
         
-        if (apiUrl.EndsWith("/v1/chat/completions"))
-            throw new Exception("Please remove /v1/chat/completions from the end of API URL");
+        if (apiUrl.EndsWith("/v1/embeddings"))
+            throw new Exception("Please remove /v1/embeddings from the end of API URL");
         
-        if (apiUrl.EndsWith("/v1/completions"))
-            throw new Exception("Please remove /v1/completions from the end of API URL"); 
+        // Use provided HttpClient if available (for testing), otherwise create a new one
+        _client = httpClientOverride ?? new HttpClient { BaseAddress = new Uri(apiUrl) };
+        if (_client.BaseAddress is null)
+        {
+            _client.BaseAddress = new Uri(apiUrl);
+        }
         
-        _client = new HttpClient { BaseAddress = new Uri(apiUrl) };
         _client.DefaultRequestHeaders.Add("Accept", "application/json");
         
         if (_useApiKey)
@@ -142,102 +130,22 @@ public class AsyncEmbeddingsClient : IDisposable
     }
 
     /// <summary>
-    /// Adds optional parameters to the specified dictionary.
+    /// Gets the appropriate endpoint path for the embedding request based on protocol.
     /// </summary>
-    /// <param name="parameters">The dictionary to add the optional parameters to.</param>
-    /// <param name="temperature">The temperature parameter value.</param>
-    /// <param name="topP">The top_p parameter value.</param>
-    /// <param name="topK">The top_k parameter value.</param>
-    /// <param name="bestOf">The best_of parameter value.</param>
-    /// <param name="maxTokens">The max_tokens parameter value.</param>
-    /// <param name="frequencyPenalty">The frequencyPenalty parameter value.</param>
-    /// <param name="presencePenalty">The presencePenalty parameter value.</param>
-    /// <param name="stopSequences">The stopSequences parameter value.</param>
-    /// <param name="guidanceType">The guidanceType parameter value.</param>
-    /// <param name="guidanceString">The guidanceString parameter value.</param>
-    private void AddOptionalParameters(
-        Dictionary<string, object> parameters,
-        double? temperature,
-        double? topP,
-        int? topK,
-        int? bestOf,
-        int? maxTokens,
-        double? frequencyPenalty,
-        double? presencePenalty,
-        string[]? stopSequences,
-        GuidanceType? guidanceType,
-        string? guidanceString)
+    /// <returns>The endpoint path string.</returns>
+    private string GetEmbeddingEndpoint()
     {
-        if (temperature.HasValue) parameters.Add("temperature", temperature.Value);
-        if (topP.HasValue) parameters.Add("top_p", topP.Value);
-        if (maxTokens.HasValue) parameters.Add("max_tokens", maxTokens.Value);
-        if (frequencyPenalty.HasValue) parameters.Add("frequency_penalty", frequencyPenalty.Value);
-        if (presencePenalty.HasValue) parameters.Add("presence_penalty", presencePenalty.Value);
-        if (stopSequences is { Length: > 0 }) parameters.Add("stop_sequences", stopSequences);
-        if (topK.HasValue) parameters.Add("top_k", topK.Value);
-
-        GuidanceType? chosenType = guidanceType ?? _defaultGuidanceType;
-        string? chosenString = guidanceString ?? _defaultGuidanceString;
-        Util.Log($"guidanceString: {guidanceString}, _protocol: {_protocol}");
-        
         switch (_protocol)
         {
             case Protocol.OpenAI:
-                // Nothing unique to do here
-                break;
-
-            case Protocol.vLLM:
-            {
-                // vLLM Parameters
-                if (bestOf.HasValue) parameters.Add("best_of", bestOf.Value);
-
-                // vLLM Guidance
-                if (!_supportsGuidance || string.IsNullOrEmpty(chosenString))
-                {
-                    Util.Log($"{_supportsGuidance} : {chosenString}");
-                    return;
-                }
-
-                switch (chosenType)
-                {
-                    case GuidanceType.Json:
-                        parameters.Add("guided_json", chosenString);
-                        parameters.Add("guided_decoding_backend", "outlines");
-                        break;
-                    case GuidanceType.Regex:
-                        parameters.Add("guided_regex", chosenString);
-                        parameters.Add("guided_decoding_backend", "lm-format-enforcer");
-                        //parameters.Add("guided_decoding_backend", "outlines");
-                        break;
-                    /*case GuidanceType.Choice:
-                        guidance.Add("guided_choice", _defaultGuidance);
-                        guidance.Add("guided_decoding_backend", "lm-format-enforcer");
-                        break;*/
-                }
-
-                break;
-            }
-
-            case Protocol.LLamaAPI:
-            {
-                // LLamaAPI Parameters
-                
-                // LLamaAPI Guidance
-                if (!_supportsGuidance || string.IsNullOrEmpty(chosenString)) 
-                    return;
-                
-                switch (chosenType)
-                {
-                    case GuidanceType.Json:
-                        parameters.Add("json_schema", chosenString);
-                        break;
-                    case GuidanceType.Grammar:
-                        parameters.Add("grammar", chosenString);
-                        break;
-                }
-
-                break;
-            }
+                return "v1/embeddings";
+            
+            case Protocol.Gemini:
+                // Gemini uses a different endpoint structure
+                return "v1beta/models/{model}:embedContent";
+            
+            default:
+                return "v1/embeddings";
         }
     }
 
@@ -256,36 +164,126 @@ public class AsyncEmbeddingsClient : IDisposable
     }
 
     /// <summary>
-    /// Processes the HTTP response and extracts the required information.
+    /// Processes the HTTP response and extracts embedding data.
     /// </summary>
     /// <param name="response">The HTTP response returned by the server.</param>
-    /// <returns>A dictionary containing the extracted information from the response.</returns>
-    private static Dictionary<string, string> ProcessHttpResponse(HttpResponseMessage response)
+    /// <returns>An EmbeddingResponse object containing the embedding vectors.</returns>
+    private EmbeddingResponse ProcessHttpResponse(HttpResponseMessage response)
     {
         var data = response.Content.ReadFromJsonAsync<Dictionary<string, JsonElement>>().Result;
         Util.Log($"Response: {System.Text.Json.JsonSerializer.Serialize(data)}");
-        if (data == null || !data.TryGetValue("choices", out var choices))
-            throw new Exception("Invalid server response.");
-
-        var result = new Dictionary<string, string>();
-        if (choices[0].TryGetProperty("text", out var textElement))
-        {
-            result.Add("text", textElement.GetString() ?? "");
-        }
-        else
-        {
-            // Extracting message content from the chat completion response
-            if (choices[0].TryGetProperty("message", out var messageElement) &&
-                messageElement.TryGetProperty("content", out var contentElement))
-            {
-                result.Add("text", contentElement.GetString() ?? "");
-            }
-        }
         
-        if (choices[0].TryGetProperty("finish_reason", out var finishReason))
-            result.Add("finish_reason", finishReason.GetString() ?? string.Empty);
+        if (data == null)
+            throw new Exception("Invalid server response: null data");
 
-        return result;
+        var embeddingResponse = new EmbeddingResponse
+        {
+            Data = new List<EmbeddingData>(),
+            Inputs = new List<string>(),
+            Usage = new Dictionary<string, int>()
+        };
+
+        // Handle different protocol response formats
+        switch (_protocol)
+        {
+            case Protocol.OpenAI:
+                return ProcessOpenAIResponse(data);
+            
+            case Protocol.Gemini:
+                return ProcessGeminiResponse(data);
+            
+            default:
+                return ProcessOpenAIResponse(data); // Default to OpenAI format
+        }
+    }
+
+    /// <summary>
+    /// Processes OpenAI-format embedding response.
+    /// </summary>
+    private EmbeddingResponse ProcessOpenAIResponse(Dictionary<string, JsonElement> data)
+    {
+        if (!data.TryGetValue("data", out var dataArray))
+            throw new Exception("Invalid OpenAI embedding response: missing 'data' field");
+
+        var embeddingResponse = new EmbeddingResponse
+        {
+            Data = new List<EmbeddingData>(),
+            Inputs = new List<string>(),
+            Model = data.TryGetValue("model", out var modelElement) ? modelElement.GetString() ?? "" : "",
+            Object = data.TryGetValue("object", out var objectElement) ? objectElement.GetString() ?? "list" : "list"
+        };
+
+        // Parse usage if available
+        if (data.TryGetValue("usage", out var usageElement))
+        {
+            embeddingResponse.Usage = new Dictionary<string, int>();
+            if (usageElement.TryGetProperty("prompt_tokens", out var promptTokens))
+                embeddingResponse.Usage["prompt_tokens"] = promptTokens.GetInt32();
+            if (usageElement.TryGetProperty("total_tokens", out var totalTokens))
+                embeddingResponse.Usage["total_tokens"] = totalTokens.GetInt32();
+        }
+
+        // Parse embedding data
+        foreach (var item in dataArray.EnumerateArray())
+        {
+            var embeddingData = new EmbeddingData
+            {
+                Index = item.TryGetProperty("index", out var indexElement) ? indexElement.GetInt32() : 0,
+                Object = item.TryGetProperty("object", out var objElement) ? objElement.GetString() ?? "embedding" : "embedding"
+            };
+
+            if (item.TryGetProperty("embedding", out var embeddingElement))
+            {
+                var embeddingList = new List<float>();
+                foreach (var value in embeddingElement.EnumerateArray())
+                {
+                    embeddingList.Add((float)value.GetDouble());
+                }
+                embeddingData.Embedding = embeddingList.ToArray();
+            }
+
+            embeddingResponse.Data.Add(embeddingData);
+        }
+
+        return embeddingResponse;
+    }
+
+    /// <summary>
+    /// Processes Gemini-format embedding response.
+    /// </summary>
+    private EmbeddingResponse ProcessGeminiResponse(Dictionary<string, JsonElement> data)
+    {
+        var embeddingResponse = new EmbeddingResponse
+        {
+            Data = new List<EmbeddingData>(),
+            Inputs = new List<string>(),
+            Model = "gemini",
+            Object = "list"
+        };
+
+        // Gemini returns embedding in a different format
+        if (data.TryGetValue("embedding", out var embeddingElement))
+        {
+            var embeddingData = new EmbeddingData
+            {
+                Index = 0,
+                Object = "embedding"
+            };
+
+            if (embeddingElement.TryGetProperty("values", out var valuesElement))
+            {
+                var embeddingList = new List<float>();
+                foreach (var value in valuesElement.EnumerateArray())
+                {
+                    embeddingList.Add((float)value.GetDouble());
+                }
+                embeddingData.Embedding = embeddingList.ToArray();
+            }
+
+            embeddingResponse.Data.Add(embeddingData);
+        }
+
+        return embeddingResponse;
     }
     
     /// <summary>
@@ -293,8 +291,8 @@ public class AsyncEmbeddingsClient : IDisposable
     /// </summary>
     /// <param name="content">The HTTP content to send with the request.</param>
     /// <param name="cancellationToken">A token to cancel the request.</param>
-    /// <returns>A dictionary containing the response from the API.</returns>
-    private async Task<Dictionary<string, string>> MakeRequestAsync(
+    /// <returns>An EmbeddingResponse containing the embedding vectors from the API.</returns>
+    private async Task<EmbeddingResponse> MakeRequestAsync(
         string endpoint,
         StringContent content, 
         CancellationToken cancellationToken)
@@ -335,13 +333,13 @@ public class AsyncEmbeddingsClient : IDisposable
     }
 
     /// <summary>
-    /// Executes a request to the AI inference service with the specified payload and cancellation token.
+    /// Executes a request to the AI embeddings service with the specified payload and cancellation token.
     /// </summary>
-    /// <param name="endpoint">The endpoint of the AI inference service.</param>
-    /// <param name="payload">The payload to be sent to the AI inference service. It should contain the necessary parameters for the request.</param>
+    /// <param name="endpoint">The endpoint of the AI embeddings service.</param>
+    /// <param name="payload">The payload to be sent to the AI embeddings service. It should contain the necessary parameters for the request.</param>
     /// <param name="cancellationToken">A cancellation token that can be used to cancel the request.</param>
-    /// <returns>A task that represents the asynchronous operation. The task result contains a dictionary of the response parameters.</returns>
-    private async Task<Dictionary<string, string>> ExecuteRequest(
+    /// <returns>A task that represents the asynchronous operation. The task result contains an EmbeddingResponse.</returns>
+    private async Task<EmbeddingResponse> ExecuteRequest(
         string endpoint,
         Dictionary<string, object> payload,
         CancellationToken cancellationToken)
@@ -359,168 +357,114 @@ public class AsyncEmbeddingsClient : IDisposable
             _clientSemaphore.Release();
         }
     }
-
-    /// <summary>
-    /// This method processes the server response and creates a Response object.
-    /// </summary>
-    /// <param name="messages">The list of messages.</param>
-    /// <param name="serverResponse">The response received from the server.</param>
-    /// <returns>A Response object containing the processed response.</returns>
-    private CompletionResponse BuildResponse(List<Message> messages, Dictionary<string, string> serverResponse)
-    {
-        string fullPrompt = JsonConvert.SerializeObject(messages, Formatting.Indented);
-        return BuildResponse(fullPrompt, serverResponse);
-    }
-
-    /// <summary>
-    /// This method processes the server response and creates a Response object.
-    /// </summary>
-    /// <param name="prompt">The prompt used as input to the inference.</param>
-    /// <param name="serverResponse">The response received from the server.</param>
-    /// <returns>A CompletionResponse object containing the processed response.</returns>
-    private CompletionResponse BuildResponse(string prompt, Dictionary<string, string> serverResponse)
-    {
-        // This method processes the server response and creates a Response object
-        var outputs = new List<string>();
-        string selected = serverResponse.GetValueOrDefault("text", "");
-        string finishReason = serverResponse.GetValueOrDefault("finish_reason", "");
-
-        outputs.Add(selected); // Simulating multiple outputs; adjust based on actual API capabilities
-
-        return new CompletionResponse { FullPrompt = prompt, Outputs = outputs, Selected = selected, FinishReason = finishReason };
-    }
     #endregion
     
     
     // ======================
-    //  Generation Functions 
+    //  Embedding Functions 
     // ======================
     
-    #region Generation Functions
+    #region Embedding Functions
     /// <summary>
-    /// Generates predictions based on a single prompt with various optional parameters.
+    /// Generates embeddings for a single text input.
     /// </summary>
-    /// <param name="prompt">The prompt to generate text from.</param>
-    /// <param name="model">The model identifier to use for the request.</param>
-    /// <param name="temperature">Control randomness. Lower values make responses more deterministic.</param>
-    /// <param name="topP">Nucleus sampling: higher values cause more randomness.</param>
-    /// <param name="topK">Limits the generated predictions to the top-k likely next words.</param>
-    /// <param name="bestOf">Generates multiple outputs and selects the best one.</param>
-    /// <param name="maxTokens">Maximum number of tokens to generate.</param>
-    /// <param name="frequencyPenalty">Penalizes new tokens based on their frequency.</param>
-    /// <param name="presencePenalty">Penalizes new tokens based on their presence.</param>
-    /// <param name="stopSequences">Sequences where the model should stop generating further tokens.</param>
+    /// <param name="input">The text to generate embeddings for.</param>
+    /// <param name="model">The model identifier to use for the request. Defaults to the configured default model.</param>
+    /// <param name="dimensions">The number of dimensions for the embedding (if supported by the model).</param>
+    /// <param name="encodingFormat">The format of the encoding (e.g., "float" or "base64").</param>
     /// <param name="cancellationToken">Cancellation token to cancel the request.</param>
-    /// <returns>A task that represents the asynchronous operation. The task result contains the <see cref="CompletionResponse"/> object.</returns>
-    public async Task<CompletionResponse> GenerateAsync(
-        string prompt, 
-        string model = "default", 
-        double? temperature = null,
-        double? topP = null, 
-        int? topK = null, 
-        int? bestOf = null,
-        int? maxTokens = null, 
-        double? frequencyPenalty = null,
-        double? presencePenalty = null, 
-        string[]? stopSequences = null,
-        GuidanceType? guidanceType = GuidanceType.Disabled,
-        string? guidanceString = null,
+    /// <returns>A task that represents the asynchronous operation. The task result contains the <see cref="EmbeddingResponse"/> object.</returns>
+    public async Task<EmbeddingResponse> GenerateEmbeddingAsync(
+        string input,
+        string model = "default",
+        int? dimensions = null,
+        string? encodingFormat = null,
         CancellationToken cancellationToken = default)
     {
-        if (_supportsCompletion is false)
-            throw new Exception("Attempting prompt completion on provider that does not support it");
-        
-        model = model == "default" ? _defaultModel : model;
-        var parameters = new Dictionary<string, object>
-        {
-            {"model", model},
-            {"prompt", prompt}
-        };
-
-        AddOptionalParameters(
-            parameters, 
-            temperature, 
-            topP, 
-            topK,
-            bestOf,
-            maxTokens, 
-            frequencyPenalty, 
-            presencePenalty, 
-            stopSequences,
-            guidanceType,
-            guidanceString);
-        
-        //Util.Log($"Payload:\n'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''");
-        
-        var response = await ExecuteRequest("/v1/embeddings", parameters, cancellationToken);
-        return BuildResponse(prompt, response);
+        return await GenerateEmbeddingsAsync(new[] { input }, model, dimensions, encodingFormat, cancellationToken);
     }
 
-    
-        /*
-    public async IAsyncEnumerable<IList<string>> Stream(
-        string systemPrompt,
-        string userPrompt,
-        string model,
-        Dictionary<string, object>? paramaters = null,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Generates embeddings for multiple text inputs.
+    /// </summary>
+    /// <param name="inputs">The array of texts to generate embeddings for.</param>
+    /// <param name="model">The model identifier to use for the request. Defaults to the configured default model.</param>
+    /// <param name="dimensions">The number of dimensions for the embedding (if supported by the model).</param>
+    /// <param name="encodingFormat">The format of the encoding (e.g., "float" or "base64").</param>
+    /// <param name="cancellationToken">Cancellation token to cancel the request.</param>
+    /// <returns>A task that represents the asynchronous operation. The task result contains the <see cref="EmbeddingResponse"/> object.</returns>
+    public async Task<EmbeddingResponse> GenerateEmbeddingsAsync(
+        string[] inputs,
+        string model = "default",
+        int? dimensions = null,
+        string? encodingFormat = null,
+        CancellationToken cancellationToken = default)
     {
-        var payload = FormatRequestData(systemPrompt, userPrompt, model:model, _apiKey, _useApiKey, false, @params, extraBody);
-        
-        var response = await client.PostAsJsonAsync("/v1/completions", payload, cancellationToken: cancellationToken);
-        var content = await response.Content.ReadAsStreamAsync(cancellationToken); // TODO: code below not functional currently
+        model = model == "default" ? _defaultModel : model;
 
-        var buffer = new byte[32768];
-        var filled = 0;
+        // Build the request based on protocol
+        Dictionary<string, object> parameters;
+        string endpoint;
 
-        for(;;)
+        switch (_protocol)
         {
-            var bytesRead = await content.ReadAsync(buffer.AsMemory(filled), cancellationToken);
-            if (bytesRead == 0)
-            {
-                if (filled > 0)
+            case Protocol.OpenAI:
+                endpoint = GetEmbeddingEndpoint();
+                parameters = new Dictionary<string, object>
                 {
-                    throw new VllmChatClient("Unexpected end of stream");
-                }
+                    { "model", model },
+                    { "input", inputs.Length == 1 ? (object)inputs[0] : inputs }
+                };
 
+                if (dimensions.HasValue)
+                    parameters.Add("dimensions", dimensions.Value);
+                
+                if (!string.IsNullOrEmpty(encodingFormat))
+                    parameters.Add("encoding_format", encodingFormat);
+                
                 break;
-            }
 
-            filled += bytesRead;
-
-            for(;;)
-            {
-                var zero = Array.FindIndex(buffer, 0, filled, b => b == 0);
-                if (zero < 0)
+            case Protocol.Gemini:
+                // Gemini has different endpoint and payload structure
+                endpoint = GetEmbeddingEndpoint().Replace("{model}", model);
+                
+                // Gemini expects different payload format
+                parameters = new Dictionary<string, object>
                 {
-                    if (filled == buffer.Length)
-                    {
-                        Array.Resize(ref buffer, buffer.Length * 2);
+                    { "content", new Dictionary<string, object>
+                        {
+                            { "parts", new[] { new Dictionary<string, string> { { "text", inputs[0] } } } }
+                        }
                     }
-
-                    break;
-                }
-
-                var jsonDoc = JsonDocument.Parse(buffer.AsMemory(0, zero));
-                var textItem = jsonDoc.RootElement.GetProperty("text");
-                if (textItem.ValueKind != JsonValueKind.Array)
+                };
+                
+                // Note: Gemini currently doesn't support batch embeddings in the same way
+                if (inputs.Length > 1)
                 {
-                    throw new VllmChatClient("Invalid server response");
+                    Util.Log("Warning: Gemini embedding client processes only the first input in batch requests");
                 }
+                
+                break;
 
-                var texts = textItem.EnumerateArray().Select(v => v.GetString() ?? "N/A").ToList();
-                yield return texts;
-
-                var consumed = zero + 1;
-                if (filled > consumed)
+            default:
+                // Default to OpenAI format
+                endpoint = GetEmbeddingEndpoint();
+                parameters = new Dictionary<string, object>
                 {
-                    buffer.AsSpan(consumed).CopyTo(buffer);
-                }
-
-                filled -= consumed;
-            }
+                    { "model", model },
+                    { "input", inputs.Length == 1 ? (object)inputs[0] : inputs }
+                };
+                break;
         }
+
+        Util.Log($"Embedding Payload:\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}");
+        
+        var response = await ExecuteRequest(endpoint, parameters, cancellationToken);
+        
+        // Store the original inputs in the response
+        response.Inputs = inputs.ToList();
+        
+        return response;
     }
-    */
     #endregion
 }

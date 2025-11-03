@@ -141,6 +141,48 @@ public static class FakeInferenceServer
             await context.Response.WriteAsync("data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"chunk2\"}]},\"finishReason\":\"STOP\"}]}\n\n");
         });
 
+        // OpenAI: embeddings
+        app.MapPost("/v1/embeddings", async context =>
+        {
+            context.Response.ContentType = "application/json";
+            var response = new
+            {
+                @object = "list",
+                data = new object[]
+                {
+                    new
+                    {
+                        @object = "embedding",
+                        index = 0,
+                        embedding = new[] { 0.1f, 0.2f, 0.3f, 0.4f, 0.5f }
+                    }
+                },
+                model = "text-embedding-ada-002",
+                usage = new
+                {
+                    prompt_tokens = 5,
+                    total_tokens = 5
+                }
+            };
+            var json = JsonSerializer.Serialize(response);
+            await context.Response.WriteAsync(json);
+        });
+
+        // Gemini: embeddings
+        app.MapPost("/v1beta/models/{model}:embedContent", async context =>
+        {
+            context.Response.ContentType = "application/json";
+            var response = new
+            {
+                embedding = new
+                {
+                    values = new[] { 0.1f, 0.2f, 0.3f, 0.4f, 0.5f }
+                }
+            };
+            var json = JsonSerializer.Serialize(response);
+            await context.Response.WriteAsync(json);
+        });
+
         app.StartAsync().GetAwaiter().GetResult();
         var server = app.GetTestServer();
         var baseAddress = server.BaseAddress ?? new Uri("http://localhost");

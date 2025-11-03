@@ -48,6 +48,7 @@ public sealed class RegistryInitService : IHostedService
 
             ProviderManager.Load(assembly);
             ModelManager.Load(assembly);
+            EmbeddingManager.Load(assembly);
             PromptManager.Load(assembly);
 
             _logger.LogInfo("Revi registries initialized");

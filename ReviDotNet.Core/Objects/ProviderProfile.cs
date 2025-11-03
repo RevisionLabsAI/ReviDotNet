@@ -33,6 +33,7 @@ public class ProviderProfile
     public bool? Enabled { get; set; }
     
     public InferClient? InferenceClient;
+    public EmbedClient? EmbeddingClient;
     
     [RConfigProperty("general_protocol")]
     public Protocol? Protocol { get; set; }
@@ -157,6 +158,18 @@ public class ProviderProfile
             supportsGuidance: SupportsGuidance ?? false,
             defaultGuidanceType: DefaultGuidanceType ?? null,
             defaultGuidanceString: DefaultGuidanceString ?? "");
+        
+        // Initialize EmbedClient for embeddings
+        EmbeddingClient = new EmbedClient(
+            apiUrl: APIURL,
+            apiKey: APIKey ?? "",
+            protocol: Protocol ?? Revi.Protocol.OpenAI,
+            defaultModel: DefaultModel ?? "text-embedding-ada-002",
+            timeoutSeconds: TimeoutSeconds ?? 100,
+            delayBetweenRequestsMs: DelayBetweenRequestsMs ?? 0,
+            retryAttemptLimit: RetryAttemptLimit ?? 5,
+            retryInitialDelaySeconds: RetryInitialDelaySeconds ?? 5,
+            simultaneousRequests: SimultaneousRequests ?? 10);
     }
 
     // Empty constructor for the serialization function

@@ -46,7 +46,8 @@ public static class ModelManager
         // Clear existing models
         _models.Clear();
 
-        string path = AppDomain.CurrentDomain.BaseDirectory + "RConfigs/Models/";
+        // Updated path to load from Inference subdirectory
+        string path = AppDomain.CurrentDomain.BaseDirectory + "RConfigs/Models/Inference/";
         //Util.Log($"Attempting to load models from {path}");
         
         try
@@ -91,7 +92,7 @@ public static class ModelManager
     /// <summary>
     /// Loads model profiles from embedded resources present within the assembly,
     /// and attempts to add them to the existing collection of models. It specifically
-    /// looks for resources with names containing ".Models." and ending with ".rcfg".
+    /// looks for resources with names containing ".Models.Inference." and ending with ".rcfg".
     /// </summary>
     private static void LoadFromEmbeddedResources(Assembly assembly)
     {
@@ -100,8 +101,9 @@ public static class ModelManager
             if (assembly is null)
                 throw new Exception("Assembly cannot be null.");
  
+            // Updated to look specifically for inference models
             var resourceNames = assembly.GetManifestResourceNames()
-                .Where(name => name.Contains(".Models.") && 
+                .Where(name => name.Contains(".Models.Inference.") && 
                                name.EndsWith(".rcfg", StringComparison.InvariantCultureIgnoreCase));
 
             foreach (var resourceName in resourceNames)
@@ -111,7 +113,7 @@ public static class ModelManager
 
                 using var reader = new StreamReader(stream);
                 var modelDictionary = RConfigParser.ReadEmbedded(reader.ReadToEnd());
-                string folder = Util.ExtractEmbeddedDirectories(".Models.", resourceName).ToLower();
+                string folder = Util.ExtractEmbeddedDirectories(".Models.Inference.", resourceName).ToLower();
                 ModelProfile? model = RConfigParser.ToObject<ModelProfile>(modelDictionary, folder);
 
                 if (model?.Name is null)
