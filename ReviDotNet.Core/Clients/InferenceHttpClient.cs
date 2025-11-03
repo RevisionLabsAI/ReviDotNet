@@ -49,7 +49,7 @@ internal class InferenceHttpClient : IDisposable
         {
             await _rateLimiter.EnsureRateLimit();
             
-            // Handle Gemini-specific payload transformation
+            // Handle protocol-specific payload transformation
             if (_config.Protocol == Protocol.Gemini)
             {
                 payload = _payloadTransformer.TransformToGeminiPayload(payload);
@@ -58,6 +58,10 @@ internal class InferenceHttpClient : IDisposable
                 {
                     endpoint += (endpoint.Contains("?") ? "&" : "?") + $"key={_config.ApiKey}";
                 }
+            }
+            else if (_config.Protocol == Protocol.Claude)
+            {
+                payload = _payloadTransformer.TransformToClaudePayload(payload);
             }
             
             string body = JsonConvert.SerializeObject(payload);
@@ -184,6 +188,31 @@ internal class InferenceHttpClient : IDisposable
             throw new Exception($"ProcessHttpResponse: Invalid response (data null):\n'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''\n");
 
         Dictionary<string, string> result = new Dictionary<string, string>();
+
+        // Handle Anthropic Claude response format
+        if (_config.Protocol == Protocol.Claude)
+        {
+            // Anthropic messages response: { content:[{type:"text", text:"..."}], stop_reason, ... }
+            if (data.TryGetValue("content", out var contentElem) && contentElem.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in contentElem.EnumerateArray())
+                {
+                    if (item.ValueKind == JsonValueKind.Object && item.TryGetProperty("type", out var typeEl) && typeEl.GetString() == "text")
+                    {
+                        if (item.TryGetProperty("text", out var textEl))
+                        {
+                            result["text"] = textEl.GetString() ?? string.Empty;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (data.TryGetValue("stop_reason", out var stopReason))
+            {
+                result["finish_reason"] = stopReason.GetString() ?? string.Empty;
+            }
+            return result;
+        }
 
         // Handle Gemini response format
         if (_config.Protocol == Protocol.Gemini)

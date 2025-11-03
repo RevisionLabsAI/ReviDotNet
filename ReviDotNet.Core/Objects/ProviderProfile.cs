@@ -125,7 +125,7 @@ public class ProviderProfile
             
             case Revi.Protocol.Claude:
                 SupportsGuidance = false;
-                SupportsCompletion = false;
+                SupportsCompletion = true;
                 break;
             
             case Revi.Protocol.Gemini:

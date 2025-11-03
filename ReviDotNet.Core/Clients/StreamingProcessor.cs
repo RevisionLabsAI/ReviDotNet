@@ -223,7 +223,7 @@ internal class StreamingProcessor
         {
             await _rateLimiter.EnsureRateLimit();
             
-            // Handle Gemini-specific payload transformation
+            // Handle protocol-specific payload transformation
             if (_config.Protocol == Protocol.Gemini)
             {
                 payload = _payloadTransformer.TransformToGeminiPayload(payload);
@@ -232,6 +232,10 @@ internal class StreamingProcessor
                 {
                     endpoint += (endpoint.Contains("?") ? "&" : "?") + $"key={_config.ApiKey}";
                 }
+            }
+            else if (_config.Protocol == Protocol.Claude)
+            {
+                payload = _payloadTransformer.TransformToClaudePayload(payload);
             }
             
             string body = JsonConvert.SerializeObject(payload);
@@ -522,6 +526,27 @@ internal class StreamingProcessor
                 else
                 {
                     //Util.Log($"[DEBUG] No candidates array found or empty");
+                }
+            }
+            else if (_config.Protocol == Protocol.Claude)
+            {
+                // Anthropic SSE format. Typical events: content_block_delta with {"delta":{"type":"text_delta","text":"..."}}
+                if (jsonData.TryGetValue("type", out var typeObj) && typeObj is string typeStr)
+                {
+                    if (typeStr == "content_block_delta")
+                    {
+                        if (jsonData.TryGetValue("delta", out var deltaObj) && deltaObj is Newtonsoft.Json.Linq.JObject delta &&
+                            delta.TryGetValue("type", out var deltaTypeToken) && deltaTypeToken?.ToString() == "text_delta" &&
+                            delta.TryGetValue("text", out var textToken) && textToken != null)
+                        {
+                            return textToken.ToString();
+                        }
+                    }
+                    else if (typeStr == "message_delta")
+                    {
+                        // message_delta may contain stop_reason; nothing to yield
+                        return string.Empty;
+                    }
                 }
             }
             else

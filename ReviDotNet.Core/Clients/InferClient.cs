@@ -122,6 +122,14 @@ public class InferClient : IDisposable
                 // Gemini uses query parameter for API key instead of Bearer token
                 // API key will be added to the URL in the request
             }
+            else if (_config.Protocol == Protocol.Claude)
+            {
+                // Anthropic uses x-api-key header and requires anthropic-version
+                if (!_httpClient.DefaultRequestHeaders.Contains("x-api-key"))
+                    _httpClient.DefaultRequestHeaders.Add("x-api-key", _config.ApiKey);
+                if (!_httpClient.DefaultRequestHeaders.Contains("anthropic-version"))
+                    _httpClient.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
+            }
             else if (!_httpClient.DefaultRequestHeaders.Contains("Authorization"))
             {
                 _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_config.ApiKey}");
@@ -245,6 +253,8 @@ public class InferClient : IDisposable
         string endpoint;
         if (_config.Protocol == Protocol.Gemini)
             endpoint = $"v1beta/models/{model}:generateContent";
+        else if (_config.Protocol == Protocol.Claude)
+            endpoint = "v1/messages";
         else
             endpoint = "v1/completions";
 
@@ -371,6 +381,10 @@ public class InferClient : IDisposable
         string endpoint;
         if (_config.Protocol == Protocol.Gemini)
             endpoint = $"v1beta/models/{model}:generateContent";
+        else if (_config.Protocol == Protocol.Claude)
+        {
+            endpoint = "v1/messages";
+        }
         else
         {
             endpoint = "v1/chat/completions";
@@ -503,6 +517,8 @@ public class InferClient : IDisposable
         string endpoint;
         if (_config.Protocol == Protocol.Gemini)
             endpoint = $"v1beta/models/{model}:streamGenerateContent?alt=sse";
+        else if (_config.Protocol == Protocol.Claude)
+            endpoint = "v1/messages";
         else
             endpoint = "v1/completions";
 

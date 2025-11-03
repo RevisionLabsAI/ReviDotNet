@@ -167,10 +167,6 @@ public class PayloadTransformer
         {
             try
             {
-                // Parse the JSON schema string to ensure it's valid JSON
-                //                var schemaObject = JsonConvert.DeserializeObject(jsonSchema.ToString());
-                //generationConfig["responseSchema"] = schemaObject;
-                //generationConfig["responseMimeType"] = "application/json";
                 var schemaToken = Newtonsoft.Json.Linq.JToken.Parse(jsonSchema.ToString());
                 var schemaObject = ConvertJTokenToPlain(schemaToken) as Dictionary<string, object>;
                 if (schemaObject != null)
@@ -183,7 +179,6 @@ public class PayloadTransformer
             }
             catch (Newtonsoft.Json.JsonException)
             {
-                // If parsing fails, treat it as a string (though this shouldn't happen with valid JSON schema)
                 Util.Log($"Warning: Invalid JSON schema provided for Gemini: {jsonSchema}");
             }
         }
@@ -240,6 +235,72 @@ public class PayloadTransformer
         // These parameters are ignored for Gemini requests
 
         return geminiPayload;
+    }
+
+    public Dictionary<string, object> TransformToClaudePayload(Dictionary<string, object> payload)
+    {
+        // Anthropic Messages API payload
+        var outPayload = new Dictionary<string, object>();
+        
+        // Required fields
+        if (payload.TryGetValue("model", out var model))
+            outPayload["model"] = model;
+        
+        // Map parameters supported by Anthropic
+        if (payload.TryGetValue("temperature", out var temperature))
+            outPayload["temperature"] = temperature;
+        if (payload.TryGetValue("top_p", out var topP))
+            outPayload["top_p"] = topP;
+        // map stop sequences
+        if (payload.TryGetValue("stop", out var stop))
+            outPayload["stop_sequences"] = stop;
+        
+        // Anthropic requires max_tokens; provide default if missing
+        if (payload.TryGetValue("max_tokens", out var maxTokens))
+            outPayload["max_tokens"] = maxTokens;
+        else
+            outPayload["max_tokens"] = 1024;
+        
+        // Stream flag
+        if (payload.TryGetValue("stream", out var streamObj))
+            outPayload["stream"] = streamObj;
+        
+        // Handle prompt or messages
+        if (payload.TryGetValue("prompt", out var promptObj) && promptObj is string prompt)
+        {
+            // Single-turn: use user message
+            outPayload["messages"] = new List<object>
+            {
+                new Dictionary<string, object>
+                {
+                    { "role", "user" },
+                    { "content", new List<object> { new Dictionary<string, object>{{"type","text"},{"text", prompt}} } }
+                }
+            };
+        }
+        else if (payload.TryGetValue("messages", out var messagesObj) && messagesObj is List<Message> messages)
+        {
+            // Extract optional system message
+            string? systemText = messages.FirstOrDefault(m => string.Equals(m.Role, "system", StringComparison.OrdinalIgnoreCase))?.Content;
+            if (!string.IsNullOrWhiteSpace(systemText))
+                outPayload["system"] = systemText;
+            
+            var conv = new List<object>();
+            foreach (var m in messages)
+            {
+                if (string.Equals(m.Role, "system", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                string role = string.Equals(m.Role, "assistant", StringComparison.OrdinalIgnoreCase) ? "assistant" : "user";
+                conv.Add(new Dictionary<string, object>
+                {
+                    { "role", role },
+                    { "content", new List<object> { new Dictionary<string, object>{{"type","text"},{"text", m.Content}} } }
+                });
+            }
+            outPayload["messages"] = conv;
+        }
+        
+        return outPayload;
     }
 
     /// <summary>
