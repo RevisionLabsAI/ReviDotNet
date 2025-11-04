@@ -19,6 +19,8 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Collections.Concurrent;
+using System.IO;
 using Microsoft.DeepDev;
 using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
@@ -29,6 +31,11 @@ namespace Revi;
 
 public class ReviLogger : IReviLogger
 {
+	private static readonly object LimiterSync = new object();
+	private static volatile bool LimiterInitialized = false;
+	private static ConcurrentDictionary<string, LogLevel> _consoleLimiter = new ConcurrentDictionary<string, LogLevel>(StringComparer.Ordinal);
+	private static FileSystemWatcher? _limiterWatcher;
+	private static string? _limiterPath;
 	private static readonly object LogLock = new object();
 	private static readonly SemaphoreSlim DumpLogSemaphore = new SemaphoreSlim(1, 1);
 	private static readonly DateTime SessionTime = DateTime.Now;
@@ -51,6 +58,9 @@ public class ReviLogger : IReviLogger
 		// Initialize identity
 		_instanceId = NodeIdentity.InstanceIdUtc(out _instanceStartUtc);
 		_machineId = NodeIdentity.GetMachineId(appName: TryGetAppName(), machineWide: true);
+
+		// Initialize limiter (one-time, shared across instances)
+		EnsureLimiterInitialized();
 	}
 
 	/// <summary>
@@ -363,11 +373,22 @@ public class ReviLogger : IReviLogger
 		string lineStr = (line ?? 0).ToString();
 		bool haveCaller = !string.IsNullOrWhiteSpace(caller);
 		string? typeName = _rlogConfig.IncludeTypeInPrefix ? (CategoryName ?? null) : null;
+
+		// Determine effective level for legacy Util.Log based on message keywords
+		LogLevel effectiveLevel = level;
+		bool isLegacyUtil = !string.IsNullOrWhiteSpace(tags) && tags.Contains("legacyutil", StringComparison.OrdinalIgnoreCase);
+		if (isLegacyUtil)
+		{
+			if (TryInferLegacyLevelFromMessage(message, out var inferred))
+			{
+				effectiveLevel = inferred;
+			}
+		}
 		
 		// Special-case: legacy Util.Log calls: optionally resolve originating class via stack when enabled
 		if (typeName == null && _rlogConfig.IncludeTypeInPrefix)
 		{
-			if (!string.IsNullOrWhiteSpace(tags) && tags.Contains("legacyutil", StringComparison.OrdinalIgnoreCase))
+			if (isLegacyUtil)
 			{
 				// Prefer stack-based discovery when configured; fall back to generic UtilLog
 				if (_rlogConfig.ResolveLegacyTypeFromStack)
@@ -402,11 +423,17 @@ public class ReviLogger : IReviLogger
 		}
 
 		// Print if log level is enabled and ConsolePrint is true for this level
-		if (ShouldPrintToConsole(level))
+		string? classForLimiter = CategoryName;
+		if (classForLimiter == null && _rlogConfig.IncludeTypeInPrefix)
+		{
+			// when IncludeTypeInPrefix is enabled, typeName may have been resolved above (e.g., legacy)
+			classForLimiter = typeName;
+		}
+		if (ShouldPrintToConsole(effectiveLevel, classForLimiter, caller))
 		{
 			try
 			{
-				WriteColorizedConsoleLog(level, consoleMessage);
+				WriteColorizedConsoleLog(effectiveLevel, consoleMessage);
 			}
 			catch
 			{
@@ -417,7 +444,7 @@ public class ReviLogger : IReviLogger
 		// Create the Record first to get its Id
 		Rlog rlog = new(
 			parent, 
-			level, 
+			effectiveLevel, 
 			message, 
 			identifier, 
 			cycle, 
@@ -438,7 +465,7 @@ public class ReviLogger : IReviLogger
 					Id = rlog.Id,
 					ParentId = parent?.Id,
 					Timestamp = DateTime.UtcNow,
-					Level = level,
+					Level = effectiveLevel,
 					Message = message,
 					Identifier = identifier,
 					Cycle = cycle,
@@ -466,8 +493,24 @@ public class ReviLogger : IReviLogger
 	/// </summary>
 	/// <param name="level">The log level to check</param>
 	/// <returns>True if the level should print to console, false otherwise</returns>
-	private bool ShouldPrintToConsole(LogLevel level)
+	private bool ShouldPrintToConsole(LogLevel level, string? className, string? methodName)
 	{
+		// First, honor limiter overrides: if a threshold is set for Class.Method and current level is lower, skip console
+		try
+		{
+			if (!string.IsNullOrWhiteSpace(className) && !string.IsNullOrWhiteSpace(methodName))
+			{
+				string key = className + "." + methodName; // case-sensitive as per requirement
+				if (_consoleLimiter.TryGetValue(key, out LogLevel minLevel))
+				{
+					if (level < minLevel)
+						return false; // do not print, but event still created by caller
+				}
+			}
+		}
+		catch { /* never fail logging due to limiter issues */ }
+
+		// Fall back to global console print flags
 		return level switch
 		{
 			LogLevel.Debug => _rlogConfig.Debug.ConsolePrint,
@@ -477,6 +520,181 @@ public class ReviLogger : IReviLogger
 			LogLevel.Fatal => _rlogConfig.Fatal.ConsolePrint,
 			_ => true
 		};
+	}
+
+	private static void EnsureLimiterInitialized()
+	{
+		if (LimiterInitialized) return;
+		lock (LimiterSync)
+		{
+			if (LimiterInitialized) return;
+			try
+			{
+				_limiterPath = ResolveLimiterPath();
+				LoadLimiterFile(_limiterPath);
+				SetupWatcher(_limiterPath);
+			}
+			catch
+			{
+				// Never throw from logger init
+			}
+			finally
+			{
+				LimiterInitialized = true;
+			}
+		}
+	}
+
+	private static string? ResolveLimiterPath()
+	{
+		// Priority: ENV var, then app base file (txt), then solution BetterNamer.Blazor root (txt),
+		// then legacy locations (.rcfg in RConfigs)
+		try
+		{
+			string? envPath = Environment.GetEnvironmentVariable("REVILOGGER_LIMITER_PATH");
+			if (!string.IsNullOrWhiteSpace(envPath))
+				return envPath;
+
+			string baseDir = AppContext.BaseDirectory;
+			// New preferred filename in app base directory
+			string newTxt = Path.Combine(baseDir, "revilogger_limiter.txt");
+			if (File.Exists(newTxt)) return newTxt;
+
+			// When running from source, check solution root + BetterNamer.Blazor root for the new txt
+			string? solutionRoot = TryFindSolutionRoot(baseDir);
+			if (solutionRoot != null)
+			{
+				string blazorTxt = Path.Combine(solutionRoot, "BetterNamer.Blazor", "revilogger_limiter.txt");
+				if (File.Exists(blazorTxt)) return blazorTxt;
+			}
+
+			// Legacy fallbacks: RConfigs\revilogger_limiter.rcfg in app base and repo
+			string rconfigs = Path.Combine(baseDir, "RConfigs");
+			string candidate = Path.Combine(rconfigs, "revilogger_limiter.rcfg");
+			if (File.Exists(candidate)) return candidate;
+
+			if (solutionRoot != null)
+			{
+				string blazorPath = Path.Combine(solutionRoot, "BetterNamer.Blazor", "RConfigs", "revilogger_limiter.rcfg");
+				if (File.Exists(blazorPath)) return blazorPath;
+			}
+		}
+		catch { }
+		return null;
+	}
+
+	private static string? TryFindSolutionRoot(string startDir)
+	{
+		try
+		{
+			string? dir = startDir;
+			for (int i = 0; i < 6 && dir != null; i++)
+			{
+				string sln = Path.Combine(dir, "BetterNamer.sln");
+				if (File.Exists(sln)) return dir;
+				dir = Path.GetDirectoryName(dir);
+			}
+		}
+		catch { }
+		return null;
+	}
+
+	private static void LoadLimiterFile(string? path)
+	{
+		try
+		{
+			var dict = new ConcurrentDictionary<string, LogLevel>(StringComparer.Ordinal);
+			if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+			{
+				foreach (var rawLine in File.ReadAllLines(path))
+				{
+					string line = rawLine.Trim();
+					if (line.Length == 0) continue;
+					if (line.StartsWith("#") || line.StartsWith("//")) continue;
+					int eq = line.IndexOf('=');
+					if (eq <= 0 || eq >= line.Length - 1) continue;
+					string key = line.Substring(0, eq).Trim(); // case-sensitive key
+					string val = line.Substring(eq + 1).Trim();
+					if (string.IsNullOrEmpty(key)) continue;
+					if (Enum.TryParse<LogLevel>(val, ignoreCase: true, out var level))
+					{
+						dict[key] = level;
+					}
+				}
+			}
+			_consoleLimiter = dict; // swap atomically
+		}
+		catch
+		{
+			// ignore
+		}
+	}
+
+	private static void SetupWatcher(string? path)
+	{
+		try
+		{
+			_limiterWatcher?.Dispose();
+			_limiterWatcher = null;
+			if (string.IsNullOrWhiteSpace(path)) return;
+			string? dir = Path.GetDirectoryName(path);
+			string? file = Path.GetFileName(path);
+			if (string.IsNullOrWhiteSpace(dir) || string.IsNullOrWhiteSpace(file)) return;
+			var watcher = new FileSystemWatcher(dir, file)
+			{
+				NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName
+			};
+			watcher.Changed += (_, __) => LoadLimiterFile(path);
+			watcher.Created += (_, __) => LoadLimiterFile(path);
+			watcher.Renamed += (_, __) => LoadLimiterFile(path);
+			watcher.EnableRaisingEvents = true;
+			_limiterWatcher = watcher;
+		}
+		catch { }
+	}
+
+	private static bool TryInferLegacyLevelFromMessage(string? message, out LogLevel level)
+	{
+		level = LogLevel.Info;
+		try
+		{
+			if (string.IsNullOrWhiteSpace(message)) return false;
+			string text = message!;
+			string lower = text.ToLowerInvariant();
+
+			// Map of keywords to levels; choose earliest occurrence across all
+			(string[] keys, LogLevel lvl)[] sets = new (string[], LogLevel)[]
+			{
+				(new[]{"fatal","critical","crit","severe"}, LogLevel.Fatal),
+				(new[]{"error","err","exception","failed","fail","failure"}, LogLevel.Error),
+				(new[]{"warn","warning"}, LogLevel.Warning),
+				(new[]{"info","information"}, LogLevel.Info),
+				(new[]{"debug","trace"}, LogLevel.Debug)
+			};
+
+			int bestIndex = int.MaxValue;
+			LogLevel bestLevel = level;
+			foreach (var set in sets)
+			{
+				foreach (var k in set.keys)
+				{
+					int idx = lower.IndexOf(k, StringComparison.Ordinal);
+					if (idx >= 0 && idx < bestIndex)
+					{
+						bestIndex = idx;
+						bestLevel = set.lvl;
+					}
+				}
+			}
+
+			if (bestIndex != int.MaxValue)
+			{
+				level = bestLevel;
+				return true;
+			}
+		}
+		catch { }
+		return false;
 	}
 
 	/// <summary>

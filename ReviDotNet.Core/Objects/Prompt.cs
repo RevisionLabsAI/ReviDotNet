@@ -560,7 +560,7 @@ public class Prompt
             }
             else
             {
-                Util.Log($"Info: Prompt missing value for attribute {attribute?.Name}");
+                Util.Log($"Debug: Prompt missing value for attribute {attribute?.Name}");
             }
         }
         
