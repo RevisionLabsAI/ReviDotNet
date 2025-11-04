@@ -52,4 +52,26 @@ public static class ReviServiceLocator
             return false;
         }
     }
+
+    /// <summary>
+    /// Try to retrieve a typed IReviLogger<T> from the assigned provider.
+    /// </summary>
+    public static bool TryGetLogger<T>(out IReviLogger<T>? logger)
+    {
+        logger = default;
+        try
+        {
+            IServiceProvider? p = _provider;
+            if (p == null)
+                return false;
+
+            logger = p.GetService<IReviLogger<T>>();
+            return logger != null;
+        }
+        catch
+        {
+            logger = default;
+            return false;
+        }
+    }
 }

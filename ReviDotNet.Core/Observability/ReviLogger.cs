@@ -495,16 +495,32 @@ public class ReviLogger : IReviLogger
 	/// <returns>True if the level should print to console, false otherwise</returns>
 	private bool ShouldPrintToConsole(LogLevel level, string? className, string? methodName)
 	{
-		// First, honor limiter overrides: if a threshold is set for Class.Method and current level is lower, skip console
+		// First, honor limiter overrides
+		// 1) Exact Class.Method match (case-sensitive)
+		// 2) Fallback to Method-only match when class is unavailable or no class-level entry exists
 		try
 		{
-			if (!string.IsNullOrWhiteSpace(className) && !string.IsNullOrWhiteSpace(methodName))
+			bool haveClass = !string.IsNullOrWhiteSpace(className);
+			bool haveMethod = !string.IsNullOrWhiteSpace(methodName);
+			if (haveMethod)
 			{
-				string key = className + "." + methodName; // case-sensitive as per requirement
-				if (_consoleLimiter.TryGetValue(key, out LogLevel minLevel))
+				if (haveClass)
 				{
-					if (level < minLevel)
-						return false; // do not print, but event still created by caller
+					string key = className + "." + methodName; // case-sensitive as per requirement
+					if (_consoleLimiter.TryGetValue(key, out LogLevel minLevel))
+					{
+						if (level < minLevel)
+							return false; // do not print, but event still created by caller
+						return true; // specific override matched and allows printing
+					}
+				}
+
+				// Method-only fallback: ONLY when class name is unavailable (non-typed logger or no resolved class)
+				if (!haveClass && _consoleLimiter.TryGetValue(methodName!, out LogLevel methodMin))
+				{
+					if (level < methodMin)
+						return false;
+					return true;
 				}
 			}
 		}
