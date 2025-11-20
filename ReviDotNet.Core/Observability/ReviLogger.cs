@@ -34,13 +34,25 @@ public class ReviLogger : IReviLogger
 	private static readonly object LimiterSync = new object();
 	private static volatile bool LimiterInitialized = false;
 	private static ConcurrentDictionary<string, LogLevel> _consoleLimiter = new ConcurrentDictionary<string, LogLevel>(StringComparer.Ordinal);
+	// New: exact call-site suppression entries, keyed as "Class.Method:Line"
+	private static ConcurrentDictionary<string, bool> _consoleLineSuppress = new ConcurrentDictionary<string, bool>(StringComparer.Ordinal);
 	private static FileSystemWatcher? _limiterWatcher;
 	private static string? _limiterPath;
 	private static readonly object LogLock = new object();
 	private static readonly SemaphoreSlim DumpLogSemaphore = new SemaphoreSlim(1, 1);
 	private static readonly DateTime SessionTime = DateTime.Now;
 	
- private readonly IRlogEventPublisher? _eventPublisher;
+	// Process-wide identity so all logger instances in this process share the same InstanceId
+	private static readonly string ProcessInstanceId;
+	private static readonly DateTimeOffset ProcessStartUtc;
+
+	// Static constructor runs once per process to establish process identity
+	static ReviLogger()
+	{
+		ProcessInstanceId = NodeIdentity.InstanceIdUtc(out ProcessStartUtc);
+	}
+	
+	 private readonly IRlogEventPublisher? _eventPublisher;
 	private readonly RlogConfiguration _rlogConfig;
 	private readonly string _machineId;
 	private readonly string _instanceId;
@@ -56,7 +68,9 @@ public class ReviLogger : IReviLogger
 		_eventPublisher = eventPublisher;
 		_rlogConfig = configuration.GetSection("ReviLogger").Get<RlogConfiguration>() ?? GetDefaultRlogConfiguration();
 		// Initialize identity
-		_instanceId = NodeIdentity.InstanceIdUtc(out _instanceStartUtc);
+		// Use process-wide identity so every ReviLogger inside this process shares one InstanceId
+		_instanceId = ProcessInstanceId;
+		_instanceStartUtc = ProcessStartUtc;
 		_machineId = NodeIdentity.GetMachineId(appName: TryGetAppName(), machineWide: true);
 
 		// Initialize limiter (one-time, shared across instances)
@@ -429,7 +443,7 @@ public class ReviLogger : IReviLogger
 			// when IncludeTypeInPrefix is enabled, typeName may have been resolved above (e.g., legacy)
 			classForLimiter = typeName;
 		}
-		if (ShouldPrintToConsole(effectiveLevel, classForLimiter, caller))
+		if (ShouldPrintToConsole(effectiveLevel, classForLimiter, caller, line))
 		{
 			try
 			{
@@ -460,24 +474,26 @@ public class ReviLogger : IReviLogger
 		{
 			try
 			{
-				_eventPublisher.PublishLogEvent(new RlogEvent
-				{
-					Id = rlog.Id,
-					ParentId = parent?.Id,
-					Timestamp = DateTime.UtcNow,
-					Level = effectiveLevel,
-					Message = message,
-					Identifier = identifier,
-					Cycle = cycle,
-					Tags = tags,
-					Object1 = object1 != null ? JsonConvert.SerializeObject(object1, Formatting.Indented, new StringEnumConverter()) : null,
-					Object2 = object2 != null ? JsonConvert.SerializeObject(object2, Formatting.Indented, new StringEnumConverter()) : null,
-					File = file,
-					Member = NormalizeMember(member),
-					Line = line,
-					MachineId = _machineId,
-					InstanceId = _instanceId
-				});
+    _eventPublisher.PublishLogEvent(new RlogEvent
+    {
+        Id = rlog.Id,
+        ParentId = parent?.Id,
+        Timestamp = DateTime.UtcNow,
+        Level = effectiveLevel,
+        Message = message,
+        Identifier = identifier,
+        Cycle = cycle,
+        Tags = tags,
+        Object1 = object1 != null ? JsonConvert.SerializeObject(object1, Formatting.Indented, new StringEnumConverter()) : null,
+        Object2 = object2 != null ? JsonConvert.SerializeObject(object2, Formatting.Indented, new StringEnumConverter()) : null,
+        File = file,
+        Member = NormalizeMember(member),
+        // Prefer resolved typeName when available, fallback to CategoryName if set
+        ClassName = (CategoryName ?? (_rlogConfig.IncludeTypeInPrefix ? (typeName ?? null) : null)),
+        Line = line,
+        MachineId = _machineId,
+        InstanceId = _instanceId
+    });
 			}
 			catch
 			{
@@ -493,15 +509,24 @@ public class ReviLogger : IReviLogger
 	/// </summary>
 	/// <param name="level">The log level to check</param>
 	/// <returns>True if the level should print to console, false otherwise</returns>
-	private bool ShouldPrintToConsole(LogLevel level, string? className, string? methodName)
+	private bool ShouldPrintToConsole(LogLevel level, string? className, string? methodName, int? lineNumber)
 	{
 		// First, honor limiter overrides
 		// 1) Exact Class.Method match (case-sensitive)
 		// 2) Fallback to Method-only match when class is unavailable or no class-level entry exists
+		// 3) Exact Class.Method:Line suppression (if present, always suppress)
 		try
 		{
 			bool haveClass = !string.IsNullOrWhiteSpace(className);
 			bool haveMethod = !string.IsNullOrWhiteSpace(methodName);
+			if (haveClass && haveMethod && lineNumber.HasValue)
+			{
+				string siteKey = className + "." + methodName + ":" + lineNumber.Value.ToString();
+				if (_consoleLineSuppress.ContainsKey(siteKey))
+				{
+					return false; // exact call-site suppression
+				}
+			}
 			if (haveMethod)
 			{
 				if (haveClass)
@@ -615,11 +640,12 @@ public class ReviLogger : IReviLogger
 		return null;
 	}
 
-	private static void LoadLimiterFile(string? path)
+ private static void LoadLimiterFile(string? path)
 	{
 		try
 		{
 			var dict = new ConcurrentDictionary<string, LogLevel>(StringComparer.Ordinal);
+			var siteSuppress = new ConcurrentDictionary<string, bool>(StringComparer.Ordinal);
 			if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
 			{
 				foreach (var rawLine in File.ReadAllLines(path))
@@ -628,17 +654,29 @@ public class ReviLogger : IReviLogger
 					if (line.Length == 0) continue;
 					if (line.StartsWith("#") || line.StartsWith("//")) continue;
 					int eq = line.IndexOf('=');
-					if (eq <= 0 || eq >= line.Length - 1) continue;
-					string key = line.Substring(0, eq).Trim(); // case-sensitive key
-					string val = line.Substring(eq + 1).Trim();
-					if (string.IsNullOrEmpty(key)) continue;
-					if (Enum.TryParse<LogLevel>(val, ignoreCase: true, out var level))
+					if (eq > 0 && eq < line.Length - 1)
 					{
-						dict[key] = level;
+						string key = line.Substring(0, eq).Trim(); // case-sensitive key
+						string val = line.Substring(eq + 1).Trim();
+						if (string.IsNullOrEmpty(key)) continue;
+						if (Enum.TryParse<LogLevel>(val, ignoreCase: true, out var level))
+						{
+							dict[key] = level;
+						}
+					}
+					else
+					{
+						// Support bare entries of the form Class.Method:Line for exact suppression
+						// Validate simple structure to avoid accidental catches
+						if (line.Contains(':') && line.Contains('.'))
+						{
+							siteSuppress[line] = true;
+						}
 					}
 				}
 			}
 			_consoleLimiter = dict; // swap atomically
+			_consoleLineSuppress = siteSuppress; // swap atomically
 		}
 		catch
 		{

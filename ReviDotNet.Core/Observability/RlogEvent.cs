@@ -71,6 +71,11 @@ public class RlogEvent
     [BsonIgnoreIfNull]
     public int? Line { get; set; }
 
+    // Optional class/type name to pair with Member for UI display (ClassName.Method)
+    [BsonElement("className")]
+    [BsonIgnoreIfNull]
+    public string? ClassName { get; set; }
+
     // Machine and instance identifiers for observability
     [BsonElement("machineId")]
     [BsonIgnoreIfNull]
