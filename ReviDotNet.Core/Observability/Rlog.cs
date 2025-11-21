@@ -38,7 +38,9 @@ public class Rlog
 	public readonly string[]? Tags;
 	
 	public readonly object? Object1;
+	public readonly string? Object1Name;
 	public readonly object? Object2;
+	public readonly string? Object2Name;
 	
 	public readonly string? File;
 	public readonly string? Member;
@@ -56,7 +58,9 @@ public class Rlog
 		int cycle = 0,
 		string? tags = null,
 		object? object1 = null,
+		string? object1Name = null,
 		object? object2 = null,
+		string? object2Name = null,
 		string? file = null,
 		string? member = null,
 		int? line = null)
@@ -103,7 +107,9 @@ public class Rlog
 		}
 		
 		Object1 = object1;
+		Object1Name = object1Name;
 		Object2 = object2;
+		Object2Name = object2Name;
 		
 		File = file;
 		Member = member;

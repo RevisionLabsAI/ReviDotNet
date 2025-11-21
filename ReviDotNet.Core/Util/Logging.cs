@@ -45,18 +45,20 @@ public static partial class Util
 		// If ReviLogger is available via DI, route through it for consistent observability
 		if (ReviServiceLocator.TryGetLogger(out IReviLogger? logger) && logger != null)
 		{
-			logger.Log(
-				parent: null,
-				LogLevel.Info,
-				message: text,
-				identifier: member, 
-				cycle: 0,
-				tags: $"legacyutil {file}:{member}:{line}",
-				object1: null,
-				object2: null,
-				file,
-				member,
-				line);
+ 		logger.Log(
+ 			parent: null,
+ 			LogLevel.Info,
+ 			message: text,
+ 			identifier: member, 
+ 			cycle: 0,
+ 			tags: $"legacyutil {file}:{member}:{line}",
+ 			object1: null,
+ 			object1Name: null,
+ 			object2: null,
+ 			object2Name: null,
+ 			file,
+ 			member,
+ 			line);
 			return;
 		}
 		

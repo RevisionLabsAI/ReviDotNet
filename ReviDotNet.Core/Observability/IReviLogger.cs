@@ -34,7 +34,9 @@ public interface IReviLogger
 		int cycle = 0,
 		string? tags = null,
 		object? object1 = null,
+		[CallerArgumentExpression(nameof(object1))] string? object1Name = null,
 		object? object2 = null,
+		[CallerArgumentExpression(nameof(object2))] string? object2Name = null,
 		[CallerFilePath] string? file = "",
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
@@ -46,7 +48,9 @@ public interface IReviLogger
 		int cycle = 0,
 		string? tags = null,
 		object? object1 = null,
+		[CallerArgumentExpression(nameof(object1))] string? object1Name = null,
 		object? object2 = null,
+		[CallerArgumentExpression(nameof(object2))] string? object2Name = null,
 		[CallerFilePath] string? file = "",
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
@@ -57,7 +61,9 @@ public interface IReviLogger
 		int cycle = 0,
 		string? tags = null,
 		object? object1 = null,
+		[CallerArgumentExpression(nameof(object1))] string? object1Name = null,
 		object? object2 = null,
+		[CallerArgumentExpression(nameof(object2))] string? object2Name = null,
 		[CallerFilePath] string? file = "",
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
@@ -69,7 +75,9 @@ public interface IReviLogger
 		int cycle = 0,
 		string? tags = null,
 		object? object1 = null,
+		[CallerArgumentExpression(nameof(object1))] string? object1Name = null,
 		object? object2 = null,
+		[CallerArgumentExpression(nameof(object2))] string? object2Name = null,
 		[CallerFilePath] string? file = "",
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
@@ -80,7 +88,9 @@ public interface IReviLogger
 		int cycle = 0,
 		string? tags = null,
 		object? object1 = null,
+		[CallerArgumentExpression(nameof(object1))] string? object1Name = null,
 		object? object2 = null,
+		[CallerArgumentExpression(nameof(object2))] string? object2Name = null,
 		[CallerFilePath] string? file = "",
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
@@ -92,7 +102,9 @@ public interface IReviLogger
 		int cycle = 0,
 		string? tags = null,
 		object? object1 = null,
+		[CallerArgumentExpression(nameof(object1))] string? object1Name = null,
 		object? object2 = null,
+		[CallerArgumentExpression(nameof(object2))] string? object2Name = null,
 		[CallerFilePath] string? file = "",
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
@@ -103,7 +115,9 @@ public interface IReviLogger
 		int cycle = 0,
 		string? tags = null,
 		object? object1 = null,
+		[CallerArgumentExpression(nameof(object1))] string? object1Name = null,
 		object? object2 = null,
+		[CallerArgumentExpression(nameof(object2))] string? object2Name = null,
 		[CallerFilePath] string? file = "",
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
@@ -115,7 +129,9 @@ public interface IReviLogger
 		int cycle = 0,
 		string? tags = null,
 		object? object1 = null,
+		[CallerArgumentExpression(nameof(object1))] string? object1Name = null,
 		object? object2 = null,
+		[CallerArgumentExpression(nameof(object2))] string? object2Name = null,
 		[CallerFilePath] string? file = "",
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
@@ -126,7 +142,9 @@ public interface IReviLogger
 		int cycle = 0,
 		string? tags = null,
 		object? object1 = null,
+		[CallerArgumentExpression(nameof(object1))] string? object1Name = null,
 		object? object2 = null,
+		[CallerArgumentExpression(nameof(object2))] string? object2Name = null,
 		[CallerFilePath] string? file = "",
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
@@ -138,7 +156,9 @@ public interface IReviLogger
 		int cycle = 0,
 		string? tags = null,
 		object? object1 = null,
+		[CallerArgumentExpression(nameof(object1))] string? object1Name = null,
 		object? object2 = null,
+		[CallerArgumentExpression(nameof(object2))] string? object2Name = null,
 		[CallerFilePath] string? file = "",
 		[CallerMemberName] string? member = "",
 		[CallerLineNumber] int? line = 0);
@@ -151,7 +171,9 @@ public interface IReviLogger
 		int cycle = 0,
 		string? tags = null,
 		object? object1 = null,
+		string? object1Name = null,
 		object? object2 = null,
+		string? object2Name = null,
 		string? file = "",
 		string? member = "",
 		int? line = 0);

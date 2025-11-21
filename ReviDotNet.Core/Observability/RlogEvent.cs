@@ -55,9 +55,17 @@ public class RlogEvent
     [BsonIgnoreIfNull]
     public string? Object1 { get; set; }
 
+    [BsonElement("object1Name")]
+    [BsonIgnoreIfNull]
+    public string? Object1Name { get; set; }
+
     [BsonElement("object2")]
     [BsonIgnoreIfNull]
     public string? Object2 { get; set; }
+
+    [BsonElement("object2Name")]
+    [BsonIgnoreIfNull]
+    public string? Object2Name { get; set; }
 
     [BsonElement("file")]
     [BsonIgnoreIfNull]
