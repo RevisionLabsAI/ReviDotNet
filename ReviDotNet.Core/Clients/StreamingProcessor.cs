@@ -194,7 +194,12 @@ internal class StreamingProcessor
         catch (OperationCanceledException ex) when (ex.CancellationToken.IsCancellationRequested)
         {
             tracker.CompleteCanceled(ex);
-            throw;
+            return false; // Return false instead of throwing to end the stream gracefully
+        }
+        catch (System.Net.Http.HttpIOException ex)
+        {
+            tracker.CompleteWithError(ex);
+            return false; // Return false instead of throwing to end the stream gracefully
         }
         catch (Exception ex)
         {
@@ -397,20 +402,30 @@ internal class StreamingProcessor
         TimeSpan inactivity = TimeSpan.FromSeconds(inactivityTimeoutSeconds);
         while (true)
         {
-            if (cancellationToken.IsCancellationRequested)
-                throw new OperationCanceledException(cancellationToken);
-            
-            Task<string?> readTask = reader.ReadLineAsync(cancellationToken).AsTask();
-            Task delayTask = Task.Delay(inactivity, cancellationToken);
-            Task completed = await Task.WhenAny(readTask, delayTask);
-            if (completed == delayTask)
+            try
             {
                 if (cancellationToken.IsCancellationRequested)
-                    throw new OperationCanceledException(cancellationToken);
-                string uri = response.RequestMessage?.RequestUri?.ToString() ?? "(unknown)";
-                throw new TimeoutException($"No streaming data received from '{uri}' for {inactivity.TotalSeconds} seconds.");
+                    yield break;
+
+                Task<string?> readTask = reader.ReadLineAsync(cancellationToken).AsTask();
+                Task delayTask = Task.Delay(inactivity, cancellationToken);
+                Task completed = await Task.WhenAny(readTask, delayTask);
+                if (completed == delayTask)
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                        yield break;
+                    string uri = response.RequestMessage?.RequestUri?.ToString() ?? "(unknown)";
+                    throw new TimeoutException($"No streaming data received from '{uri}' for {inactivity.TotalSeconds} seconds.");
+                }
+
+                line = await readTask;
             }
-            line = await readTask;
+            catch (Exception ex) when (ex is OperationCanceledException || ex is System.Net.Http.HttpIOException)
+            {
+                // Gracefully handle cancellation or premature connection closure
+                yield break;
+            }
+
             if (line is null)
                 yield break;
             
