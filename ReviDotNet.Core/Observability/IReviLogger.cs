@@ -188,4 +188,11 @@ public interface IReviLogger
 	/// <param name="fileNamePrefix">Prefix for the dumped image file</param>
 	/// <param name="extension">Image extension without dot (defaults to "png")</param>
 	public Task DumpImage(byte[] imageBytes, string fileNamePrefix, string extension = "png");
+
+	/// <summary>
+	/// Checks if the given log level is enabled.
+	/// </summary>
+	/// <param name="level">The log level to check.</param>
+	/// <returns>True if the level is enabled; otherwise false.</returns>
+	public bool IsEnabled(LogLevel level);
 }

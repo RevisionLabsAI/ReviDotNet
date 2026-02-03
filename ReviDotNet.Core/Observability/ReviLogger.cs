@@ -1121,6 +1121,20 @@ public class ReviLogger : IReviLogger
 		}
 	}
 
+	/// <inheritdoc/>
+	public bool IsEnabled(LogLevel level)
+	{
+		return level switch
+		{
+			LogLevel.Debug => _rlogConfig.Debug.ConsolePrint,
+			LogLevel.Info => _rlogConfig.Info.ConsolePrint,
+			LogLevel.Warning => _rlogConfig.Warning.ConsolePrint,
+			LogLevel.Error => _rlogConfig.Error.ConsolePrint,
+			LogLevel.Fatal => _rlogConfig.Fatal.ConsolePrint,
+			_ => true
+		};
+	}
+
 	public static string PrintObject(object obj)
 	{
 		return PrintObject(obj, 0);
