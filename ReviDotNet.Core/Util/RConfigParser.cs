@@ -267,28 +267,46 @@ public static class RConfigParser
         ref StringBuilder sectionContent, 
         ref Dictionary<string, string> configDictionary)
     {
-        if (line.StartsWith("[[") && line.EndsWith("]]"))
+        if (currentSection.StartsWith("_"))
         {
-            if (currentSection.StartsWith("_") && sectionContent.Length > 0)
+            // In raw sections, we only check for section headers
+            if (line.StartsWith("[[") && line.EndsWith("]]"))
             {
-                configDictionary[currentSection] = sectionContent.ToString().Trim();
-                sectionContent.Clear();
-            }
+                if (sectionContent.Length > 0)
+                {
+                    configDictionary[currentSection] = sectionContent.ToString().Trim();
+                    sectionContent.Clear();
+                }
 
-            currentSection = line.Substring(2, line.Length - 4).Trim();
-        }
-        else if (currentSection.StartsWith("_"))
-        {
-            sectionContent.AppendLine(line);
+                currentSection = line.Substring(2, line.Length - 4).Trim();
+            }
+            else
+            {
+                sectionContent.AppendLine(line);
+            }
         }
         else
         {
-            var separatorIndex = line.IndexOf('=');
-            if (separatorIndex != -1)
+            // In non-raw sections, handle comments only if they start the line
+            if (line.TrimStart().StartsWith('#'))
+                return;
+
+            if (string.IsNullOrWhiteSpace(line))
+                return;
+
+            if (line.StartsWith("[[") && line.EndsWith("]]"))
             {
-                string key = $"{currentSection}_{line.Substring(0, separatorIndex).Trim()}";
-                string value = line.Substring(separatorIndex + 1).Trim();
-                configDictionary[key] = value;
+                currentSection = line.Substring(2, line.Length - 4).Trim();
+            }
+            else
+            {
+                var separatorIndex = line.IndexOf('=');
+                if (separatorIndex != -1)
+                {
+                    string key = $"{currentSection}_{line.Substring(0, separatorIndex).Trim()}";
+                    string value = line.Substring(separatorIndex + 1).Trim();
+                    configDictionary[key] = value;
+                }
             }
         }
 
