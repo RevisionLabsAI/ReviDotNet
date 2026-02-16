@@ -26,8 +26,25 @@ namespace Revi;
 
 public static partial class Util
 {
-	[GeneratedRegex("^[a-zA-Z0-9\\s\\W]+$")]
-	private static partial Regex MatchCharacter();
+    /// <summary>
+    /// Compiled regular expression for validating acceptable key characters.
+    /// This replaces the source-generated regex to ensure compatibility across
+    /// environments where the GeneratedRegex source generator may not be active.
+    /// </summary>
+    private static readonly Regex MatchCharacterRegex = new Regex(
+        "^[a-zA-Z0-9\\s\\W]+$",
+        RegexOptions.Compiled);
+
+    /// <summary>
+    /// Gets the compiled regex used to validate a single key character.
+    /// </summary>
+    /// <returns>
+    /// A <see cref="Regex"/> instance that matches allowed characters.
+    /// </returns>
+    private static Regex MatchCharacter()
+    {
+        return MatchCharacterRegex;
+    }
 	
 	
 	public static void PrintDivider(int count)
