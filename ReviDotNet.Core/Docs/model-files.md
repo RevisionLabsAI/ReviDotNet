@@ -72,10 +72,20 @@ Defines how inputs are formatted for this specific model.
 
 | Option | Type | Description |
 | :--- | :--- | :--- |
-| `system-input-type` | enum | How system instructions are handled. |
-| `instruction-input-type`| enum | How main instructions are handled. |
-| `single-item` | string | Formatting template for a single input item. |
-| `multi-item` | string | Formatting template for multiple input items. |
+| `default-system-input-type` | enum | `None` | How system instructions are handled. Options: `None`, `Listed`, `Filled`. |
+| `default-instruction-input-type`| enum | `Listed` | How main instructions are handled. Options: `None`, `Listed`, `Filled`. |
+| `single-item` | string | `{label}: {text}\n` | Formatting template for a single input item. |
+| `multi-item` | string | `Input #{iterator}: {label}: {text}\n` | Formatting template for multiple input items. |
+
+### Input Type Options
+
+The `default-system-input-type` and `default-instruction-input-type` settings determine how user-provided inputs (via `List<Input>`) are integrated into the prompt:
+
+| Option | Description |
+| :--- | :--- |
+| `None` | Inputs are not integrated into this section. |
+| `Listed` | All inputs are formatted (using `single-item` or `multi-item` templates) and appended to the section or inserted into the `{input}` placeholder in the model structure. |
+| `Filled` | Inputs are used to replace placeholders within the section text. For example, an input with label `Context` will replace `{Context}` in the text. |
 
 ### `[[chat-completion]]` (Optional)
 Configuration for Chat-based APIs.
@@ -170,8 +180,8 @@ presence-penalty = disabled
 repetition-penalty = disabled
 
 [[input]]
-system-input-type = None
-instruction-input-type = Listed
+default-system-input-type = None
+default-instruction-input-type = Listed
 single-item = {label}: {text}\n
 multi-item = Input #{iterator}: {label}: {text}\n
 

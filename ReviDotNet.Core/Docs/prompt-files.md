@@ -47,7 +47,9 @@ Operational settings that govern how the prompt is executed. All items in this s
 | `preferred-models` | list | `null` | Comma/space-separated list of preferred models (e.g., `gpt-4o, groq-llama-3`).                                                                                                                                                                                                                         |
 | `blocked-models` | list | `null` | List of models that should never be used.                                                                                                                                                                                                                                                              |
 | `min-tier` | string | `C` | Minimum model tier required. Options: `A` (Highest), `B` (Mid), `C` (Lowest).                                                                                                                                                                                                                          |
-| `completion-type` | string | `auto` | The type of completion interface to use. Options: `chat-only` (Chat API only), `prompt-only` (Completion API only), `prompt-chat-one` (Prefers prompt, falls back to chat with examples in same message), `prompt-chat-multi` (Prefers prompt, falls back to chat with examples as separate messages). |
+| `completion-type` | string | `auto` | The type of completion interface to use. Options: `chat-only`, `prompt-only`, `prompt-chat-one`, `prompt-chat-multi`.                                                                                                                                                                                  |
+| `system-input-type-override` | enum | `null` | Overrides the model's `system-input-type`. Options: `None`, `Listed`, `Filled`.                                                                                                                                                                                                                       |
+| `instruction-input-type-override` | enum | `null` | Overrides the model's `instruction-input-type`. Options: `None`, `Listed`, `Filled`.                                                                                                                                                                                                                  |
 
 ### `[[tuning]]` (Optional)
 Parameters to control the model's sampling behavior. All items in this section are optional.
@@ -93,7 +95,21 @@ Justice, Integrity, Shield
 Generate 5 names.
 ```
 
-The `[Label]` format is parsed by the `Prompt.ExtractInputs` utility, which splits the content into distinct labeled segments.
+The `[Label]` format is parsed by the `Prompt.ExtractInputs` utility, which splits the content into distinct labeled segments. These labels are then used based on the `input-type` settings:
+
+- **Listed**: Each labeled segment is formatted according to the model's `single-item` or `multi-item` templates and presented as a list.
+- **Filled**: The text in `[[_system]]` or `[[_instruction]]` can contain placeholders like `{Context}` or `{Keywords}` which will be replaced by the corresponding text from the labeled input.
+
+**Filled Input Example:**
+```ini
+[[settings]]
+instruction-input-type-override = Filled
+
+[[_instruction]]
+Analyze the following context: {Context}
+Then, using these keywords: {Keywords}
+{Request}
+```
 
 #### Output Formatting (`[[_exout_N]]`)
 

@@ -144,11 +144,11 @@ public class ModelProfile
     
     
     // Input Options
-    [RConfigProperty("input_system-input-type")]
-    public InputType SystemInputType { get; set; }
+    [RConfigProperty("input_default-system-input-type")]
+    public InputType DefaultSystemInputType { get; set; }
     
-    [RConfigProperty("input_instruction-input-type")]
-    public InputType InstructionInputType { get; set; }
+    [RConfigProperty("input_default-instruction-input-type")]
+    public InputType DefaultInstructionInputType { get; set; }
     
     [RConfigProperty("input_single-item")]
     public string? InputItem { get; set; } 

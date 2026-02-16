@@ -82,6 +82,12 @@ public class Prompt
     [JsonProperty("completion-type"), RConfigProperty("settings_completion-type")]
     public string? CompletionType { get; set; }
 
+    [JsonProperty("system-input-type-override"), RConfigProperty("settings_system-input-type-override")]
+    public InputType? SystemInputTypeOverride { get; set; }
+
+    [JsonProperty("instruction-input-type-override"), RConfigProperty("settings_instruction-input-type-override")]
+    public InputType? InstructionInputTypeOverride { get; set; }
+
     
     // Tuning
     [JsonProperty("temperature"), RConfigProperty("tuning_temperature")]

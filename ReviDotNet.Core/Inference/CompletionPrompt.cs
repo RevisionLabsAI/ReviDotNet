@@ -164,7 +164,10 @@ public static class CompletionPrompt
 		string? inputList = "";
 		
 		// Create the inputSection if one of these items requests it
-		if (model.SystemInputType == InputType.Listed || model.InstructionInputType == InputType.Listed)
+		InputType systemInputType = prompt.SystemInputTypeOverride ?? model.DefaultSystemInputType;
+		InputType instructionInputType = prompt.InstructionInputTypeOverride ?? model.DefaultInstructionInputType;
+
+		if (systemInputType == InputType.Listed || instructionInputType == InputType.Listed)
 		{
 			inputList = Infer.ListInputs(model, inputs);
 			inputSection = AddOrFillInput(InputType.Listed, inputList, inputs, "");
@@ -172,14 +175,14 @@ public static class CompletionPrompt
 		
 		// Fill the inputs for the system prompt if applicable
 		systemSection = AddOrFillInput(
-			model.SystemInputType == InputType.Filled ? InputType.Filled : InputType.None, 
+			systemInputType == InputType.Filled ? InputType.Filled : InputType.None, 
 			inputList, 
 			inputs, 
 			systemSection);
 		
 		// Fill the inputs for the instruction prompt if applicable
 		instructionSection = AddOrFillInput(
-			model.InstructionInputType == InputType.Filled ? InputType.Filled : InputType.None, 
+			instructionInputType == InputType.Filled ? InputType.Filled : InputType.None, 
 			inputList, 
 			inputs, 
 			instructionSection);
@@ -252,7 +255,9 @@ public static class CompletionPrompt
 			
 			// If the inputs are filled and the model template is there, show instruction and system messages.
 			// Otherwise, no system/instruction messages included. 
-			if (model.SystemInputType != InputType.Filled && model.InstructionInputType != InputType.Filled)
+			InputType systemInputType = prompt.SystemInputTypeOverride ?? model.DefaultSystemInputType;
+			InputType instructionInputType = prompt.InstructionInputTypeOverride ?? model.DefaultInstructionInputType;
+			if (systemInputType != InputType.Filled && instructionInputType != InputType.Filled)
 			{
 				systemExample = "";
 				instructionExample = "";
