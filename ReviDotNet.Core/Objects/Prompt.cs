@@ -32,12 +32,6 @@ public class Prompt
     [JsonProperty("version"), RConfigProperty("information_version")]
     public int? Version { get; set; }
 
-    [JsonProperty("date-created"), RConfigProperty("information_date-created")]
-    public DateTime? DateCreated { get; set; }
-
-    [JsonProperty("date-updated"), RConfigProperty("information_date-updated")]
-    public DateTime? DateUpdated { get; set; }
-
     
     // Settings
     [JsonProperty("filter"), RConfigProperty("settings_filter")]
@@ -142,12 +136,6 @@ public class Prompt
         if (Version is null)
             throw new ArgumentException("Version must not be null.");
         
-        if (DateCreated is null)
-            throw new ArgumentException("DateCreated must not be null.");
-        
-        if (DateUpdated is null)
-            throw new ArgumentException("DateUpdated must not be null.");
-
         if (string.IsNullOrWhiteSpace(System) && string.IsNullOrWhiteSpace(Instruction))
             throw new ArgumentException("System and instruction cannot both be null or empty.");
         
@@ -162,8 +150,6 @@ public class Prompt
     public Prompt(
         string? Name, 
         int? Version, 
-        DateTime? DateCreated, 
-        DateTime? DateUpdated, 
         string? Filter = null,
         bool? RequireValidOutput = false,
         int? RetryAttempts = null, 
@@ -193,8 +179,6 @@ public class Prompt
         this.ID = ID;*/
         this.Name = Name;
         this.Version = Version;
-        this.DateCreated = DateCreated;
-        this.DateUpdated = DateUpdated;
         this.Filter = Filter;
         this.ChainOfThought = ChainOfThought;
         this.RequestJson = RequestJson;
@@ -228,8 +212,6 @@ public class Prompt
         // Copy value type Information
         Name = original.Name;
         Version = original.Version;
-        DateCreated = original.DateCreated;
-        DateUpdated = original.DateUpdated;
 
         // Copy value type Settings
         Filter = original.Filter;
@@ -557,10 +539,6 @@ public class Prompt
                 {
                     throw new FormatException($"Failed to convert value to target type. Property: {property.Name}", ex);
                 }
-            }
-            else
-            {
-                Util.Log($"Debug: Prompt missing value for attribute {attribute?.Name}");
             }
         }
         

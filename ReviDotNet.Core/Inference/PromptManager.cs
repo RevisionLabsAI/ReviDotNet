@@ -161,9 +161,7 @@ namespace Revi
         /// </returns>
         private static bool IsNewerVersionOrUpdatedLater(Prompt existingPrompt, Prompt newPrompt)
         {
-            bool isNewerVersion = newPrompt.Version > existingPrompt.Version;
-            bool isUpdatedLater = newPrompt.Version == existingPrompt.Version && newPrompt.DateUpdated > existingPrompt.DateUpdated;
-            return isNewerVersion || isUpdatedLater;
+            return newPrompt.Version > existingPrompt.Version;
         }
 
         /// <summary>
