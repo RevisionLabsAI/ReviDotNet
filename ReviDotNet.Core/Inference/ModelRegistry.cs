@@ -19,6 +19,7 @@ namespace Revi;
 /// </summary>
 public sealed class ModelRegistry : IModelManager
 {
+    public List<ModelProfile> GetAll() => ModelManager.GetAll();
     public ModelProfile? Get(string name) => ModelManager.Get(name);
     public ModelProfile? Find(string? minTier, bool needsPromptCompletion = false) => ModelManager.Find(minTier, needsPromptCompletion);
     public ModelProfile? Find(ModelTier? minTier, bool needsPromptCompletion = false) => ModelManager.Find(minTier, needsPromptCompletion);

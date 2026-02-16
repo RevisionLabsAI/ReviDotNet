@@ -167,6 +167,14 @@ public static class ModelManager
                 Util.Log($"Loaded model \"{newModel.Name}\" from file system");
         }
     }
+    /// <summary>
+    /// Returns all loaded model profiles.
+    /// </summary>
+    /// <returns>A list of all model profiles.</returns>
+    public static List<ModelProfile> GetAll()
+    {
+        return _models.ToList();
+    }
     #endregion
     
     

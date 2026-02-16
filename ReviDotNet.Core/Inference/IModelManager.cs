@@ -15,6 +15,12 @@ namespace Revi;
 
 public interface IModelManager
 {
+    /// <summary>
+    /// Gets all available models.
+    /// </summary>
+    /// <returns>A list of all model profiles.</returns>
+    List<ModelProfile> GetAll();
+
     ModelProfile? Get(string name);
     ModelProfile? Find(string? minTier, bool needsPromptCompletion = false);
     ModelProfile? Find(ModelTier? minTier, bool needsPromptCompletion = false);
