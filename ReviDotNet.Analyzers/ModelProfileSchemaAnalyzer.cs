@@ -110,6 +110,24 @@ namespace ReviDotNet.Analyzers
                     }
                 }
 
+                // Optional: settings.supports-prompt-completion must be boolean if present
+                if (TryGet(doc, "settings", "supports-prompt-completion", out RcfgValue sspc))
+                {
+                    if (!IsBool(sspc.Raw.Trim()))
+                    {
+                        ReportError(context, file, sspc.Line, sspc.Raw.Trim(), "settings.supports-prompt-completion", suffix: " (expected boolean)");
+                    }
+                }
+
+                // Optional: settings.supports-response-completion must be boolean if present
+                if (TryGet(doc, "settings", "supports-response-completion", out RcfgValue ssrc))
+                {
+                    if (!IsBool(ssrc.Raw.Trim()))
+                    {
+                        ReportError(context, file, ssrc.Line, ssrc.Raw.Trim(), "settings.supports-response-completion", suffix: " (expected boolean)");
+                    }
+                }
+
                 if (TryGet(doc, "settings", "token-limit", out RcfgValue tokenLimit))
                 {
                     if (!int.TryParse(tokenLimit.Raw.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int tl) || tl < 0)

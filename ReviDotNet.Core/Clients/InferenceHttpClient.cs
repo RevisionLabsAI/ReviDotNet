@@ -240,9 +240,21 @@ internal class InferenceHttpClient : IDisposable
         }
         else
         {
-            // Standard OpenAI/vLLM format
+            // OpenAI: support both Chat/Completions and new Responses API
+            // First, try Responses API shape
+            if (data.TryGetValue("output_text", out JsonElement outputText))
+            {
+                result["text"] = outputText.GetString() ?? string.Empty;
+                if (data.TryGetValue("status", out JsonElement statusEl))
+                {
+                    result["finish_reason"] = statusEl.GetString() ?? string.Empty;
+                }
+                return result;
+            }
+
+            // Fallback to legacy choices-based parsing (Chat/Completions or vLLM-compatible)
             if (!data.TryGetValue("choices", out JsonElement choices))
-                throw new Exception($"ProcessHttpResponse: Invalid response (missing choices):\n'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''\n");
+                throw new Exception($"ProcessHttpResponse: Invalid response (missing choices and not Responses shape):\n'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''\n");
 
             if (choices[0].TryGetProperty("text", out JsonElement textElement))
             {

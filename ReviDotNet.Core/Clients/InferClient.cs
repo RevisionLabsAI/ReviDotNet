@@ -68,6 +68,7 @@ public class InferClient : IDisposable
         int retryInitialDelaySeconds = 5,
         int simultaneousRequests = 10,
         bool supportsCompletion = false,
+        bool supportsResponseCompletion = false,
         bool supportsGuidance = false,
         GuidanceType? defaultGuidanceType = GuidanceType.Disabled,
         string? defaultGuidanceString = null,
@@ -87,6 +88,7 @@ public class InferClient : IDisposable
             RetryInitialDelaySeconds = retryInitialDelaySeconds,
             SimultaneousRequests = simultaneousRequests,
             SupportsCompletion = supportsCompletion,
+            SupportsResponseCompletion = supportsResponseCompletion,
             SupportsGuidance = supportsGuidance,
             DefaultGuidanceType = defaultGuidanceType,
             DefaultGuidanceString = defaultGuidanceString
@@ -103,6 +105,9 @@ public class InferClient : IDisposable
         
         if (apiUrl.EndsWith("v1/completions"))
             throw new Exception("Please remove v1/completions from the end of API URL"); 
+        
+        if (apiUrl.EndsWith("v1/responses"))
+            throw new Exception("Please remove v1/responses from the end of API URL");
         
         // Use provided HttpClient if available (for testing), otherwise create a new one
         _httpClient = httpClientOverride ?? new HttpClient { BaseAddress = new Uri(apiUrl) };
@@ -200,9 +205,9 @@ public class InferClient : IDisposable
     /// <param name="guidanceType">Specifies the type of guidance to apply during completion generation, if applicable. Default is Disabled.</param>
     /// <param name="guidanceString">Specifies a guidance configuration string, if applicable, for AI-generated results. Optional.</param>
     /// <param name="cancellationToken">Token to observe cancellation requests, allowing the operation to be aborted. Default is none.</param>
-    /// <returns>Returns a <see cref="CompletionResponse"/> containing the generated text completion and related information.</returns>
+    /// <returns>Returns a <see cref="CompletionResult"/> containing the generated text completion and related information.</returns>
     /// <exception cref="Exception">Throws an exception if the client does not support prompt completion.</exception>
-    public async Task<CompletionResponse> GenerateAsync(
+    public async Task<CompletionResult> GenerateAsync(
         string prompt,
         string model = "default",
         float? temperature = null,
@@ -258,13 +263,13 @@ public class InferClient : IDisposable
         else
             endpoint = "v1/completions";
 
-        CompletionResponse response;
+        CompletionResult result;
         string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
         
         try
         {
             Dictionary<string, string> serverResponse = await _inferenceHttpClient.ExecuteRequest(endpoint, parameters, cancellationToken, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds);
-            response = BuildResponse(prompt, serverResponse);
+            result = BuildResponse(prompt, serverResponse);
         }
 
         // Dump error message if an exception occurred
@@ -280,14 +285,14 @@ public class InferClient : IDisposable
         }
         
         // Dump successful logging if successful
-        string responseDebug = $"'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''";
+        string responseDebug = $"'''\n{JsonConvert.SerializeObject(result, Formatting.Indented)}\n'''";
         string dumpMessage = $"### ReviDotNet.GenerateAsync() Prompt Completion\n" +
                              $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
                              $"# Payload\n{payloadDebug}\n\n" +
                              $"# Response\n{responseDebug}\n\n";
         await Util.DumpLog(dumpMessage, "ic-generate-prompt");
         
-        return response;
+        return result;
     }
     
     /// <summary>
@@ -296,7 +301,7 @@ public class InferClient : IDisposable
     /// <param name="prompt">The prompt used as input to the inference.</param>
     /// <param name="serverResponse">The response received from the server.</param>
     /// <returns>A CompletionResponse object containing the processed response.</returns>
-    private CompletionResponse BuildResponse(string prompt, Dictionary<string, string> serverResponse)
+    private CompletionResult BuildResponse(string prompt, Dictionary<string, string> serverResponse)
     {
         // This method processes the server response and creates a Response object
         List<string> outputs = new List<string>();
@@ -305,7 +310,7 @@ public class InferClient : IDisposable
 
         outputs.Add(selected); // Simulating multiple outputs; adjust based on actual API capabilities
 
-        return new CompletionResponse { FullPrompt = prompt, Outputs = outputs, Selected = selected, FinishReason = finishReason };
+        return new CompletionResult { FullPrompt = prompt, Outputs = outputs, Selected = selected, FinishReason = finishReason };
     }
     #endregion
     
@@ -332,8 +337,8 @@ public class InferClient : IDisposable
     /// <param name="guidanceType">The type of guidance to apply when generating responses. Default is <see cref="GuidanceType.Disabled"/>.</param>
     /// <param name="guidanceString">Additional guidance instructions for customizing the behavior of the AI model during generation.</param>
     /// <param name="cancellationToken">A cancellation token to observe for cancellation requests during execution.</param>
-    /// <returns>A task that represents the asynchronous operation and resolves with a <see cref="CompletionResponse"/> containing the generated output.</returns>
-    public async Task<CompletionResponse> GenerateAsync(
+    /// <returns>A task that represents the asynchronous operation and resolves with a <see cref="CompletionResult"/> containing the generated output.</returns>
+    public async Task<CompletionResult> GenerateAsync(
         List<Message> messages,
         string model = "default",
         float? temperature = null,
@@ -390,13 +395,13 @@ public class InferClient : IDisposable
             endpoint = "v1/chat/completions";
         }
 
-        CompletionResponse response;
+        CompletionResult result;
         string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
 
         try
         {
             Dictionary<string, string> serverResponse = await _inferenceHttpClient.ExecuteRequest(endpoint, parameters, cancellationToken, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds);
-            response = BuildResponse(messages, serverResponse);
+            result = BuildResponse(messages, serverResponse);
         }
         
         // Dump error message if exception occurred
@@ -412,14 +417,14 @@ public class InferClient : IDisposable
         }
 
         // Dump successful logging if successful
-        string responseDebug = $"'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''";
+        string responseDebug = $"'''\n{JsonConvert.SerializeObject(result, Formatting.Indented)}\n'''";
         string dumpMessage = $"### ReviDotNet.GenerateAsync() Chat Completion\n" +
                              $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
                              $"# Payload\n{payloadDebug}\n\n" +
                              $"# Response\n{responseDebug}\n\n";
         await Util.DumpLog(dumpMessage, "ic-generate-chat");
         
-        return response;
+        return result;
     }
     
     /// <summary>
@@ -428,9 +433,127 @@ public class InferClient : IDisposable
     /// <param name="messages">The list of messages.</param>
     /// <param name="serverResponse">The response received from the server.</param>
     /// <returns>A Response object containing the processed response.</returns>
-    private CompletionResponse BuildResponse(List<Message> messages, Dictionary<string, string> serverResponse)
+    private CompletionResult BuildResponse(List<Message> messages, Dictionary<string, string> serverResponse)
     {
         string fullPrompt = JsonConvert.SerializeObject(messages, Formatting.Indented);
+        return BuildResponse(fullPrompt, serverResponse);
+    }
+    #endregion
+
+
+    // ======================
+    //  Responses Completion
+    // ======================
+
+    #region Responses Completion
+    /// <summary>
+    /// Generates a Responses API completion using a list of response items.
+    /// </summary>
+    /// <param name="items">The list of response items to send as input to the Responses API.</param>
+    /// <param name="model">The identifier of the AI model to use. If not specified, the default model is used.</param>
+    /// <param name="temperature">The sampling temperature parameter that affects randomness in the response. Higher values yield more random outputs.</param>
+    /// <param name="topP">The top-p sampling parameter that limits the response to the smallest set of tokens with a cumulative probability ≥ topP.</param>
+    /// <param name="topK">The top-k sampling parameter that limits the response to the k most probable next tokens.</param>
+    /// <param name="bestOf">The number of best completions to consider. The highest-ranking result is returned.</param>
+    /// <param name="maxTokens">The maximum number of tokens allowed in the response.</param>
+    /// <param name="frequencyPenalty">The penalty applied to reduce the likelihood of token repetition.</param>
+    /// <param name="presencePenalty">The penalty applied to encourage the inclusion of new tokens in the response.</param>
+    /// <param name="stopSequences">An array of strings that, if generated, will halt further output generation.</param>
+    /// <param name="guidanceType">The type of guidance to apply when generating responses. Default is <see cref="GuidanceType.Disabled"/>.</param>
+    /// <param name="guidanceString">Additional guidance instructions for customizing the behavior of the AI model during generation.</param>
+    /// <param name="cancellationToken">A cancellation token to observe for cancellation requests during execution.</param>
+    /// <param name="inactivityTimeoutSeconds">Optional inactivity timeout in seconds for the request.</param>
+    /// <returns>A task that represents the asynchronous operation and resolves with a <see cref="CompletionResult"/> containing the generated output.</returns>
+    /// <exception cref="Exception">Throws an exception if the provider does not support the Responses API.</exception>
+    public async Task<CompletionResult> GenerateAsync(
+        List<Item> items,
+        string model = "default",
+        float? temperature = null,
+        int? topK = null,
+        float? topP = null,
+        float? minP = null,
+        int? bestOf = null,
+        MaxTokenType? maxTokenType = null,
+        int? maxTokens = null,
+        float? frequencyPenalty = null,
+        float? presencePenalty = null,
+        float? repetitionPenalty = null,
+        string[]? stopSequences = null,
+        GuidanceType? guidanceType = GuidanceType.Disabled,
+        string? guidanceString = null,
+        bool? useSearchGrounding = null,
+        CancellationToken cancellationToken = default,
+        int? inactivityTimeoutSeconds = null)
+    {
+        if (_config.Protocol != Protocol.OpenAI || _config.SupportsResponseCompletion is false)
+        {
+            throw new Exception("Attempting Responses API completion on provider that does not support it");
+        }
+
+        model = model == "default" ? _config.DefaultModel : model;
+        Dictionary<string, object> parameters = new Dictionary<string, object>
+        {
+            { "model", model },
+            { "input", items }
+        };
+
+        _payloadTransformer.AddOptionalParameters(
+            parameters,
+            temperature,
+            topK,
+            topP,
+            minP,
+            bestOf,
+            maxTokenType,
+            maxTokens,
+            frequencyPenalty,
+            presencePenalty,
+            repetitionPenalty,
+            stopSequences,
+            guidanceType,
+            guidanceString,
+            useSearchGrounding);
+
+        string endpoint = "v1/responses";
+
+        CompletionResult result;
+        string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
+
+        try
+        {
+            Dictionary<string, string> serverResponse = await _inferenceHttpClient.ExecuteRequest(endpoint, parameters, cancellationToken, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds);
+            result = BuildResponse(items, serverResponse);
+        }
+        catch (Exception e)
+        {
+            string errorMessage = $"### ReviDotNet.GenerateAsync() Error Generating Responses Completion\n" +
+                                  $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                                  $"# Payload\n{payloadDebug}\n\n" +
+                                  $"# Exception\n{e.Message}\n\n";
+            Util.Log(errorMessage);
+            await Util.DumpLog(errorMessage, "ic-generate-responses-error");
+            throw;
+        }
+
+        string responseDebug = $"'''\n{JsonConvert.SerializeObject(result, Formatting.Indented)}\n'''";
+        string dumpMessage = $"### ReviDotNet.GenerateAsync() Responses Completion\n" +
+                             $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                             $"# Payload\n{payloadDebug}\n\n" +
+                             $"# Response\n{responseDebug}\n\n";
+        await Util.DumpLog(dumpMessage, "ic-generate-responses");
+
+        return result;
+    }
+
+    /// <summary>
+    /// This method processes the server response and creates a Response object.
+    /// </summary>
+    /// <param name="items">The list of response items.</param>
+    /// <param name="serverResponse">The response received from the server.</param>
+    /// <returns>A Response object containing the processed response.</returns>
+    private CompletionResult BuildResponse(List<Item> items, Dictionary<string, string> serverResponse)
+    {
+        string fullPrompt = JsonConvert.SerializeObject(items, Formatting.Indented);
         return BuildResponse(fullPrompt, serverResponse);
     }
     #endregion

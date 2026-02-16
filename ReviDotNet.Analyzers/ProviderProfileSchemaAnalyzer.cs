@@ -113,6 +113,14 @@ namespace ReviDotNet.Analyzers
                     }
                 }
 
+                if (TryGet(doc, "general", "supports-response-completion", out RcfgValue src))
+                {
+                    if (!IsBool(src.Raw))
+                    {
+                        ReportError(context, file, src.Line, src.Raw, "general.supports-response-completion", suffix: " (expected boolean)");
+                    }
+                }
+
                 if (TryGet(doc, "guidance", "supports-guidance", out RcfgValue sg))
                 {
                     if (!IsBool(sg.Raw))

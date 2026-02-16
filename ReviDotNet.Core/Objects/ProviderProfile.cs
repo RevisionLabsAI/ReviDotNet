@@ -52,6 +52,13 @@ public class ProviderProfile
     [RConfigProperty("general_supports-prompt-completion")]
     public bool? SupportsCompletion { get; set; }
 
+    /// <summary>
+    /// Indicates whether the provider supports the Responses API for completions.
+    /// If not specified, model-level settings or protocol defaults may apply.
+    /// </summary>
+    [RConfigProperty("general_supports-response-completion")]
+    public bool? SupportsResponseCompletion { get; set; }
+
     // Guidance settings
     [RConfigProperty(("guidance_supports-guidance"))]
     public bool? SupportsGuidance { get; set; }
@@ -155,6 +162,7 @@ public class ProviderProfile
             retryInitialDelaySeconds: RetryInitialDelaySeconds ?? 5,
             simultaneousRequests: SimultaneousRequests ?? 10,
             supportsCompletion: SupportsCompletion ?? false,
+            supportsResponseCompletion: SupportsResponseCompletion ?? false,
             supportsGuidance: SupportsGuidance ?? false,
             defaultGuidanceType: DefaultGuidanceType ?? null,
             defaultGuidanceString: DefaultGuidanceString ?? "");
@@ -189,6 +197,7 @@ public class ProviderProfile
         int simultaneousRequests = 10,
         string defaultModel = "default",
         bool supportsCompletion = false,
+        bool supportsResponseCompletion = false,
         bool supportsGuidance = false,
         GuidanceType? defaultGuidanceType = null,
         string? defaultGuidanceString = null)
@@ -209,6 +218,7 @@ public class ProviderProfile
 
         DefaultModel = defaultModel;
         SupportsCompletion = supportsCompletion;
+        SupportsResponseCompletion = supportsResponseCompletion;
 
         SupportsGuidance = supportsGuidance;
         DefaultGuidanceType = defaultGuidanceType;

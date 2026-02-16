@@ -29,6 +29,8 @@ Core operational parameters for the model.
 | `token-limit` | integer | `0` | The maximum context window size (in tokens). |
 | `stop-sequences` | string | `null` | Optional stop sequences to terminate generation. |
 | `max-token-type` | enum | `null` | How the model handles maximum token limits. |
+| `supports-prompt-completion` | boolean | `null` | Whether this specific model supports legacy prompt completion (non-chat) endpoints. Overrides provider-level defaults when set. |
+| `supports-response-completion` | boolean | `null` | Whether this specific model supports the Responses API completion endpoint. Overrides provider-level defaults when set. |
 
 ### `[[override-settings]]` (Optional)
 Allows this model to override default settings normally found in `.pmt` files.
@@ -158,6 +160,8 @@ provider-name = claude
 [[settings]]
 tier = A
 token-limit = 100000
+supports-prompt-completion = true
+supports-response-completion = true
 
 [[override-tuning]]
 temperature = 1

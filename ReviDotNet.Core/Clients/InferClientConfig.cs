@@ -13,6 +13,11 @@ public class InferClientConfig
     public int RetryInitialDelaySeconds { get; set; }
     public int SimultaneousRequests { get; set; }
     public bool SupportsCompletion { get; set; }
+    /// <summary>
+    /// Indicates whether the provider/model supports the newer Responses API for completions.
+    /// When true and the protocol supports it (e.g., OpenAI), the client will use /v1/responses.
+    /// </summary>
+    public bool SupportsResponseCompletion { get; set; }
     public bool SupportsGuidance { get; set; }
     public GuidanceType? DefaultGuidanceType { get; set; }
     public string? DefaultGuidanceString { get; set; }

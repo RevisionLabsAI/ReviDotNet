@@ -54,6 +54,20 @@ public class ModelProfile
     
     [RConfigProperty("settings_max-token-type")]
     public MaxTokenType? MaxTokenType { get; set; }
+
+    /// <summary>
+    /// Indicates whether this model supports legacy prompt completion (non-chat) endpoints.
+    /// When set, this value overrides any provider-level defaults for prompt completion support.
+    /// </summary>
+    [RConfigProperty("settings_supports-prompt-completion")]
+    public bool? SupportsPromptCompletion { get; set; }
+
+    /// <summary>
+    /// Indicates whether this model supports the newer Responses API completion endpoint.
+    /// When set, this value overrides any provider-level defaults for responses completion support.
+    /// </summary>
+    [RConfigProperty("settings_supports-response-completion")]
+    public bool? SupportsResponseCompletion { get; set; }
     
     // Setting Overrides
     [RConfigProperty("override-settings_filter")]

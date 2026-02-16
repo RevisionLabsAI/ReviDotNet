@@ -20,6 +20,7 @@ Basic identification and connection info for the provider.
 | `api-key` | string | The API key. Use `environment` to load from an environment variable. |
 | `default-model` | string | The fallback model name to use if none is specified. |
 | `supports-prompt-completion`| boolean | Whether the provider supports the legacy Completion API (vs Chat API). |
+| `supports-response-completion`| boolean | Whether the provider supports the newer Responses API completion endpoint. |
 
 #### Environment Variables for API Keys
 If `api-key = environment` is set, ReviDotNet looks for an environment variable named:
@@ -56,6 +57,7 @@ api-url = https://api.anthropic.com/
 api-key = environment
 default-model = claude-3-5-sonnet-latest
 supports-prompt-completion = true
+supports-response-completion = true
 
 [[guidance]]
 supports-guidance = false

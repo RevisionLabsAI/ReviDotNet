@@ -16,7 +16,7 @@ namespace Revi;
 /// <summary>
 /// Represents the response structure for inference requests.
 /// </summary>
-public class CompletionResponse
+public class CompletionResult
 {
     /// <summary>
     /// The entire prompt string for the inference request.
