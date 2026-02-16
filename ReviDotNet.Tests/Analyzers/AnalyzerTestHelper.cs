@@ -22,9 +22,15 @@ public static class Infer {
     public static string ToStringList(string promptName) => string.Empty;
     public static string ToStringList(string promptName, System.Collections.Generic.List<Input>? inputs) => string.Empty;
     public static string ToStringListLimited(string promptName, int? maxLines = null, System.Func<string, bool>? evaluator = null) => string.Empty;
+    public static T ToEnum<T>(string promptName) => default;
+    public static string ToString(string promptName, double temperature = 0, double top_p = 1, double presence_penalty = 0, double frequency_penalty = 0, int inactivity_timeout_seconds = 0) => string.Empty;
+    public static string ToString(string promptName, System.Threading.CancellationToken token = default) => string.Empty;
+    public static string ToStringList(string promptName, System.Threading.CancellationToken token = default) => string.Empty;
+    public static string ToStringListLimited(string promptName, int? maxLines, System.Func<string, bool>? evaluator, System.Threading.CancellationToken token = default) => string.Empty;
     public static bool ToBool(string promptName) => false;
     public static object ToJObject(string promptName) => new object();
     public static T? ToObject<T>(string promptName, System.Collections.Generic.List<Input>? inputs = null) => default;
+    public static T? ToObject<T>(string promptName, System.Collections.Generic.List<Input>? inputs, System.Threading.CancellationToken token = default) => default;
     public static System.Collections.Generic.IAsyncEnumerable<string> Completion(string promptName)
     {
         return Impl();
@@ -34,6 +40,7 @@ public static class Infer {
             yield break;
         }
     }
+    public static System.Collections.Generic.IAsyncEnumerable<string> Completion(string promptName, System.Threading.CancellationToken token = default) => Completion(promptName);
 }
 public class Input { public Input(string label, string text) { } }
 }";
@@ -57,7 +64,7 @@ public class Input { public Input(string label, string text) { } }
             ReferenceAssemblies = ReferenceAssemblies.Net.Net90,
         };
 
-        // Add default Revi stubs and the test source
+        // Add default Revi stubs and then the test source (existing tests reference Test1.cs)
         test.TestState.Sources.Add(DefaultReviStubs);
         test.TestState.Sources.Add(source);
 

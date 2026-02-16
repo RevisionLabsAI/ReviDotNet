@@ -9,6 +9,14 @@ The `.pmt` format is an INI-like structure using `[[section]]` headers. It suppo
 1.  **Key-Value Sections**: Contain standard `key = value` pairs.
 2.  **Raw Content Sections**: Identified by a leading underscore (e.g., `[[_system]]`). These treat all lines following the header as a single multi-line string.
 
+### YAML vs JSON (Preference)
+
+When embedding structured content inside `.pmt` files (for example in `[[_exout_N]]` example outputs or other raw content blocks), prefer YAML over JSON.
+
+- YAML is more token-efficient for LLMs and easier for humans to read and edit inline.
+- Keep example payloads in YAML even when you ultimately want JSON from the model; set `[[settings]] -> request-json = true` and ReviDotNet will request/validate JSON while your examples can remain YAML.
+- Use JSON only when an exact JSON byte structure is required or when demonstrating a precise JSON schema/output.
+
 ## Sections and Options
 
 ### `[[information]]` (Required)
@@ -92,8 +100,8 @@ The `[Label]` format is parsed by the `Prompt.ExtractInputs` utility, which spli
 The output section typically contains either **Plain Text**, **YAML**, or **JSON**. 
 
 *   **Plain Text**: Used for simple completion tasks.
-*   **YAML**: Recommended for structured data in examples. It is more token-efficient than JSON and easier for humans to write within a `.pmt` file. ReviDotNet automatically converts YAML examples to JSON when `request-json = true` is set.
-*   **JSON**: Used when the exact JSON structure is required for the example.
+*   **YAML (Preferred)**: Strongly preferred for structured data in examples. YAML is more token‑efficient than JSON and easier for humans to write and maintain within a `.pmt` file. ReviDotNet will still request/validate JSON at runtime when `request-json = true`, so examples can remain YAML.
+*   **JSON (Use only when necessary)**: Reserve for cases where an exact JSON shape/byte structure must be demonstrated or enforced in the example itself.
 
 **YAML Example:**
 ```ini
@@ -134,15 +142,41 @@ The `guidance-schema-type` in `[[settings]]` determines how the output is constr
 | :--- | :--- |
 | `disabled` | No output guidance is enforced. |
 | `json-manual` | Uses the JSON Schema provided in the `[[_schema]]` section. |
-| `json-auto` | Automatically generates a JSON Schema based on the C# return type of the function calling the prompt. |
+| `json-auto` (Preferred) | Automatically generates a JSON Schema based on the C# return type of the function calling the prompt. Best paired with `ToObject<T>()` to deserialize the validated JSON directly into your C# type. |
 | `regex-manual` | Uses the regular expression provided in the `[[_schema]]` section to guide output. |
 | `regex-auto` | Automatically generates a regex based on the C# return type. If `chain-of-thought` is enabled, it includes a "Reasoning: ... Output: ..." wrapper. |
 | `gnbf-manual` | Uses a GBNF (Grammar-Based Next-token Filtering) grammar provided in `[[_schema]]`. |
 | `gnbf-auto` | Automatically generates a GBNF grammar based on the C# return type. |
 
+##### Recommendation: Prefer `json-auto` with `ToObject<T>()`
+
+When you have a well-defined C# return type, prefer `json-auto` over manual schemas. With `json-auto`, ReviDotNet derives the JSON Schema from your C# type, requests JSON from the model, validates it, and you can then call `ToObject<T>()` to deserialize the result into your target type.
+
+Benefits of this approach:
+
+- Single source of truth: your C# type defines the structure — no duplicated JSON schema to maintain.
+- Stronger guarantees: automatic validation prior to deserialization reduces runtime errors.
+- Simpler prompts: fewer tokens and less boilerplate compared to embedding manual schemas.
+
+Minimal example:
+
+```ini
+[[settings]]
+request-json = true
+guidance-schema-type = json-auto
+```
+
+```csharp
+// Given a method that runs the prompt and returns a result wrapper
+// with JSON already validated against the auto-generated schema:
+MyType value = result.ToObject<MyType>();
+```
+
 #### Using `[[_schema]]`
 
 The content of the `[[_schema]]` section is interpreted based on the selected `guidance-schema-type`.
+
+Note: For most use cases with a known C# return type, you do not need `[[_schema]]`. Prefer `json-auto` and deserialize with `ToObject<T>()`. Use `[[_schema]]` only when you must hand-author a specific schema/grammar or when the shape cannot be expressed conveniently as a C# type.
 
 **JSON Schema (`json-manual`)**
 Provide a standard JSON Schema (Draft 4, 7, etc. depending on the model provider).
