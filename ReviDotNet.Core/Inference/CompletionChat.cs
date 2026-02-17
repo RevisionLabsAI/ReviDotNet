@@ -11,6 +11,8 @@
 //   See LICENSE.txt in the project root for full license information.
 // =================================================================================
 
+using System.Text.RegularExpressions;
+
 namespace Revi;
 
 public static class CompletionChat
@@ -85,6 +87,7 @@ public static class CompletionChat
 				break;
 			
 			case InputType.Filled:
+			case InputType.Both:
 				foreach (Input input in inputs)
 				{
 					originalText = originalText.Replace("{" + input.Identifier + "}", input.Text);
@@ -120,17 +123,70 @@ public static class CompletionChat
 		if (inputs is null || !inputs.Any())
 			return;
 
-		// Generate the inputList if we're going to need it
-		string? inputList = "";
+		// Create the inputSection if one of these items requests it
 		InputType systemInputType = prompt.SystemInputTypeOverride ?? model.DefaultSystemInputType;
 		InputType instructionInputType = prompt.InstructionInputTypeOverride ?? model.DefaultInstructionInputType;
 
-		if (systemInputType == InputType.Listed || instructionInputType == InputType.Listed)
-			inputList = Infer.ListInputs(model, inputs);
+		// Handle "Both" input type or standard "Filled"
+		// We fill first to see what's left
+		List<Input> listedInputs = [.. inputs];
 		
-		// Add the inputList or fill the inputs for the system prompt
-		system = AddOrFillInput(systemInputType, inputList, inputs, system);
-		instruction = AddOrFillInput(instructionInputType, inputList, inputs, instruction);
+		if (systemInputType == InputType.Filled || systemInputType == InputType.Both)
+		{
+			foreach (Input input in inputs)
+			{
+				string placeholder = "{" + input.Identifier + "}";
+				if (system.Contains(placeholder, StringComparison.OrdinalIgnoreCase))
+				{
+					system = Regex.Replace(system, Regex.Escape(placeholder), input.Text, RegexOptions.IgnoreCase);
+					if (systemInputType == InputType.Both)
+					{
+						listedInputs.Remove(input);
+					}
+				}
+			}
+		}
+
+		if (instructionInputType == InputType.Filled || instructionInputType == InputType.Both)
+		{
+			foreach (Input input in inputs)
+			{
+				string placeholder = "{" + input.Identifier + "}";
+				if (instruction.Contains(placeholder, StringComparison.OrdinalIgnoreCase))
+				{
+					instruction = Regex.Replace(instruction, Regex.Escape(placeholder), input.Text, RegexOptions.IgnoreCase);
+					if (instructionInputType == InputType.Both)
+					{
+						listedInputs.Remove(input);
+					}
+				}
+			}
+		}
+
+		// Generate the inputList if we're going to need it
+		string? inputList = "";
+		if (systemInputType == InputType.Listed || instructionInputType == InputType.Listed || 
+		    systemInputType == InputType.Both || instructionInputType == InputType.Both)
+		{
+			if (listedInputs.Any())
+			{
+				inputList = Infer.ListInputs(model, listedInputs);
+			}
+		}
+		
+		// Add the inputList if applicable (only if it was requested as Listed)
+		if (systemInputType == InputType.Listed)
+			system = AddOrFillInput(systemInputType, inputList, inputs, system);
+		
+		if (instructionInputType == InputType.Listed)
+			instruction = AddOrFillInput(instructionInputType, inputList, inputs, instruction);
+		
+		// For Both, we might need to add the inputList too if it's not empty
+		if (systemInputType == InputType.Both && !string.IsNullOrEmpty(inputList))
+			system = AddOrFillInput(InputType.Listed, inputList, listedInputs, system);
+
+		if (instructionInputType == InputType.Both && !string.IsNullOrEmpty(inputList))
+			instruction = AddOrFillInput(InputType.Listed, inputList, listedInputs, instruction);
 	}
 	#endregion
 	

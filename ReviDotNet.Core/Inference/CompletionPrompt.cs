@@ -122,6 +122,7 @@ public static class CompletionPrompt
 				break;
 			
 			case InputType.Filled:
+			case InputType.Both:
 				foreach (Input input in inputs)
 				{
 					originalText = originalText.Replace("{" + input.Identifier + "}", input.Text);
@@ -153,39 +154,65 @@ public static class CompletionPrompt
 		// TODO: Add checks for inputs
 		//  - Error if the formatting is filled but label is empty
 		//  - Error if the label is one of the core labels
-		systemSection = new string(prompt.System ?? "");
-		instructionSection = new string(prompt.Instruction ?? "");
+		systemSection = prompt.System ?? "";
+		instructionSection = prompt.Instruction ?? "";
 		inputSection = "";
 
 		if (inputs is null || !inputs.Any())
 			return;
 
-		// Generate the inputList if we're going to need it
-		string? inputList = "";
-		
 		// Create the inputSection if one of these items requests it
 		InputType systemInputType = prompt.SystemInputTypeOverride ?? model.DefaultSystemInputType;
 		InputType instructionInputType = prompt.InstructionInputTypeOverride ?? model.DefaultInstructionInputType;
 
-		if (systemInputType == InputType.Listed || instructionInputType == InputType.Listed)
+		// Handle "Both" input type or standard "Filled"
+		// We fill first to see what's left
+		List<Input> listedInputs = [.. inputs];
+		
+		if (systemInputType == InputType.Filled || systemInputType == InputType.Both)
 		{
-			inputList = Infer.ListInputs(model, inputs);
-			inputSection = AddOrFillInput(InputType.Listed, inputList, inputs, "");
+			foreach (Input input in inputs)
+			{
+				string placeholder = "{" + input.Identifier + "}";
+				// Use Case-Insensitive search and replace for better robustness
+				if (systemSection.Contains(placeholder, StringComparison.OrdinalIgnoreCase))
+				{
+					systemSection = Regex.Replace(systemSection, Regex.Escape(placeholder), input.Text, RegexOptions.IgnoreCase);
+					if (systemInputType == InputType.Both)
+					{
+						listedInputs.Remove(input);
+					}
+				}
+			}
 		}
-		
-		// Fill the inputs for the system prompt if applicable
-		systemSection = AddOrFillInput(
-			systemInputType == InputType.Filled ? InputType.Filled : InputType.None, 
-			inputList, 
-			inputs, 
-			systemSection);
-		
-		// Fill the inputs for the instruction prompt if applicable
-		instructionSection = AddOrFillInput(
-			instructionInputType == InputType.Filled ? InputType.Filled : InputType.None, 
-			inputList, 
-			inputs, 
-			instructionSection);
+
+		if (instructionInputType == InputType.Filled || instructionInputType == InputType.Both)
+		{
+			foreach (Input input in inputs)
+			{
+				string placeholder = "{" + input.Identifier + "}";
+				if (instructionSection.Contains(placeholder, StringComparison.OrdinalIgnoreCase))
+				{
+					instructionSection = Regex.Replace(instructionSection, Regex.Escape(placeholder), input.Text, RegexOptions.IgnoreCase);
+					if (instructionInputType == InputType.Both)
+					{
+						listedInputs.Remove(input);
+					}
+				}
+			}
+		}
+
+		// Generate the inputList if we're going to need it
+		string? inputList = "";
+		if (systemInputType == InputType.Listed || instructionInputType == InputType.Listed || 
+		    systemInputType == InputType.Both || instructionInputType == InputType.Both)
+		{
+			if (listedInputs.Any())
+			{
+				inputList = Infer.ListInputs(model, listedInputs);
+				inputSection = AddOrFillInput(InputType.Listed, inputList, listedInputs, "");
+			}
+		}
 	}
 	#endregion
 	
@@ -344,7 +371,7 @@ public static class CompletionPrompt
 		{
 			case 0:
 				// Actually, this is fine/normal. 
-				return "";
+				return baseText;
 			
 			case > 1:
 				throw new Exception(
@@ -384,7 +411,7 @@ public static class CompletionPrompt
 		{
 			case 0:
 				// Actually, this is fine/normal. 
-				return "";
+				return baseText;
 			
 			case > 1:
 				throw new Exception(

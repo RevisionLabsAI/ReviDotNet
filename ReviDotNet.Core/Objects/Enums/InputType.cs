@@ -4,5 +4,6 @@ public enum InputType
 {
     None,
     Listed,
-    Filled
+    Filled,
+    Both
 }

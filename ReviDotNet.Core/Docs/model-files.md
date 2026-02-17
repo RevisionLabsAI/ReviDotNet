@@ -72,8 +72,8 @@ Defines how inputs are formatted for this specific model.
 
 | Option | Type | Description |
 | :--- | :--- | :--- |
-| `default-system-input-type` | enum | `None` | How system instructions are handled. Options: `None`, `Listed`, `Filled`. |
-| `default-instruction-input-type`| enum | `Listed` | How main instructions are handled. Options: `None`, `Listed`, `Filled`. |
+| `default-system-input-type` | enum | `none` | How system instructions are handled. Options: `none`, `listed`, `filled`, `both`. |
+| `default-instruction-input-type`| enum | `listed` | How main instructions are handled. Options: `none`, `listed`, `filled`, `both`. |
 | `single-item` | string | `{label}: {text}\n` | Formatting template for a single input item. |
 | `multi-item` | string | `Input #{iterator}: {label}: {text}\n` | Formatting template for multiple input items. |
 
@@ -83,9 +83,10 @@ The `default-system-input-type` and `default-instruction-input-type` settings de
 
 | Option | Description |
 | :--- | :--- |
-| `None` | Inputs are not integrated into this section. |
-| `Listed` | All inputs are formatted (using `single-item` or `multi-item` templates) and appended to the section or inserted into the `{input}` placeholder in the model structure. |
-| `Filled` | Inputs are used to replace placeholders within the section text. For example, an input with label `Context` will replace `{Context}` in the text. |
+| `none` | Inputs are not integrated into this section. |
+| `listed` | All inputs are formatted (using `single-item` or `multi-item` templates) and appended to the section or inserted into the `{input}` placeholder in the model structure. |
+| `filled` | Inputs are used to replace placeholders within the section text. For example, an input with label `Context` will replace `{Context}` in the text. |
+| `both` | Combines `filled` and `listed`. It first attempts to replace placeholders in the section text with matching inputs. Any inputs that were not used for placeholder replacement are then formatted and appended as a list (or inserted into the `{input}` placeholder). |
 
 ### `[[chat-completion]]` (Optional)
 Configuration for Chat-based APIs.
@@ -180,8 +181,8 @@ presence-penalty = disabled
 repetition-penalty = disabled
 
 [[input]]
-default-system-input-type = None
-default-instruction-input-type = Listed
+default-system-input-type = none
+default-instruction-input-type = listed
 single-item = {label}: {text}\n
 multi-item = Input #{iterator}: {label}: {text}\n
 
