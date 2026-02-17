@@ -82,7 +82,11 @@ ReviDotNet automatically pairs these by their index (`N`).
 
 #### Input Formatting (`[[_exin_N]]`)
 
-The input section often uses a labeled format to organize multiple pieces of information for the LLM.
+The input section often uses a labeled format to organize multiple pieces of information for the LLM. 
+
+**Note on Brackets:**
+- **Square Brackets `[]`**: Used for labels in listed input (e.g., `[Context]`).
+- **Curly Brackets `{}`**: Used for placeholders that are inserted into the prompt (e.g., `{Total Names}`).
 
 **Example:**
 ```ini
