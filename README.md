@@ -2,8 +2,6 @@
 
 ReviDotNet is a .NET library that makes working with modern LLMs straightforward, safe, and configurable. It separates prompt logic, provider connections, and model settings into simple repository files, adds resilience (retries, validators, output fixers), and provides Roslyn analyzers to catch mistakes at build time.
 
-This folder hosts the ReviDotNet source used by the BetterNamer solution, but the library is designed to be reusable in any .NET app or service.
-
 ## Features
 
 - Configuration-as-files (kept in your repo)
