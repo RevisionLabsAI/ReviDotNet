@@ -10,7 +10,7 @@ ReviDotNet is a .NET library that makes working with modern LLMs straightforward
   - Models: `.rcfg` files describing model profiles (limits, defaults, overrides)
 - Multiple providers and models with selection/tiering (`A`/`B`/`C`) and per-prompt overrides
 - Chat and prompt completion interfaces (automatically chosen or forced per prompt/model)
-- Structured output guidance options (Disabled, JSON/Regex/GBNF – manual and auto variants)
+- Structured output guidance options (JSON/Regex/GBNF – manual and auto variants)
 - Resilience: retries, timeout control, token accounting, safe JSON extraction from Markdown
 - Built‑in fixers for common issues (e.g., `json-fixer` and `enum-fixer` prompts)
 - Input filtering and optional safety canary to detect injection attempts
