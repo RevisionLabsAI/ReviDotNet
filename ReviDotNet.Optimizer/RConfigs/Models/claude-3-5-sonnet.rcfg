@@ -1,0 +1,23 @@
+﻿[[general]]
+name = claude-3-5-sonnet
+enabled = true
+model-string = claude-3-5-sonnet-latest
+provider-name = claude
+
+[[settings]]
+tier = A
+token-limit = 200000
+supports-prompt-completion = true
+supports-response-completion = true
+
+[[override-tuning]]
+temperature = 1
+frequency-penalty = disabled
+presence-penalty = disabled
+repetition-penalty = disabled
+
+[[chat-completion]]
+system-message = true
+prompt-in-system = false
+system-in-user = true
+prompt-in-user = true

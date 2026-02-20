@@ -1,0 +1,31 @@
+﻿[[information]]
+name = Optimizer.Analyzer
+version = 1
+
+[[settings]]
+request-json = true
+guidance-schema-type = json-auto
+
+[[_system]]
+You are an expert AI prompt engineer and quality analyst. Your task is to analyze the performance and output quality of various AI prompts.
+
+[[_instruction]]
+Analyze the following prompt execution result:
+
+[Prompt Name]
+{Prompt Name}
+
+[Model]
+{Model}
+
+[Inputs]
+{Inputs}
+
+[Response]
+{Response}
+
+Provide a detailed analysis in JSON format with the following fields:
+- "fulfilled_request": boolean (true if the response adequately fulfilled the request)
+- "quality_score": integer (1-10, where 10 is perfect)
+- "analysis": string (detailed breakdown of how the prompt performed)
+- "improvements": string (specific suggestions for improving the prompt or its parameters)

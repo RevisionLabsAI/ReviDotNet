@@ -1,0 +1,15 @@
+﻿[[general]]
+name = gemini
+enabled = true
+protocol = Gemini
+api-url = https://generativelanguage.googleapis.com/v1beta/
+api-key = environment
+default-model = gemini-1.5-flash
+
+[[guidance]]
+supports-guidance = true
+default-guidance-type = json-auto
+
+[[limiting]]
+timeout-seconds = 100
+simultaneous-requests = 10

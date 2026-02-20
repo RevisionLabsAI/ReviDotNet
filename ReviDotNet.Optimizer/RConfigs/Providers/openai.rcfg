@@ -1,0 +1,15 @@
+﻿[[general]]
+name = openai
+enabled = true
+protocol = OpenAI
+api-url = https://api.openai.com/v1/
+api-key = environment
+default-model = gpt-4o-mini
+
+[[guidance]]
+supports-guidance = true
+default-guidance-type = json-auto
+
+[[limiting]]
+timeout-seconds = 100
+simultaneous-requests = 10

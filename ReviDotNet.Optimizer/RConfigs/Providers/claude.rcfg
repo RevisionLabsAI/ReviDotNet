@@ -1,0 +1,20 @@
+﻿[[general]]
+name = claude
+enabled = true
+protocol = Claude
+api-url = https://api.anthropic.com/
+api-key = environment
+default-model = claude-3-5-sonnet-latest
+supports-prompt-completion = true
+supports-response-completion = true
+
+[[guidance]]
+supports-guidance = false
+default-guidance-type = Disabled
+
+[[limiting]]
+timeout-seconds = 300
+delay-between-requests-ms = 20
+retry-attempt-limit = 5
+retry-initial-delay-seconds = 5
+simultaneous-requests = 5

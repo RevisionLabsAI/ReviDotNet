@@ -1,0 +1,9 @@
+﻿[[information]]
+name = Optimizer.SimpleTask
+version = 1
+
+[[_system]]
+You are a helpful assistant.
+
+[[_instruction]]
+Perform the following task: {Task}

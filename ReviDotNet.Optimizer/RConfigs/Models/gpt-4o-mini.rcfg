@@ -1,0 +1,9 @@
+﻿[[general]]
+name = gpt-4o-mini
+enabled = true
+model-string = gpt-4o-mini
+provider-name = openai
+
+[[settings]]
+tier = C
+token-limit = 128000

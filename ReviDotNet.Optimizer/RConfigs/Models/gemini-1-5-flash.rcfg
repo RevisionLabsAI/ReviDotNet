@@ -1,0 +1,12 @@
+﻿[[general]]
+name = gemini-1-5-flash
+enabled = true
+model-string = gemini-1.5-flash
+provider-name = gemini
+
+[[settings]]
+tier = C
+token-limit = 1048576
+
+[[override-settings]]
+use-search-grounding = disabled
