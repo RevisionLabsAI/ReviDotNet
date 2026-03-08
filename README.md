@@ -1,6 +1,8 @@
 ﻿# ReviDotNet
 
-ReviDotNet is a .NET library that makes working with modern LLMs straightforward, safe, and configurable. It separates prompt logic, provider connections, and model settings into simple repository files, adds resilience (retries, validators, output fixers), and provides Roslyn analyzers to catch mistakes at build time.
+ReviDotNet is a .NET library that makes working with modern LLMs straightforward, safe, and easily configurable. It separates prompt logic, provider connections, and model settings into simple repository files, adds resilience (retries, validators, output fixers), and provides Roslyn analyzers to catch mistakes at build time.
+
+> Note: ReviDotNet is still in development and some features may not be fully implemented yet. 
 
 ## Features
 
