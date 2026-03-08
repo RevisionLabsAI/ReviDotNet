@@ -1,6 +1,8 @@
-// =================================================================================
-//   Copyright © 2025 Revision Labs, Inc. - All Rights Reserved
-// =================================================================================
+// ===================================================================
+//  Copyright © 2026 Revision Labs and contributors
+//  SPDX-License-Identifier: MIT
+//  See LICENSE.txt in the project root for full license information.
+// ===================================================================
 
 using System.Collections.Generic;
 using Revi;

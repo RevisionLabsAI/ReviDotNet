@@ -1,3 +1,9 @@
+// ===================================================================
+//  Copyright © 2026 Revision Labs and contributors
+//  SPDX-License-Identifier: MIT
+//  See LICENSE.txt in the project root for full license information.
+// ===================================================================
+
 using System.Net.Http.Json;
 using System.Text.Json;
 using Newtonsoft.Json;

@@ -1,4 +1,10 @@
-﻿// =================================================================================
+﻿// ===================================================================
+//  Copyright © 2026 Revision Labs and contributors
+//  SPDX-License-Identifier: MIT
+//  See LICENSE.txt in the project root for full license information.
+// ===================================================================
+
+// =================================================================================
 //   Copyright © 2025 Revision Labs, Inc. - All Rights Reserved
 // =================================================================================
 //   This is proprietary and confidential source code of Revision Labs, Inc., and

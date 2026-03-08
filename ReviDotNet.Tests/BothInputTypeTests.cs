@@ -1,4 +1,10 @@
-﻿using System.Collections.Generic;
+﻿// ===================================================================
+//  Copyright © 2026 Revision Labs and contributors
+//  SPDX-License-Identifier: MIT
+//  See LICENSE.txt in the project root for full license information.
+// ===================================================================
+
+using System.Collections.Generic;
 using FluentAssertions;
 using Revi;
 using Xunit;

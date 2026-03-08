@@ -1,3 +1,9 @@
+// ===================================================================
+//  Copyright © 2026 Revision Labs and contributors
+//  SPDX-License-Identifier: MIT
+//  See LICENSE.txt in the project root for full license information.
+// ===================================================================
+
 using System.Diagnostics;
 using System.Linq.Expressions;
 using System.Reflection;

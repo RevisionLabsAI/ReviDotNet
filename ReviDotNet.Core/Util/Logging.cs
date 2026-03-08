@@ -1,15 +1,8 @@
-// =================================================================================
-//   Copyright © 2025 Revision Labs, Inc. - All Rights Reserved
-// =================================================================================
-//   This is proprietary and confidential source code of Revision Labs, Inc., and
-//   is safeguarded by international copyright laws. Unauthorized use, copying, 
-//   modification, or distribution is strictly forbidden.
-//
-//   If you are not authorized and have this file, notify Revision Labs at 
-//   contact@rlab.ai and delete it immediately.
-//
-//   See LICENSE.txt in the project root for full license information.
-// =================================================================================
+// ===================================================================
+//  Copyright © 2026 Revision Labs and contributors
+//  SPDX-License-Identifier: MIT
+//  See LICENSE.txt in the project root for full license information.
+// ===================================================================
 
 using System.Diagnostics;
 using System.Net.Mime;
