@@ -18,6 +18,23 @@ ReviDotNet is a .NET library that makes working with modern LLMs straightforward
 - First-class Roslyn analyzers (REVI001) to validate prompt names at compile time
 - Embeddings support via model profiles dedicated to embeddings
 
+## Why ReviDotNet?
+
+ReviDotNet was built for ease of use with a combination of unique features that prioritize repository-centric configuration, compile-time safety, and built-in resilience. While other libraries provide broad abstractions, ReviDotNet focuses on a structured, file-based approach that keeps your prompts and model settings versioned alongside your code.
+
+| Feature | ReviDotNet | Semantic Kernel | MEAI | LangChain.NET |
+|---|---|---|---|---|
+| File-based prompt config (`.pmt`/`.yaml`) | ✅ Rich | ✅ Basic | ❌ | ❌ |
+| File-based provider/model config | ✅ `.rcfg` | ⚠️ `appsettings` | ⚠️ Code | ⚠️ Code |
+| Built-in model routing | ✅ | ❌ | ❌ | ❌ |
+| Roslyn compile-time analyzer | ✅ | ❌ | ❌ | ❌ |
+| Strongly-typed inference API | ✅ | ✅ | ⚠️ | ⚠️ |
+| Built-in JSON/enum fixers | ✅ | ⚠️ | ❌ | ❌ |
+| Injection canary | ✅ | ❌ | ❌ | ❌ |
+| Embeddings | ✅ | ✅ | ✅ | ✅ |
+| Streaming | ✅ | ✅ | ✅ | ✅ |
+| Multi-provider | ✅ | ✅ | ✅ | ✅ |
+
 ## Repository layout (ReviDotNet)
 
 - `ReviDotNet.Core` – main runtime (config parsing, providers, models, inference API)
