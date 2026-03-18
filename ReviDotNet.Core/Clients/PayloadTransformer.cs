@@ -141,6 +141,7 @@ public class PayloadTransformer
     
         /// <summary>
     /// Transforms the standard payload format to Gemini's expected format.
+    /// Adheres to Gemini’s REST schema for :generateContent/:streamGenerateContent.
     /// </summary>
     /// <param name="payload">The standard payload dictionary.</param>
     /// <returns>The transformed payload for Gemini API.</returns>
@@ -158,15 +159,19 @@ public class PayloadTransformer
         
         if (payload.TryGetValue("top_p", out var topP))
             generationConfig["topP"] = topP;
-        
-        if (payload.TryGetValue("min_p", out var minP))
-            generationConfig["minP"] = minP;
+        // Gemini does not support minP in generationConfig; ignore any provided min_p.
         
         if (payload.TryGetValue("max_tokens", out var maxTokens))
             generationConfig["maxOutputTokens"] = maxTokens;
         
         if (payload.TryGetValue("stop", out var stopSequences))
             generationConfig["stopSequences"] = stopSequences;
+
+        // Supported penalties in Gemini (camelCase)
+        if (payload.TryGetValue("frequency_penalty", out var freqPenalty))
+            generationConfig["frequencyPenalty"] = freqPenalty;
+        if (payload.TryGetValue("presence_penalty", out var presPenalty))
+            generationConfig["presencePenalty"] = presPenalty;
 
         // Handle Gemini JSON Schema (responseSchema)
         if (payload.TryGetValue("guided_json", out var jsonSchema))
@@ -192,7 +197,7 @@ public class PayloadTransformer
         if (generationConfig.Any())
             geminiPayload["generationConfig"] = generationConfig;
         
-        // Handle single prompt
+        // Handle single prompt (Gemini has no top-level "prompt" field; use contents.parts[].text)
         if (payload.TryGetValue("prompt", out var promptValue) && promptValue is string prompt)
         {
             geminiPayload["contents"] = new[]
@@ -232,13 +237,15 @@ public class PayloadTransformer
 
             if (enable)
             {
-                // Use snake_case key to match Gemini REST API: { "tools": [ { "google_search": {} } ] }
-                geminiPayload["tools"] = new[] { new { google_search = new { } } };
+                // Use Gemini REST schema (camelCase): { "tools": [ { "googleSearchRetrieval": {} } ] }
+                geminiPayload["tools"] = new[] { new { googleSearchRetrieval = new { } } };
             }
         }
         
-        // Note: Gemini doesn't support frequency_penalty, presence_penalty, or best_of
-        // These parameters are ignored for Gemini requests
+        // Note:
+        // - Do NOT include model in the body (model is in the URL path).
+        // - Do NOT include stream in the body; streaming is selected by calling :streamGenerateContent with alt=sse.
+        // - repetition_penalty is not supported by Gemini and is therefore ignored if present in the input payload.
 
         return geminiPayload;
     }
