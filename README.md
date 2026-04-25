@@ -18,7 +18,7 @@ ReviDotNet is a .NET library that makes working with modern LLMs straightforward
 - Built‑in fixers for common issues (e.g., `json-fixer` and `enum-fixer` prompts)
 - Input filtering and optional safety canary to detect injection attempts
 - Simple, strongly-typed inference API: `ToObject<T>`, `ToEnum<TEnum>`, `ToStringList`, `ToStringListLimited`, `ToBool`, `ToString`, streaming via `CompletionStream`
-- First-class Roslyn analyzers (REVI001) to validate prompt names at compile time
+- First-class Roslyn analyzers for prompt and agent validation (`REVI001`, `REVI006`, `REVI007`, `REVI008`)
 - Embeddings support via model profiles dedicated to embeddings
 
 ## Why ReviDotNet?
@@ -29,6 +29,7 @@ ReviDotNet was built for ease of use with a combination of unique features that 
 |---|---|---|---|---|
 | File-based prompt config (`.pmt`/`.yaml`) | ✅ Rich | ✅ Basic | ❌ | ❌ |
 | File-based provider/model config | ✅ `.rcfg` | ⚠️ `appsettings` | ⚠️ Code | ⚠️ Code |
+| Built-in agent orchestration | ✅ Full | ✅ Full | ⚠️ Partial | ⚠️ Partial |
 | Built-in model routing | ✅ | ❌ | ❌ | ❌ |
 | Roslyn compile-time analyzer | ✅ | ❌ | ❌ | ❌ |
 | Strongly-typed inference API | ✅ | ✅ | ⚠️ | ⚠️ |
@@ -41,7 +42,7 @@ ReviDotNet was built for ease of use with a combination of unique features that 
 ## Repository layout (ReviDotNet)
 
 - `ReviDotNet.Core` – main runtime (config parsing, providers, models, inference API)
-- `ReviDotNet.Analyzers` – Roslyn analyzers (e.g., REVI001: prompt not found)
+- `ReviDotNet.Analyzers` – Roslyn analyzers (prompt/agent validation at compile time)
 - `ReviDotNet.Tests` – unit tests and helpers
 
 Your app’s configuration files typically live under an `RConfigs` folder in your project:
@@ -185,9 +186,16 @@ Notes
 - When `request-json = true` or a guidance schema is enabled, `ToObject<T>` will validate and repair common JSON issues.
 - `ToStringListLimited` allows early stop based on count or a custom evaluator.
 
-## Analyzer integration (REVI001)
+## Analyzer integration (REVI001, REVI006, REVI007, REVI008)
 
-The `ReviDotNet.Analyzers` package validates that string-literal prompt names passed to `Infer.*` methods exist in your `RConfigs/Prompts` tree. To enable name discovery at build time, include your `.pmt` files as `AdditionalFiles` in the projects that compile the calling code:
+The `ReviDotNet.Analyzers` package validates prompt and agent usage at compile time.
+
+- `REVI001`: prompt not found in `RConfigs/Prompts`
+- `REVI006`: agent not found in `RConfigs/Agents`
+- `REVI007`: duplicate effective agent names
+- `REVI008`: non-constant agent name in `Agent.Run` / `Agent.ToString` / `Agent.FindAgent`
+
+To enable prompt validation, include your `.pmt` files as `AdditionalFiles` in the projects that compile the calling code:
 
 ```xml
 <Project>
