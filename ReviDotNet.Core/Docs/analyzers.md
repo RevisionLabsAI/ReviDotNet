@@ -14,6 +14,13 @@ The analyzers run during compilation and inside the IDE to catch configuration i
 - REVI001 — Prompt not found
   - Ensures a referenced prompt name exists among your `.pmt` files under `RConfigs/Prompts` (any depth).
   - Mirrors the same name resolution that Revi uses at runtime: lower-cased folder prefix + the prompt’s `information.name` declared inside the `.pmt` file. The physical filename is not used for matching.
+- REVI006 — Agent not found
+  - Ensures a referenced agent name exists among your `.agent` files under `RConfigs/Agents` (any depth).
+  - Uses runtime-equivalent name resolution: lower-cased folder prefix + `[[information]] name` from the `.agent` file.
+- REVI007 — Duplicate agent name
+  - Reports when multiple `.agent` files resolve to the same effective name.
+- REVI008 — Non-constant agent name
+  - Warns when `Agent.Run`, `Agent.ToString`, or `Agent.FindAgent` receives a non-constant first argument, which prevents static existence validation.
 
 ## Installation
 
@@ -51,9 +58,19 @@ For REVI001 to work, the compiler must receive your prompt files as AdditionalFi
 </Project>
 ```
 
+For agent analyzers (REVI006/REVI007/REVI008), include `.agent` files as AdditionalFiles as well:
+
+```xml
+<Project>
+  <ItemGroup>
+    <AdditionalFiles Include="RConfigs\Agents\**\*.agent" />
+  </ItemGroup>
+</Project>
+```
+
 Notes:
 - Use backslashes in MSBuild include paths on Windows. The analyzer normalizes paths internally.
-- You can narrow or expand the glob according to your repository layout; the key is that all `.pmt` files reachable by Revi at runtime appear in AdditionalFiles for the project that compiles the calling code.
+- You can narrow or expand the glob according to your repository layout; the key is that all `.pmt` and `.agent` files reachable by Revi at runtime appear in AdditionalFiles for the project that compiles the calling code.
 
 ## Prompt name resolution (what the analyzer checks)
 
@@ -162,6 +179,35 @@ string text = await Revi.Infer.ToString("x/z", new { query = "..." });
 How to fix:
 - Create or move a `.pmt` under `RConfigs/Prompts/<folders>/...` with `[[information]] name = <name>` so that the effective name matches the string you pass in code, or
 - Update the code to use the correct effective name that already exists.
+
+### REVI006 — Agent not found
+
+- Category: Usage
+- Default severity: Error
+- Triggers when: A string-literal agent name passed as the first argument to `Agent.Run`, `Agent.ToString`, or `Agent.FindAgent` is not found among AdditionalFiles-parsed `.agent` files.
+
+How to fix:
+- Add or move the target `.agent` file under `RConfigs/Agents/<folders>/...` and set `[[information]] name` so the effective name matches what code passes, or
+- Update the code to the correct effective agent name.
+
+### REVI007 — Duplicate agent name
+
+- Category: Usage
+- Default severity: Warning
+- Triggers when: More than one `.agent` AdditionalFile resolves to the same effective name (`<lower-cased-folder(s)>/<information.name>`).
+
+How to fix:
+- Rename one of the conflicting agents, or
+- Move one file to a different folder under `RConfigs/Agents` so the resolved names differ.
+
+### REVI008 — Non-constant agent name
+
+- Category: Usage
+- Default severity: Warning
+- Triggers when: The first argument to `Agent.Run`, `Agent.ToString`, or `Agent.FindAgent` is not a compile-time constant string.
+
+How to fix:
+- Prefer string literals or constants for agent names when possible so REVI006 can validate existence at build time.
 
 ---
 

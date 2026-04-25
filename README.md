@@ -12,6 +12,7 @@ ReviDotNet is a .NET library that makes working with modern LLMs straightforward
   - Models: `.rcfg` files describing model profiles (limits, defaults, overrides)
 - Supports multiple providers and models with configurable model routing
 - Chat and prompt completion interfaces (automatically chosen or forced per prompt/model)
+- Agent orchestration via `.agent` files (state loops, transitions, tool gating, guardrails)
 - Structured output guidance options (JSON/Regex/GBNF – manual and auto variants)
 - Resilience: retries, timeout control, token accounting, safe JSON extraction from Markdown
 - Built‑in fixers for common issues (e.g., `json-fixer` and `enum-fixer` prompts)
@@ -46,6 +47,7 @@ ReviDotNet was built for ease of use with a combination of unique features that 
 Your app’s configuration files typically live under an `RConfigs` folder in your project:
 
 - `RConfigs/Prompts` – `.pmt` prompt files (any subfolders)
+- `RConfigs/Agents` – `.agent` orchestration files (any subfolders)
 - `RConfigs/Providers` – provider `.rcfg` files
 - `RConfigs/Models/Inference` – inference model `.rcfg` files
 - `RConfigs/Models/Embedding` – embedding model `.rcfg` files
@@ -55,6 +57,7 @@ Your app’s configuration files typically live under an `RConfigs` folder in yo
 The core docs are in this repo:
 
 - Prompt files: `ReviDotNet.Core/Docs/prompt-files.md`
+- Agent files: `ReviDotNet.Core/Docs/agent-files.md`
 - Provider files: `ReviDotNet.Core/Docs/provider-files.md`
 - Model files: `ReviDotNet.Core/Docs/model-files.md`
 - Inference API: `ReviDotNet.Core/Docs/inference.md`
@@ -190,6 +193,16 @@ The `ReviDotNet.Analyzers` package validates that string-literal prompt names pa
 <Project>
   <ItemGroup>
     <AdditionalFiles Include="RConfigs\Prompts\**\*.pmt" />
+  </ItemGroup>
+</Project>
+```
+
+If you use agent orchestration, include `.agent` files too so agent-related analyzer rules can run:
+
+```xml
+<Project>
+  <ItemGroup>
+    <AdditionalFiles Include="RConfigs\Agents\**\*.agent" />
   </ItemGroup>
 </Project>
 ```
