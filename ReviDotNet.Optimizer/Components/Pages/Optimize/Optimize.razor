@@ -1,0 +1,431 @@
+@page "/optimize"
+@inject PromptRegistryService Registry
+@inject OptimizerService Optimizer
+@inject TestRunnerService Runner
+@inject ISnackbar Snackbar
+
+<PageTitle>Optimizer — ReviDotNet Optimizer</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Optimizer</MudText>
+
+<MudTabs Elevation="2" Rounded="true" Color="Color.Primary" @bind-ActivePanelIndex="_activeTab">
+
+    <!-- Tab 1: Analysis -->
+    <MudTabPanel Text="Analysis" Icon="@Icons.Material.Filled.Analytics">
+        <div class="pa-4">
+            <MudGrid Spacing="3">
+                <MudItem xs="12" md="4">
+                    <MudSelect @bind-Value="_selectedPromptName"
+                               Label="Prompt"
+                               Variant="Variant.Outlined"
+                               FullWidth="true"
+                               Class="mb-3">
+                        @foreach (var p in Registry.GetAll().OrderBy(p => p.Name))
+                        {
+                            <MudSelectItem Value="@(p.Name ?? string.Empty)">@p.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+
+                    <MudSelect @bind-Value="_selectedModelName"
+                               Label="Model"
+                               Variant="Variant.Outlined"
+                               FullWidth="true"
+                               Class="mb-3">
+                        @foreach (var m in ModelManager.GetAll())
+                        {
+                            <MudSelectItem Value="@(m.Name ?? string.Empty)">@m.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+
+                    <MudNumericField @bind-Value="_analysisRuns"
+                                     Label="Test Runs to Analyze"
+                                     Min="1" Max="10"
+                                     Variant="Variant.Outlined"
+                                     FullWidth="true"
+                                     Class="mb-3" />
+
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">Inputs</MudText>
+                    @for (int i = 0; i < _analysisInputs.Count; i++)
+                    {
+                        int idx = i;
+                        <div class="d-flex gap-2 mb-2">
+                            <MudTextField @bind-Value="_analysisInputs[idx].Label"
+                                          Label="Key"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Style="max-width: 130px;" />
+                            <MudTextField @bind-Value="_analysisInputs[idx].Value"
+                                          Label="Value"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          FullWidth="true" />
+                        </div>
+                    }
+                    <MudButton Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Add"
+                               OnClick="@(() => _analysisInputs.Add(new AnalysisInput()))"
+                               Class="mb-4">
+                        Add Input
+                    </MudButton>
+
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               FullWidth="true"
+                               StartIcon="@Icons.Material.Filled.Analytics"
+                               OnClick="@RunAnalysis"
+                               Disabled="@(_analyzing || string.IsNullOrWhiteSpace(_selectedPromptName))">
+                        @(_analyzing ? "Analyzing..." : "Analyze Results")
+                    </MudButton>
+
+                    @if (_analyzing)
+                    {
+                        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-3" />
+                    }
+                </MudItem>
+
+                <MudItem xs="12" md="8">
+                    @if (_analyses.Count > 0)
+                    {
+                        <!-- Aggregate Stats -->
+                        <MudGrid Spacing="2" Class="mb-4">
+                            <MudItem xs="6" sm="4">
+                                <MudPaper Class="pa-3 text-center" Elevation="1">
+                                    <MudText Typo="Typo.h6">@($"{_analyses.Count(a => a.FulfilledRequest) * 100.0 / _analyses.Count:F0}%")</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Fulfilled</MudText>
+                                </MudPaper>
+                            </MudItem>
+                            <MudItem xs="6" sm="4">
+                                <MudPaper Class="pa-3 text-center" Elevation="1">
+                                    <MudText Typo="Typo.h6">@($"{_analyses.Average(a => a.QualityScore):F1}/10")</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Avg Quality</MudText>
+                                </MudPaper>
+                            </MudItem>
+                            <MudItem xs="12" sm="4">
+                                <MudPaper Class="pa-3 text-center" Elevation="1">
+                                    <MudText Typo="Typo.h6">@_analyses.Count</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Runs Analyzed</MudText>
+                                </MudPaper>
+                            </MudItem>
+                        </MudGrid>
+
+                        <MudExpansionPanels Class="mb-3">
+                            @for (int i = 0; i < _analyses.Count; i++)
+                            {
+                                var analysis = _analyses[i];
+                                int num = i + 1;
+                                <MudExpansionPanel Text="@($"Run {num} — Quality {analysis.QualityScore}/10 — {(analysis.FulfilledRequest ? "✓ Fulfilled" : "✗ Not Fulfilled")}")">
+                                    <MudGrid Spacing="2">
+                                        <MudItem xs="12">
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">Analysis</MudText>
+                                            <MudText Typo="Typo.body2">@analysis.Analysis</MudText>
+                                        </MudItem>
+                                        <MudItem xs="12">
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">Improvements</MudText>
+                                            <MudText Typo="Typo.body2">@analysis.Improvements</MudText>
+                                        </MudItem>
+                                    </MudGrid>
+                                </MudExpansionPanel>
+                            }
+                        </MudExpansionPanels>
+
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Secondary"
+                                   StartIcon="@Icons.Material.Filled.Lightbulb"
+                                   OnClick="@GoToSuggestions">
+                            Generate Suggestions
+                        </MudButton>
+                    }
+                    else if (!_analyzing)
+                    {
+                        <MudPaper Class="pa-8 d-flex flex-column align-center" Elevation="1" Style="min-height: 250px; justify-content: center;">
+                            <MudIcon Icon="@Icons.Material.Filled.Analytics" Size="Size.Large" Style="opacity:0.3;" Class="mb-2" />
+                            <MudText Style="opacity:0.5;">Run analysis to see results.</MudText>
+                        </MudPaper>
+                    }
+                </MudItem>
+            </MudGrid>
+        </div>
+    </MudTabPanel>
+
+    <!-- Tab 2: Suggestions -->
+    <MudTabPanel Text="Suggestions" Icon="@Icons.Material.Filled.Lightbulb">
+        <div class="pa-4">
+            @if (_suggestions.Count == 0 && !_generatingSuggestions)
+            {
+                <MudPaper Class="pa-8 d-flex flex-column align-center" Elevation="1" Style="min-height: 250px; justify-content: center;">
+                    <MudIcon Icon="@Icons.Material.Filled.Lightbulb" Size="Size.Large" Style="opacity:0.3;" Class="mb-2" />
+                    <MudText Style="opacity:0.5;">Run analysis first, then click "Generate Suggestions".</MudText>
+                </MudPaper>
+            }
+            else if (_generatingSuggestions)
+            {
+                <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+                <MudText Class="mt-2">Aggregating suggestions...</MudText>
+            }
+            else
+            {
+                <div class="d-flex align-center justify-space-between mb-4">
+                    <MudText Typo="Typo.subtitle1">@_suggestions.Count Suggestions</MudText>
+                    <div class="d-flex gap-2">
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="@SelectAll">Select All</MudButton>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="@SelectNone">Deselect All</MudButton>
+                    </div>
+                </div>
+
+                @foreach (var s in _suggestions)
+                {
+                    <MudCard Class="mb-3" Elevation="1">
+                        <MudCardContent Class="d-flex gap-3">
+                            <MudCheckBox @bind-Value="s.Selected" Color="Color.Primary" />
+                            <div>
+                                <MudText Typo="Typo.subtitle2">@s.Description</MudText>
+                                <div class="d-flex gap-2 mt-1">
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Info">@s.AffectedSection</MudChip>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@s.ExpectedImpact</MudText>
+                                </div>
+                            </div>
+                        </MudCardContent>
+                    </MudCard>
+                }
+
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Build"
+                           OnClick="@GoToApply"
+                           Disabled="@(!_suggestions.Any(s => s.Selected))">
+                    Apply Selected Suggestions
+                </MudButton>
+            }
+        </div>
+    </MudTabPanel>
+
+    <!-- Tab 3: Apply -->
+    <MudTabPanel Text="Apply &amp; Iterate" Icon="@Icons.Material.Filled.Build">
+        <div class="pa-4">
+            @if (string.IsNullOrWhiteSpace(_revisedContent) && !_revising)
+            {
+                <MudPaper Class="pa-8 d-flex flex-column align-center" Elevation="1" Style="min-height: 250px; justify-content: center;">
+                    <MudIcon Icon="@Icons.Material.Filled.Build" Size="Size.Large" Style="opacity:0.3;" Class="mb-2" />
+                    <MudText Style="opacity:0.5;">Select suggestions and click "Apply" to generate a revised prompt.</MudText>
+                </MudPaper>
+            }
+            else
+            {
+                <MudGrid Spacing="3">
+                    <MudItem xs="12" md="6">
+                        <MudText Typo="Typo.subtitle2" Class="mb-2">Original</MudText>
+                        @if (_originalPrompt is not null)
+                        {
+                            <MudPaper Class="pa-3"
+                                      Style="font-family: monospace; font-size: 0.8rem; white-space: pre-wrap; word-break: break-word; max-height: 500px; overflow-y: auto;"
+                                      Elevation="0">
+                                @PromptRegistryService.SerializePrompt(_originalPrompt)
+                            </MudPaper>
+                        }
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudText Typo="Typo.subtitle2" Class="mb-2">Revised</MudText>
+                        <MudPaper Class="pa-3"
+                                  Style="font-family: monospace; font-size: 0.8rem; white-space: pre-wrap; word-break: break-word; max-height: 500px; overflow-y: auto;"
+                                  Elevation="0">
+                            @_revisedContent@(_revising ? "▌" : string.Empty)
+                        </MudPaper>
+                    </MudItem>
+                </MudGrid>
+
+                @if (!_revising && !string.IsNullOrWhiteSpace(_revisedContent))
+                {
+                    <div class="d-flex gap-3 mt-4">
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Success"
+                                   StartIcon="@Icons.Material.Filled.Save"
+                                   OnClick="@AcceptRevision">
+                            Accept &amp; Save
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.PlayArrow"
+                                   OnClick="@TestRevised">
+                            Test Revised Prompt
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined"
+                                   StartIcon="@Icons.Material.Filled.Refresh"
+                                   OnClick="@GoToApply">
+                            Revise Again
+                        </MudButton>
+                    </div>
+                }
+            }
+        </div>
+    </MudTabPanel>
+
+</MudTabs>
+
+@code {
+    [SupplyParameterFromQuery] public string? Prompt { get; set; }
+
+    private record AnalysisInput { public string Label { get; set; } = string.Empty; public string Value { get; set; } = string.Empty; }
+
+    private int _activeTab;
+    private string _selectedPromptName = string.Empty;
+    private string _selectedModelName = string.Empty;
+    private int _analysisRuns = 3;
+    private List<AnalysisInput> _analysisInputs = [new AnalysisInput { Label = "Task", Value = string.Empty }];
+    private bool _analyzing;
+    private List<AnalysisResult> _analyses = [];
+    private bool _generatingSuggestions;
+    private List<PromptSuggestion> _suggestions = [];
+    private bool _revising;
+    private string _revisedContent = string.Empty;
+    private Prompt? _originalPrompt;
+    private CancellationTokenSource? _cts;
+
+    protected override void OnInitialized()
+    {
+        var models = ModelManager.GetAll();
+        _selectedModelName = models.FirstOrDefault()?.Name ?? string.Empty;
+
+        if (!string.IsNullOrWhiteSpace(Prompt))
+            _selectedPromptName = Prompt;
+        else
+            _selectedPromptName = Registry.GetAll().FirstOrDefault()?.Name ?? string.Empty;
+    }
+
+    private async Task RunAnalysis()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedPromptName)) return;
+
+        _analyzing = true;
+        _analyses.Clear();
+        _suggestions.Clear();
+        _revisedContent = string.Empty;
+
+        var inputs = _analysisInputs
+            .Where(i => !string.IsNullOrWhiteSpace(i.Label))
+            .Select(i => new Input(i.Label, i.Value))
+            .ToList();
+
+        try
+        {
+            _cts?.Cancel();
+            _cts = new CancellationTokenSource();
+
+            // Run the prompt N times, collecting outputs
+            var channel = Runner.RunTests(
+                _selectedPromptName,
+                [_selectedModelName],
+                inputs,
+                _analysisRuns,
+                runAnalysis: true,
+                _cts.Token);
+
+            await foreach (var result in channel.Reader.ReadAllAsync(_cts.Token))
+            {
+                if (result.Analysis is not null)
+                    _analyses.Add(result.Analysis);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Analysis failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _analyzing = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task GoToSuggestions()
+    {
+        _activeTab = 1;
+
+        if (_analyses.Count == 0) return;
+
+        _originalPrompt = Registry.GetByName(_selectedPromptName);
+        if (_originalPrompt is null) return;
+
+        _generatingSuggestions = true;
+        StateHasChanged();
+
+        try
+        {
+            _suggestions = await Optimizer.GenerateSuggestionsAsync(_originalPrompt, _analyses);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Suggestion generation failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _generatingSuggestions = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task GoToApply()
+    {
+        _activeTab = 2;
+        _revisedContent = string.Empty;
+        _revising = true;
+        StateHasChanged();
+
+        if (_originalPrompt is null) return;
+
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+
+        try
+        {
+            await foreach (var token in Optimizer.ReviseStreamAsync(
+                _originalPrompt, _suggestions, _cts.Token))
+            {
+                _revisedContent += token;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Revision failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _revising = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void AcceptRevision()
+    {
+        if (string.IsNullOrWhiteSpace(_revisedContent) || string.IsNullOrWhiteSpace(_selectedPromptName)) return;
+
+        try
+        {
+            // Increment version
+            if (_originalPrompt is not null && _originalPrompt.Version.HasValue)
+                _revisedContent = _revisedContent.Replace(
+                    $"version = {_originalPrompt.Version}",
+                    $"version = {_originalPrompt.Version + 1}");
+
+            Registry.SaveNew(_selectedPromptName, _revisedContent);
+            Snackbar.Add("Revised prompt saved.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Save failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void TestRevised() =>
+        Nav.NavigateTo($"/test?prompt={Uri.EscapeDataString(_selectedPromptName)}");
+
+    private void SelectAll() { foreach (var s in _suggestions) s.Selected = true; }
+    private void SelectNone() { foreach (var s in _suggestions) s.Selected = false; }
+}
+
+@code {
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+}

@@ -1,0 +1,182 @@
+@page "/prompts"
+@inject PromptRegistryService Registry
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Prompt Registry — ReviDotNet Optimizer</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudText Typo="Typo.h4">Prompt Registry</MudText>
+    <MudSpacer />
+    <MudTextField @bind-Value="_search"
+                  Placeholder="Search prompts..."
+                  Adornment="Adornment.Start"
+                  AdornmentIcon="@Icons.Material.Filled.Search"
+                  Clearable="true"
+                  Style="max-width: 300px;"
+                  Variant="Variant.Outlined"
+                  Margin="Margin.Dense" />
+    <MudButton Variant="Variant.Filled"
+               Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add"
+               Href="/generate"
+               Class="ml-3">
+        New Prompt
+    </MudButton>
+</div>
+
+<MudDataGrid Items="@FilteredPrompts"
+             Dense="true"
+             Hover="true"
+             Striped="true"
+             Elevation="2">
+    <Columns>
+        <PropertyColumn Property="p => p.Name" Title="Name" />
+        <PropertyColumn Property="p => p.Version" Title="Ver" />
+        <TemplateColumn Title="Schema">
+            <CellTemplate>
+                @{
+                    var schemaStr = PromptRegistryService.ToGuidanceSchemaString(context.Item.GuidanceSchema);
+                }
+                @if (schemaStr is not null)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Info">@schemaStr</MudChip>
+                }
+                else if (context.Item.RequestJson == true)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Warning">JSON</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Size="Size.Small">None</MudChip>
+                }
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Examples">
+            <CellTemplate>
+                <MudText Typo="Typo.body2">@(context.Item.Examples?.Count ?? 0)</MudText>
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Actions" CellClass="d-flex gap-1">
+            <CellTemplate>
+                <MudIconButton Icon="@Icons.Material.Filled.Visibility"
+                               Size="Size.Small"
+                               OnClick="@(() => ViewPrompt(context.Item))" />
+                <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                               Size="Size.Small"
+                               OnClick="@(() => EditPrompt(context.Item))" />
+                <MudIconButton Icon="@Icons.Material.Filled.PlayArrow"
+                               Size="Size.Small"
+                               Color="Color.Success"
+                               OnClick="@(() => Nav.NavigateTo($"/test?prompt={Uri.EscapeDataString(context.Item.Name ?? string.Empty)}"))" />
+                <MudIconButton Icon="@Icons.Material.Filled.TrendingUp"
+                               Size="Size.Small"
+                               Color="Color.Primary"
+                               OnClick="@(() => Nav.NavigateTo($"/optimize?prompt={Uri.EscapeDataString(context.Item.Name ?? string.Empty)}"))" />
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+</MudDataGrid>
+
+@if (_viewPrompt is not null)
+{
+    <PromptDetailDrawer Prompt="_viewPrompt"
+                        OnClose="@(() => _viewPrompt = null)" />
+}
+
+<MudDrawer @bind-Open="_editOpen"
+           Anchor="Anchor.Right"
+           Elevation="3"
+           Variant="DrawerVariant.Temporary"
+           Width="640px"
+           ClipMode="DrawerClipMode.Never">
+    <MudDrawerHeader Class="d-flex align-center justify-space-between">
+        <MudText Typo="Typo.h6">Edit — @_editPrompt?.Name</MudText>
+        <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="@(() => _editOpen = false)" />
+    </MudDrawerHeader>
+    @if (_editPrompt is not null)
+    {
+        <div class="pa-4">
+            <MudGrid Spacing="3">
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_editSystem"
+                                  Label="System Message"
+                                  Lines="6"
+                                  Variant="Variant.Outlined"
+                                  FullWidth="true" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_editInstruction"
+                                  Label="Instruction"
+                                  Lines="8"
+                                  Variant="Variant.Outlined"
+                                  FullWidth="true" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_editSchema"
+                                  Label="Schema (optional)"
+                                  Lines="4"
+                                  Variant="Variant.Outlined"
+                                  FullWidth="true" />
+                </MudItem>
+            </MudGrid>
+            <div class="d-flex gap-3 mt-4">
+                <MudButton OnClick="@(() => _editOpen = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@SaveEdit">Save</MudButton>
+            </div>
+        </div>
+    }
+</MudDrawer>
+
+@code {
+    private string _search = string.Empty;
+    private Prompt? _viewPrompt;
+    private Prompt? _editPrompt;
+    private bool _editOpen;
+    private string _editSystem = string.Empty;
+    private string _editInstruction = string.Empty;
+    private string _editSchema = string.Empty;
+
+    private IEnumerable<Prompt> FilteredPrompts => Registry.GetAll()
+        .Where(p => string.IsNullOrWhiteSpace(_search) ||
+                    (p.Name?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false))
+        .OrderBy(p => p.Name);
+
+    private void ViewPrompt(Prompt p)
+    {
+        _viewPrompt = p;
+        _editOpen = false;
+    }
+
+    private void EditPrompt(Prompt p)
+    {
+        _editPrompt = p;
+        _editSystem = p.System ?? string.Empty;
+        _editInstruction = p.Instruction ?? string.Empty;
+        _editSchema = p.Schema ?? string.Empty;
+        _viewPrompt = null;
+        _editOpen = true;
+    }
+
+    private void SaveEdit()
+    {
+        if (_editPrompt is null) return;
+
+        _editPrompt.System = _editSystem;
+        _editPrompt.Instruction = _editInstruction;
+        _editPrompt.Schema = _editSchema;
+
+        try
+        {
+            Registry.Save(_editPrompt);
+            Snackbar.Add($"Saved {_editPrompt.Name}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Save failed: {ex.Message}", Severity.Error);
+        }
+
+        _editOpen = false;
+        _editPrompt = null;
+    }
+}

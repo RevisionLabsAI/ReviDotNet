@@ -1,0 +1,31 @@
+[[information]]
+name = Optimizer.Reviser
+version = 1
+
+[[_system]]
+You are an expert AI prompt engineer. Your task is to rewrite a prompt by applying a set of selected improvement suggestions, producing a revised, complete .pmt file.
+
+[[_instruction]]
+Revise the following prompt by applying the selected suggestions. Produce a complete, improved .pmt file.
+
+[Prompt Name]
+{Prompt Name}
+
+[Current System Message]
+{Current System}
+
+[Current Instruction]
+{Current Instruction}
+
+[Selected Suggestions to Apply]
+{Selected Suggestions}
+
+Guidelines:
+- Apply all listed suggestions thoughtfully — do not skip any
+- Preserve the prompt's original intent and input placeholder names exactly (e.g., {InputName})
+- The system message should be concise (1-3 sentences) and focused on the AI's role
+- The instruction should be clear, specific, and include concrete output format requirements
+- Increment the version number by 1
+- Keep the same [[information]] name
+
+Output ONLY the revised .pmt file content with no additional explanation, commentary, or markdown code fences. Start directly with [[information]].

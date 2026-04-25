@@ -1,0 +1,122 @@
+@using Revi
+
+<MudDrawer @bind-Open="_open"
+           Anchor="Anchor.Right"
+           Elevation="3"
+           Variant="DrawerVariant.Temporary"
+           Width="600px"
+           ClipMode="DrawerClipMode.Never">
+    <MudDrawerHeader Class="d-flex align-center justify-space-between">
+        <MudText Typo="Typo.h6">@Prompt?.Name</MudText>
+        <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="@Close" />
+    </MudDrawerHeader>
+
+    @if (Prompt is not null)
+    {
+        <div class="pa-4">
+            <MudGrid Spacing="2">
+                <MudItem xs="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Version</MudText>
+                    <MudText Typo="Typo.body2">@(Prompt.Version?.ToString() ?? "—")</MudText>
+                </MudItem>
+                <MudItem xs="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Schema Type</MudText>
+                    <MudText Typo="Typo.body2">@(PromptRegistryService.ToGuidanceSchemaString(Prompt.GuidanceSchema) ?? (Prompt.RequestJson == true ? "JSON" : "None"))</MudText>
+                </MudItem>
+                <MudItem xs="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Temperature</MudText>
+                    <MudText Typo="Typo.body2">@(Prompt.Temperature?.ToString("F2") ?? "default")</MudText>
+                </MudItem>
+                <MudItem xs="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Max Tokens</MudText>
+                    <MudText Typo="Typo.body2">@(Prompt.MaxTokens?.ToString() ?? "default")</MudText>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Examples</MudText>
+                    <MudText Typo="Typo.body2">@(Prompt.Examples?.Count ?? 0)</MudText>
+                </MudItem>
+            </MudGrid>
+
+            <MudDivider Class="my-3" />
+
+            @if (!string.IsNullOrWhiteSpace(Prompt.System))
+            {
+                <MudText Typo="Typo.subtitle2" Class="mb-1">System Message</MudText>
+                <MudPaper Class="pa-3 mb-3" Style="background: var(--mud-palette-background-grey); font-family: monospace; font-size: 0.82rem; white-space: pre-wrap; word-break: break-word;" Elevation="0">
+                    @Prompt.System
+                </MudPaper>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(Prompt.Instruction))
+            {
+                <MudText Typo="Typo.subtitle2" Class="mb-1">Instruction</MudText>
+                <MudPaper Class="pa-3 mb-3" Style="background: var(--mud-palette-background-grey); font-family: monospace; font-size: 0.82rem; white-space: pre-wrap; word-break: break-word;" Elevation="0">
+                    @Prompt.Instruction
+                </MudPaper>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(Prompt.Schema))
+            {
+                <MudText Typo="Typo.subtitle2" Class="mb-1">Schema</MudText>
+                <MudPaper Class="pa-3 mb-3" Style="background: var(--mud-palette-background-grey); font-family: monospace; font-size: 0.82rem; white-space: pre-wrap; word-break: break-word;" Elevation="0">
+                    @Prompt.Schema
+                </MudPaper>
+            }
+
+            @if (Prompt.Examples?.Count > 0)
+            {
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Examples (@Prompt.Examples.Count)</MudText>
+                <MudExpansionPanels>
+                    @for (int i = 0; i < Math.Min(Prompt.Examples.Count, 5); i++)
+                    {
+                        int idx = i;
+                        var ex = Prompt.Examples[idx];
+                        <MudExpansionPanel Text="@($"Example {idx + 1}")">
+                            @if (ex.Inputs?.Count > 0)
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Inputs</MudText>
+                                @foreach (var input in ex.Inputs)
+                                {
+                                    <MudText Typo="Typo.body2" Class="ml-2">
+                                        <b>@input.Label:</b> @input.Text
+                                    </MudText>
+                                }
+                            }
+                            @if (!string.IsNullOrWhiteSpace(ex.Output))
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">Expected Output</MudText>
+                                <MudPaper Class="pa-2 mt-1" Style="font-family: monospace; font-size: 0.8rem; white-space: pre-wrap;" Elevation="0">
+                                    @ex.Output
+                                </MudPaper>
+                            }
+                        </MudExpansionPanel>
+                    }
+                    @if (Prompt.Examples.Count > 5)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1 ml-2">
+                            ... and @(Prompt.Examples.Count - 5) more
+                        </MudText>
+                    }
+                </MudExpansionPanels>
+            }
+        </div>
+    }
+</MudDrawer>
+
+@code {
+    [Parameter] public Prompt? Prompt { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private bool _open;
+
+    protected override void OnParametersSet()
+    {
+        _open = Prompt is not null;
+    }
+
+    private async Task Close()
+    {
+        _open = false;
+        await OnClose.InvokeAsync();
+    }
+}

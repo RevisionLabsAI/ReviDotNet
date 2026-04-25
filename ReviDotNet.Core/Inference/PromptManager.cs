@@ -190,5 +190,27 @@ namespace Revi
         {
             return _prompts.FirstOrDefault(model => model.Name == name);
         }
+
+        public static List<Prompt> GetAll()
+        {
+            return [.._prompts];
+        }
+
+        /// <summary>
+        /// Adds or updates a prompt in the registry from a file path.
+        /// </summary>
+        public static void LoadFromFile(string filePath)
+        {
+            string basePath = Path.GetDirectoryName(filePath)! + Path.DirectorySeparatorChar;
+            LoadPromptFromFile(filePath, basePath);
+        }
+
+        /// <summary>
+        /// Directly adds or replaces a prompt in the in-memory registry.
+        /// </summary>
+        public static void AddOrUpdate(Prompt prompt)
+        {
+            CheckAdd(prompt, false);
+        }
     }
 }

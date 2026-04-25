@@ -1,0 +1,104 @@
+@page "/"
+@inject PromptRegistryService Registry
+
+<PageTitle>Dashboard — ReviDotNet Optimizer</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-6">Dashboard</MudText>
+
+<MudGrid Spacing="4">
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4 d-flex flex-column align-center" Elevation="2">
+            <MudIcon Icon="@Icons.Material.Filled.ListAlt" Color="Color.Primary" Size="Size.Large" />
+            <MudText Typo="Typo.h4" Class="mt-2 mb-1">@_promptCount</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Loaded Prompts</MudText>
+            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/prompts" Class="mt-2">View Registry</MudButton>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4 d-flex flex-column align-center" Elevation="2">
+            <MudIcon Icon="@Icons.Material.Filled.Storage" Color="Color.Secondary" Size="Size.Large" />
+            <MudText Typo="Typo.h4" Class="mt-2 mb-1">@_modelCount</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Loaded Models</MudText>
+            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/test" Class="mt-2">Run Tests</MudButton>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4 d-flex flex-column align-center" Elevation="2">
+            <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Tertiary" Size="Size.Large" />
+            <MudText Typo="Typo.h4" Class="mt-2 mb-1 opacity-60">—</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Generate Prompt</MudText>
+            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/generate" Class="mt-2">Start</MudButton>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4 d-flex flex-column align-center" Elevation="2">
+            <MudIcon Icon="@Icons.Material.Filled.TrendingUp" Color="Color.Success" Size="Size.Large" />
+            <MudText Typo="Typo.h4" Class="mt-2 mb-1 opacity-60">—</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Optimizer</MudText>
+            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/optimize" Class="mt-2">Optimize</MudButton>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<MudDivider Class="my-6" />
+
+<MudText Typo="Typo.h6" Class="mb-3">Quick Start</MudText>
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="4">
+        <MudCard Elevation="1">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle1"><b>1. Browse the Registry</b></MudText>
+                <MudText Typo="Typo.body2" Class="mt-1">
+                    View and edit all loaded prompts. Each prompt shows its system message,
+                    instruction template, and configuration.
+                </MudText>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/prompts">Go to Registry</MudButton>
+            </MudCardActions>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" md="4">
+        <MudCard Elevation="1">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle1"><b>2. Generate a New Prompt</b></MudText>
+                <MudText Typo="Typo.body2" Class="mt-1">
+                    Describe what your prompt should do and provide input/output examples.
+                    AI generates a .pmt file you can save and test immediately.
+                </MudText>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/generate">Generate</MudButton>
+            </MudCardActions>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" md="4">
+        <MudCard Elevation="1">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle1"><b>3. Test &amp; Optimize</b></MudText>
+                <MudText Typo="Typo.body2" Class="mt-1">
+                    Run a prompt against one or more models. AI scores quality and suggests
+                    improvements. Apply revisions and iterate.
+                </MudText>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/test">Test Runner</MudButton>
+                <MudButton Variant="Variant.Text" Color="Color.Secondary" Href="/optimize">Optimizer</MudButton>
+            </MudCardActions>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private int _promptCount;
+    private int _modelCount;
+
+    protected override void OnInitialized()
+    {
+        _promptCount = Registry.GetAll().Count;
+        _modelCount = ModelManager.GetAll().Count;
+    }
+}

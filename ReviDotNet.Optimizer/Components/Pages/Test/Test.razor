@@ -1,0 +1,335 @@
+@page "/test"
+@inject PromptRegistryService Registry
+@inject TestRunnerService Runner
+@inject ISnackbar Snackbar
+
+<PageTitle>Test Runner — ReviDotNet Optimizer</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Test Runner</MudText>
+
+<MudGrid Spacing="4">
+    <!-- Config Panel -->
+    <MudItem xs="12" md="4">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Configuration</MudText>
+
+            <MudSelect @bind-Value="_selectedPrompt"
+                       Label="Prompt"
+                       Variant="Variant.Outlined"
+                       FullWidth="true"
+                       Class="mb-3">
+                @foreach (var p in Registry.GetAll().OrderBy(p => p.Name))
+                {
+                    <MudSelectItem Value="@(p.Name ?? string.Empty)">@p.Name</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">Models</MudText>
+            <div class="mb-3">
+                @foreach (var model in AllModels)
+                {
+                    <MudCheckBox @bind-Value="model.Selected"
+                                 Label="@model.Name"
+                                 Color="Color.Primary"
+                                 Size="Size.Small" />
+                }
+            </div>
+
+            <MudNumericField @bind-Value="_runsPerModel"
+                             Label="Runs per Model"
+                             Min="1" Max="20"
+                             Variant="Variant.Outlined"
+                             FullWidth="true"
+                             Class="mb-3" />
+
+            <MudCheckBox @bind-Value="_runAnalysis"
+                         Label="AI analysis per result"
+                         Color="Color.Primary"
+                         Class="mb-3" />
+
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">Inputs</MudText>
+            @for (int i = 0; i < _inputs.Count; i++)
+            {
+                int idx = i;
+                <div class="d-flex gap-2 mb-2">
+                    <MudTextField @bind-Value="_inputs[idx].Label"
+                                  Label="Key"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Style="max-width: 130px;" />
+                    <MudTextField @bind-Value="_inputs[idx].Value"
+                                  Label="Value"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  FullWidth="true" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Remove"
+                                   Size="Size.Small"
+                                   OnClick="@(() => _inputs.RemoveAt(idx))"
+                                   Disabled="@(_inputs.Count <= 1)" />
+                </div>
+            }
+            <MudButton Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="@(() => _inputs.Add(new InputEntry()))"
+                       Class="mb-4">
+                Add Input
+            </MudButton>
+
+            <div class="d-flex gap-2">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Success"
+                           FullWidth="true"
+                           StartIcon="@Icons.Material.Filled.PlayArrow"
+                           OnClick="@StartTests"
+                           Disabled="@(_running || string.IsNullOrWhiteSpace(_selectedPrompt))">
+                    @(_running ? "Running..." : "Run Tests")
+                </MudButton>
+                @if (_running)
+                {
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Error"
+                               OnClick="@Cancel">
+                        Stop
+                    </MudButton>
+                }
+            </div>
+
+            @if (_running)
+            {
+                <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-3" />
+            }
+        </MudPaper>
+    </MudItem>
+
+    <!-- Results Panel -->
+    <MudItem xs="12" md="8">
+        @if (_results.Count > 0 || _running)
+        {
+            <!-- Summary Stats -->
+            @if (_results.Count > 0)
+            {
+                <MudGrid Spacing="2" Class="mb-4">
+                    <MudItem xs="6" sm="3">
+                        <MudPaper Class="pa-3 text-center" Elevation="1">
+                            <MudText Typo="Typo.h6">@_results.Count</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Runs</MudText>
+                        </MudPaper>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudPaper Class="pa-3 text-center" Elevation="1">
+                            <MudText Typo="Typo.h6">@(_results.Count > 0 ? $"{_results.Average(r => r.Ttft?.TotalMilliseconds ?? 0):F0}ms" : "—")</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Avg TTFT</MudText>
+                        </MudPaper>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudPaper Class="pa-3 text-center" Elevation="1">
+                            <MudText Typo="Typo.h6">@(_results.Count > 0 ? $"{_results.Average(r => r.TotalTime.TotalMilliseconds):F0}ms" : "—")</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Avg Total</MudText>
+                        </MudPaper>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudPaper Class="pa-3 text-center" Elevation="1">
+                            @{
+                                var withAnalysis = _results.Where(r => r.Analysis is not null).ToList();
+                                string avgQuality = withAnalysis.Count > 0
+                                    ? $"{withAnalysis.Average(r => r.Analysis!.QualityScore):F1}/10"
+                                    : "—";
+                            }
+                            <MudText Typo="Typo.h6">@avgQuality</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Avg Quality</MudText>
+                        </MudPaper>
+                    </MudItem>
+                </MudGrid>
+            }
+
+            <MudDataGrid Items="@_results"
+                         Dense="true"
+                         Hover="true"
+                         Striped="true"
+                         Elevation="2"
+                         RowClick="@((DataGridRowClickEventArgs<TestRunResult> args) => ExpandRow(args))">
+                <Columns>
+                    <PropertyColumn Property="r => r.RunNumber" Title="#" />
+                    <PropertyColumn Property="r => r.ModelName" Title="Model" />
+                    <TemplateColumn Title="TTFT">
+                        <CellTemplate>
+                            @(context.Item.Ttft.HasValue ? $"{context.Item.Ttft.Value.TotalMilliseconds:F0}ms" : "—")
+                        </CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Total">
+                        <CellTemplate>
+                            @($"{context.Item.TotalTime.TotalMilliseconds:F0}ms")
+                        </CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Quality">
+                        <CellTemplate>
+                            @if (context.Item.Analysis is not null)
+                            {
+                                <MudChip T="string" Size="Size.Small"
+                                         Color="@QualityColor(context.Item.Analysis.QualityScore)">
+                                    @context.Item.Analysis.QualityScore/10
+                                </MudChip>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Status">
+                        <CellTemplate>
+                            @if (context.Item.Success)
+                            {
+                                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                            }
+                            else
+                            {
+                                <MudIcon Icon="@Icons.Material.Filled.Error" Color="Color.Error" Size="Size.Small" Title="@context.Item.ErrorMessage" />
+                            }
+                        </CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Output">
+                        <CellTemplate>
+                            <MudText Typo="Typo.body2" Style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                @context.Item.Output
+                            </MudText>
+                        </CellTemplate>
+                    </TemplateColumn>
+                </Columns>
+            </MudDataGrid>
+
+            <!-- Expanded Result Detail -->
+            @if (_expandedResult is not null)
+            {
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <div class="d-flex align-center justify-space-between mb-3">
+                        <MudText Typo="Typo.subtitle1">
+                            Run #@_expandedResult.RunNumber — @_expandedResult.ModelName
+                        </MudText>
+                        <MudIconButton Icon="@Icons.Material.Filled.Close"
+                                       OnClick="@(() => _expandedResult = null)" />
+                    </div>
+
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Full Output</MudText>
+                    <MudPaper Class="pa-3 mb-3"
+                              Style="font-family: monospace; font-size: 0.82rem; white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow-y: auto;"
+                              Elevation="0">
+                        @_expandedResult.Output
+                    </MudPaper>
+
+                    @if (_expandedResult.Analysis is not null)
+                    {
+                        <MudDivider Class="mb-3" />
+                        <MudText Typo="Typo.subtitle2" Class="mb-2">AI Analysis</MudText>
+                        <MudGrid Spacing="2">
+                            <MudItem xs="6" sm="3">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Fulfilled</MudText>
+                                <MudText Typo="Typo.body2">@(_expandedResult.Analysis.FulfilledRequest ? "Yes" : "No")</MudText>
+                            </MudItem>
+                            <MudItem xs="6" sm="3">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Quality</MudText>
+                                <MudText Typo="Typo.body2">@_expandedResult.Analysis.QualityScore / 10</MudText>
+                            </MudItem>
+                            <MudItem xs="12">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Analysis</MudText>
+                                <MudText Typo="Typo.body2">@_expandedResult.Analysis.Analysis</MudText>
+                            </MudItem>
+                            <MudItem xs="12">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Improvements</MudText>
+                                <MudText Typo="Typo.body2">@_expandedResult.Analysis.Improvements</MudText>
+                            </MudItem>
+                        </MudGrid>
+                    }
+                </MudPaper>
+            }
+        }
+        else
+        {
+            <MudPaper Class="pa-8 d-flex flex-column align-center justify-center" Elevation="1" Style="min-height: 300px;">
+                <MudIcon Icon="@Icons.Material.Filled.PlayArrow" Size="Size.Large" Color="Color.Default" Class="mb-2" Style="opacity:0.3;" />
+                <MudText Color="Color.Default" Style="opacity:0.5;">Configure and run tests to see results here.</MudText>
+            </MudPaper>
+        }
+    </MudItem>
+</MudGrid>
+
+@code {
+    [SupplyParameterFromQuery] public string? Prompt { get; set; }
+
+    private record ModelEntry(string Name) { public bool Selected { get; set; } = true; }
+    private record InputEntry { public string Label { get; set; } = string.Empty; public string Value { get; set; } = string.Empty; }
+
+    private List<ModelEntry> AllModels = [];
+    private List<InputEntry> _inputs = [new InputEntry { Label = "Task", Value = string.Empty }];
+    private string _selectedPrompt = string.Empty;
+    private int _runsPerModel = 3;
+    private bool _runAnalysis = true;
+    private bool _running;
+    private CancellationTokenSource? _cts;
+    private List<TestRunResult> _results = [];
+    private TestRunResult? _expandedResult;
+
+    protected override void OnInitialized()
+    {
+        AllModels = ModelManager.GetAll()
+            .Select(m => new ModelEntry(m.Name ?? "unknown"))
+            .ToList();
+
+        if (!string.IsNullOrWhiteSpace(Prompt))
+            _selectedPrompt = Prompt;
+        else
+            _selectedPrompt = Registry.GetAll().FirstOrDefault()?.Name ?? string.Empty;
+    }
+
+    private async Task StartTests()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedPrompt)) return;
+
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        _results.Clear();
+        _expandedResult = null;
+        _running = true;
+
+        var inputs = _inputs
+            .Where(i => !string.IsNullOrWhiteSpace(i.Label))
+            .Select(i => new Input(i.Label, i.Value))
+            .ToList();
+
+        var selectedModels = AllModels.Where(m => m.Selected).Select(m => m.Name);
+        var channel = Runner.RunTests(_selectedPrompt, selectedModels, inputs, _runsPerModel, _runAnalysis, _cts.Token);
+
+        try
+        {
+            await foreach (var result in channel.Reader.ReadAllAsync(_cts.Token))
+            {
+                _results.Add(result);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _running = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void Cancel() => _cts?.Cancel();
+
+    private void ExpandRow(DataGridRowClickEventArgs<TestRunResult> args)
+    {
+        _expandedResult = args.Item == _expandedResult ? null : args.Item;
+    }
+
+    private static Color QualityColor(int score) => score switch
+    {
+        >= 8 => Color.Success,
+        >= 5 => Color.Warning,
+        _ => Color.Error
+    };
+}
