@@ -238,7 +238,11 @@ public class Infer
 		Type? outputType = null,
 		CancellationToken token = default)
 	{
-		// Declarations 
+		// Route through Forge gateway if configured
+		if (ForgeManager.IsConfigured && ForgeManager.Client is not null)
+			return await ForgeManager.Client.GenerateAsync(prompt, inputs, token);
+
+		// Declarations
 		CompletionResult? result;
 		string promptString;
 		List<Message> messages;
@@ -455,6 +459,14 @@ public class Infer
 		Type? outputType = null,
 		[EnumeratorCancellation] CancellationToken cancellationToken = default)
 	{
+		// Route through Forge gateway if configured
+		if (ForgeManager.IsConfigured && ForgeManager.Client is not null)
+		{
+			await foreach (var chunk in ForgeManager.Client.GenerateStreamAsync(prompt, inputs, cancellationToken))
+				yield return chunk;
+			yield break;
+		}
+
 		// Find the model
 		ModelProfile foundModel = FindModel(prompt, modelProfile, modelName);
 

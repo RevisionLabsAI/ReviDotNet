@@ -11,7 +11,7 @@
                        Color="Color.Inherit"
                        Edge="Edge.Start"
                        OnClick="@ToggleDrawer" />
-        <MudText Typo="Typo.h6" Class="ml-2">ReviDotNet Optimizer</MudText>
+        <MudText Typo="Typo.h6" Class="ml-2">ReviDotNet Forge</MudText>
         <MudSpacer />
         <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
                        Color="Color.Inherit"
@@ -43,6 +43,19 @@
             <MudNavLink Href="/optimize"
                         Icon="@Icons.Material.Filled.TrendingUp">
                 Optimizer
+            </MudNavLink>
+            <MudDivider Class="my-2" />
+            <MudNavLink Href="/observer"
+                        Icon="@Icons.Material.Filled.ManageSearch">
+                Observer
+            </MudNavLink>
+            <MudNavLink Href="/usage"
+                        Icon="@Icons.Material.Filled.BarChart">
+                Usage
+            </MudNavLink>
+            <MudNavLink Href="/apikeys"
+                        Icon="@Icons.Material.Filled.Key">
+                API Keys
             </MudNavLink>
         </MudNavMenu>
     </MudDrawer>

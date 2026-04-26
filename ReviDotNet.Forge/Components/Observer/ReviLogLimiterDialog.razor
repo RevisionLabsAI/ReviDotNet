@@ -1,0 +1,179 @@
+@using ReviDotNet.Forge.Services.Observer
+@using Revi
+@inject IReviLogLimiter Limiter
+
+@if (_open)
+{
+    <div class="modal-backdrop" @onclick="Close"></div>
+    <div class="modal limiter">
+        <header>
+            <h3>Logs Hide/Unhide Filters</h3>
+            <button class="close" @onclick="Close">×</button>
+        </header>
+        <section>
+            <p class="hint">Manage level filters (Class.Method = minimum level to show). Lower levels are hidden in the viewer.</p>
+            <div class="row between">
+                <div>
+                    <label>Page size:</label>
+                    <select @bind="_pageSize">
+                        <option value="10">10</option>
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+                <div class="pager">
+                    <button class="secondary" @onclick="PrevPage" disabled="@(_page==0)">Prev</button>
+                    <span>Page @(_page+1) / @TotalPages</span>
+                    <button class="secondary" @onclick="NextPage" disabled="@(_page>=TotalPages-1)">Next</button>
+                </div>
+            </div>
+            <div class="filters">
+                @foreach (var item in PagedItems)
+                {
+                    <div class="row">
+                        <input value="@item.Key" @onchange="e => UpdateKey(item, e.Value?.ToString())" />
+                        <select value="@item.Value" @onchange="e => UpdateLevel(item, e.Value?.ToString())">
+                            @foreach (var lvl in Enum.GetValues<Revi.LogLevel>())
+                            {
+                                <option value="@lvl">@lvl</option>
+                            }
+                        </select>
+                        <button class="danger" @onclick="() => Remove(item)">Remove</button>
+                    </div>
+                }
+            </div>
+            <div class="row">
+                <input placeholder="Class.Method or Method" @bind="_newKey" />
+                <select @bind="_newLevel">
+                    @foreach (var lvl in Enum.GetValues<Revi.LogLevel>())
+                    {
+                        <option value="@lvl">@lvl</option>
+                    }
+                </select>
+                <button @onclick="Add">Add</button>
+            </div>
+
+            <hr />
+            <h4>Hidden Messages (exact call-site)</h4>
+            <p class="hint">These entries suppress a specific call-site entirely: Class.Method:Line</p>
+            <div class="row between">
+                <div>
+                    <label>Page size:</label>
+                    <select @bind="_sitePageSize">
+                        <option value="10">10</option>
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+                <div class="pager">
+                    <button class="secondary" @onclick="PrevSitePage" disabled="@(_sitePage==0)">Prev</button>
+                    <span>Page @(_sitePage+1) / @SiteTotalPages</span>
+                    <button class="secondary" @onclick="NextSitePage" disabled="@(_sitePage>=SiteTotalPages-1)">Next</button>
+                </div>
+            </div>
+            <div class="filters">
+                @foreach (var sk in PagedSites)
+                {
+                    <div class="row">
+                        <input value="@sk" @onchange="e => UpdateSiteKey(sk, e.Value?.ToString())" />
+                        <button class="danger" @onclick="() => RemoveSite(sk)">Remove</button>
+                    </div>
+                }
+            </div>
+            <div class="row">
+                <input placeholder="Class.Method:Line" @bind="_newSite" />
+                <button @onclick="AddSite">Add</button>
+            </div>
+        </section>
+        <footer>
+            <button @onclick="Save">Save to file</button>
+            <button class="secondary" @onclick="Close">Close</button>
+        </footer>
+    </div>
+}
+
+@code {
+    private bool _open;
+    private List<KeyValuePair<string, Revi.LogLevel>> _items = new();
+    private List<string> _sites = new();
+    private string _newKey = string.Empty;
+    private Revi.LogLevel _newLevel = Revi.LogLevel.Warning;
+    private string _newSite = string.Empty;
+
+    private int _page = 0;
+    private int _pageSize = 25;
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(_items.Count / (double)_pageSize));
+    private IEnumerable<KeyValuePair<string, Revi.LogLevel>> PagedItems => _items.OrderBy(k => k.Key, StringComparer.Ordinal).Skip(_page * _pageSize).Take(_pageSize);
+
+    private int _sitePage = 0;
+    private int _sitePageSize = 25;
+    private int SiteTotalPages => Math.Max(1, (int)Math.Ceiling(_sites.Count / (double)_sitePageSize));
+    private IEnumerable<string> PagedSites => _sites.OrderBy(k => k, StringComparer.Ordinal).Skip(_sitePage * _sitePageSize).Take(_sitePageSize);
+
+    public void Show()
+    {
+        _items = Limiter.Entries.ToList();
+        _sites = Limiter.SiteSuppressEntries?.Keys.ToList() ?? new();
+        _page = 0; _sitePage = 0;
+        _open = true;
+        StateHasChanged();
+    }
+
+    private void Close() => _open = false;
+
+    private void Add()
+    {
+        if (string.IsNullOrWhiteSpace(_newKey)) return;
+        _items.Add(new KeyValuePair<string, Revi.LogLevel>(_newKey.Trim(), _newLevel));
+        _newKey = string.Empty;
+    }
+
+    private void AddSite()
+    {
+        if (string.IsNullOrWhiteSpace(_newSite)) return;
+        var key = _newSite.Trim();
+        if (!_sites.Contains(key)) _sites.Add(key);
+        _newSite = string.Empty;
+    }
+
+    private void Remove(KeyValuePair<string, Revi.LogLevel> kv) => _items.Remove(kv);
+
+    private void UpdateKey(KeyValuePair<string, Revi.LogLevel> kv, string? newKey)
+    {
+        if (newKey is null) return;
+        var idx = _items.IndexOf(kv);
+        if (idx >= 0) _items[idx] = new KeyValuePair<string, Revi.LogLevel>(newKey.Trim(), kv.Value);
+    }
+
+    private void UpdateLevel(KeyValuePair<string, Revi.LogLevel> kv, string? newLevel)
+    {
+        if (string.IsNullOrWhiteSpace(newLevel) || !Enum.TryParse<Revi.LogLevel>(newLevel, out var lvl)) return;
+        var idx = _items.IndexOf(kv);
+        if (idx >= 0) _items[idx] = new KeyValuePair<string, Revi.LogLevel>(kv.Key, lvl);
+    }
+
+    private void UpdateSiteKey(string oldKey, string? newKey)
+    {
+        if (string.IsNullOrWhiteSpace(newKey)) return;
+        var idx = _sites.IndexOf(oldKey);
+        if (idx >= 0) _sites[idx] = newKey.Trim();
+    }
+
+    private void RemoveSite(string key) => _sites.Remove(key);
+
+    private void PrevPage() { if (_page > 0) _page--; }
+    private void NextPage() { if (_page < TotalPages - 1) _page++; }
+    private void PrevSitePage() { if (_sitePage > 0) _sitePage--; }
+    private void NextSitePage() { if (_sitePage < SiteTotalPages - 1) _sitePage++; }
+
+    private async Task Save()
+    {
+        Limiter.ReplaceAll(_items, _sites);
+        await Limiter.SaveAsync();
+        _items = Limiter.Entries.ToList();
+        _sites = Limiter.SiteSuppressEntries.Keys.ToList();
+        StateHasChanged();
+    }
+}

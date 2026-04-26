@@ -6,7 +6,7 @@
 
 using Revi;
 
-namespace ReviDotNet.Optimizer.Services;
+namespace ReviDotNet.Forge.Services;
 
 /// <summary>
 /// An AI-generated suggestion for improving a prompt.

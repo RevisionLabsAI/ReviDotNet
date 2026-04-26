@@ -1,0 +1,191 @@
+@using ReviDotNet.Forge.Components.Observer
+@using ReviDotNet.Forge.Services.Observer
+@using MudBlazor
+@using Revi
+@inject IReviLogLimiter Limiter
+@inject IJSRuntime JS
+
+<div class="log-row depth-@Row.Depth level-@Row.Event!.Level.ToString().ToLower() @(IsHighlighted ? "highlight-match" : null) @(IsClientFilteredOut ? "client-filter-hidden" : null)">
+  <div class="glyph open-details"
+       title="Open details"
+       role="button"
+       tabindex="0"
+       @onclick="() => OnOpenDetails.InvokeAsync(Row.Event!)"
+       @onclick:stopPropagation="true"
+       @onkeydown="OnGlyphKeyDown">
+  </div>
+  <div class="content">
+    <div class="title">@Row.Event!.Message</div>
+    <div class="subtitle">
+      @{
+          var method = Row.Event!.Member;
+          var cls = Row.Event!.ClassName;
+          var label = !string.IsNullOrWhiteSpace(cls) && !string.IsNullOrWhiteSpace(method) ? $"{cls}.{method}" : method;
+      }
+      @label@if(Row.Event!.Line is not null){<text> (Line @Row.Event!.Line)</text>}
+    </div>
+  </div>
+  @if (_tags.Count > 0)
+  {
+      <div class="tags" title="Tags">
+          <MudChipSet T="string" ReadOnly="true" Class="tags-set">
+              @foreach (var t in _tags)
+              {
+                  var display = t.Length <= 10 ? t : t[..10] + "…";
+                  <MudChip T="string" DisableRipple="true" Variant="Variant.Filled" Size="Size.Small" Color="Color.Default" Class="tag-chip" Title="@t">@display</MudChip>
+              }
+          </MudChipSet>
+      </div>
+  }
+  @{
+      var localTs = Row.Event!.Timestamp.ToLocalTime();
+      var timeDisplay = $"{localTs:h:mm:ss tt} (+{localTs:fff}ms)";
+  }
+  <div class="time">@timeDisplay</div>
+  <div class="actions" @onclick:stopPropagation="true">
+      <button class="icon-btn" title="More actions" @onclick="ToggleMenu" @onclick:stopPropagation="true">⋮</button>
+      @if (_menuOpen)
+      {
+          <div class="menu">
+              <button class="menu-item" @onclick="CopyThis" @onclick:stopPropagation="true">Copy</button>
+              <button class="menu-item" @onclick="HideMessage" @onclick:stopPropagation="true">Hide Message</button>
+              <button class="menu-item" @onclick="HideMethod" @onclick:stopPropagation="true">Hide Method</button>
+              <button class="menu-item" @onclick="HideClass" @onclick:stopPropagation="true">Hide Class</button>
+          </div>
+      }
+  </div>
+</div>
+
+@code {
+    [Parameter] public LogRow Row { get; set; } = default!;
+    [Parameter] public EventCallback<RlogEvent> OnOpenDetails { get; set; }
+    [Parameter] public bool HighlightEnabled { get; set; }
+    [Parameter] public string? HighlightText { get; set; }
+    [Parameter] public bool ClientFilterEnabled { get; set; }
+    [Parameter] public string? ClientFilterText { get; set; }
+
+    private bool _menuOpen;
+    private readonly List<string> _tags = new();
+    private bool IsHighlighted => HighlightEnabled && MatchesAnyField(Row, HighlightText);
+    private bool IsClientFilteredOut => ClientFilterEnabled && !MatchesAnyField(Row, ClientFilterText);
+
+    private Task OnGlyphKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" || e.Key == " ")
+            return OnOpenDetails.InvokeAsync(Row.Event!);
+        return Task.CompletedTask;
+    }
+
+    private void ToggleMenu() => _menuOpen = !_menuOpen;
+
+    private Revi.LogLevel NextAbove(Revi.LogLevel level) => level switch
+    {
+        Revi.LogLevel.Debug => Revi.LogLevel.Info,
+        Revi.LogLevel.Info => Revi.LogLevel.Warning,
+        Revi.LogLevel.Warning => Revi.LogLevel.Error,
+        Revi.LogLevel.Error => Revi.LogLevel.Fatal,
+        _ => Revi.LogLevel.Fatal
+    };
+
+    protected override void OnParametersSet()
+    {
+        base.OnParametersSet();
+        _tags.Clear();
+        var raw = Row?.Event?.Tags;
+        if (!string.IsNullOrWhiteSpace(raw))
+        {
+            foreach (var s in raw.Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                if (!_tags.Contains(s)) _tags.Add(s);
+        }
+    }
+
+    private async Task HideMessage()
+    {
+        try
+        {
+            var e = Row.Event!;
+            if (string.IsNullOrWhiteSpace(e.Member) || string.IsNullOrWhiteSpace(e.ClassName) || e.Line is null) return;
+            Limiter.SuppressSite($"{e.ClassName}.{e.Member}:{e.Line.Value}");
+            _ = Limiter.SaveAsync();
+        }
+        catch { }
+        finally { _menuOpen = false; }
+    }
+
+    private async Task HideMethod()
+    {
+        try
+        {
+            var e = Row.Event!;
+            if (string.IsNullOrWhiteSpace(e.Member)) return;
+            var key = !string.IsNullOrWhiteSpace(e.ClassName) ? $"{e.ClassName}.{e.Member}" : e.Member!;
+            Limiter.Set(key, NextAbove(e.Level));
+            _ = Limiter.SaveAsync();
+        }
+        catch { }
+        finally { _menuOpen = false; }
+    }
+
+    private async Task HideClass()
+    {
+        try
+        {
+            var e = Row.Event!;
+            if (string.IsNullOrWhiteSpace(e.ClassName)) return;
+            Limiter.Set(e.ClassName, NextAbove(e.Level));
+            _ = Limiter.SaveAsync();
+        }
+        catch { }
+        finally { _menuOpen = false; }
+    }
+
+    private async Task CopyThis()
+    {
+        try
+        {
+            var e = Row.Event!;
+            var method = !string.IsNullOrWhiteSpace(e.ClassName) && !string.IsNullOrWhiteSpace(e.Member)
+                ? $"{e.ClassName}.{e.Member}" : e.Member ?? "";
+            var text = string.Join(":", method, e.Line?.ToString() ?? "", e.Level.ToString().ToLowerInvariant(), e.Message ?? "");
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+        }
+        catch { }
+        finally { _menuOpen = false; }
+    }
+
+    private static bool MatchesAnyField(LogRow row, string? pattern)
+    {
+        if (row.Kind != RowKind.Event || row.Event is null || string.IsNullOrWhiteSpace(pattern)) return false;
+        var t = pattern.Trim();
+        var e = row.Event;
+        if (!string.IsNullOrEmpty(e.Message) && WildcardMatch(e.Message, t)) return true;
+        if (!string.IsNullOrEmpty(e.ClassName) && WildcardMatch(e.ClassName, t)) return true;
+        if (!string.IsNullOrEmpty(e.Member) && WildcardMatch(e.Member, t)) return true;
+        if (!string.IsNullOrEmpty(e.Tags) && WildcardMatch(e.Tags, t)) return true;
+        if (WildcardMatch(e.Level.ToString(), t)) return true;
+        return false;
+    }
+
+    private static bool WildcardMatch(string input, string pattern)
+    {
+        if (string.IsNullOrEmpty(pattern)) return false;
+        if (pattern.IndexOf('*') < 0 && pattern.IndexOf('?') < 0)
+            return input?.IndexOf(pattern, StringComparison.OrdinalIgnoreCase) >= 0;
+        try
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var ch in pattern)
+            {
+                switch (ch)
+                {
+                    case '*': sb.Append(".*"); break;
+                    case '?': sb.Append('.'); break;
+                    default: sb.Append(System.Text.RegularExpressions.Regex.Escape(ch.ToString())); break;
+                }
+            }
+            var regex = new System.Text.RegularExpressions.Regex(sb.ToString(), System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+            return regex.IsMatch(input ?? string.Empty);
+        }
+        catch { return input?.IndexOf(pattern, StringComparison.OrdinalIgnoreCase) >= 0; }
+    }
+}

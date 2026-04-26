@@ -1,0 +1,226 @@
+@using ReviDotNet.Forge.Services.Observer
+@using ReviDotNet.Forge.Components.Observer
+@using Revi
+@using System.Linq
+@inject IReviLogViewerService Svc
+@inject IReviLogLimiter Limiter
+@inject IJSRuntime JS
+
+@if (string.IsNullOrWhiteSpace(InstanceId))
+{
+    <p class="hint pa-2">Select an instance to view logs.</p>
+}
+else
+{
+    <div class="pager">
+        <div class="left">
+            <button class="toggle" title="Toggle sort order" @onclick="ToggleSort">@(Query?.Descending == true ? "Newest First" : "Oldest First")</button>
+            <span class="sep">•</span>
+            <span>Items: @(_totalCount)</span>
+            <span class="sep">•</span>
+            <span>Page @(_pageIndex + 1) of @(_pageCount == 0 ? 1 : _pageCount)</span>
+        </div>
+        <div class="right">
+            <label>Per page
+                <select value="@_pageSize" @onchange="OnPageSizeChanged">
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                    <option value="200">200</option>
+                </select>
+            </label>
+            <div class="nav">
+                <button class="icon-btn" @onclick="FirstPage" disabled="@(_pageIndex <= 0)">⏮</button>
+                <button class="icon-btn" @onclick="PrevPage" disabled="@(_pageIndex <= 0)">◀</button>
+                <button class="icon-btn" @onclick="NextPage" disabled="@(_pageIndex >= _pageCount - 1)">▶</button>
+                <button class="icon-btn" @onclick="LastPage" disabled="@(_pageIndex >= _pageCount - 1)">⏭</button>
+            </div>
+            <button class="icon-btn" title="Export the currently visible page" @onclick="ExportCurrentPage" disabled="@(_rows.Count == 0 || _loading)">⬇ Export Page</button>
+        </div>
+    </div>
+
+    <div class="logs-scroll" @ref="_scrollRef">
+        @if (_rows.Count == 0 && _loading)
+        {
+            <p class="pa-2">Loading…</p>
+        }
+        else if (_rows.Count == 0)
+        {
+            <p class="pa-2">No events.</p>
+        }
+        else
+        {
+            @foreach (var row in _rows)
+            {
+                switch (row.Kind)
+                {
+                    case RowKind.DateHeader:
+                        <div class="date-header">@row.Date.ToLocalTime().ToString("dddd - MMM d, yyyy")</div>;
+                        break;
+                    case RowKind.Event:
+                        <ReviLogRow Row="row" OnOpenDetails="OpenDetails" HighlightEnabled="@HighlightEnabled" HighlightText="@HighlightText" ClientFilterEnabled="@ClientFilterEnabled" ClientFilterText="@ClientFilterText" />
+                        break;
+                }
+            }
+        }
+        @if (_loading && _rows.Count > 0)
+        {
+            <div class="loading-overlay"><span class="dot" title="Loading" aria-label="Loading"></span></div>
+        }
+    </div>
+}
+
+<ReviLogDetailsDialog @ref="_dialog" />
+
+@code {
+    [Parameter] public string? InstanceId { get; set; }
+    [Parameter] public ReviLogQuery? Query { get; set; }
+    [Parameter] public EventCallback<bool> DescendingChanged { get; set; }
+    [Parameter] public bool HighlightEnabled { get; set; }
+    [Parameter] public string? HighlightText { get; set; }
+    [Parameter] public bool ClientFilterEnabled { get; set; }
+    [Parameter] public string? ClientFilterText { get; set; }
+
+    private ReviLogDetailsDialog? _dialog;
+    private readonly List<LogRow> _rows = new();
+    private long _totalCount = 0;
+    private int _pageIndex = 0;
+    private int _pageSize = 50;
+    private int _pageCount => _pageSize <= 0 ? 0 : (int)Math.Ceiling((_totalCount <= 0 ? 0 : (double)_totalCount) / _pageSize);
+    private bool _loading = false;
+    private ElementReference _scrollRef;
+    private double _savedScrollTop = 0;
+
+    public async Task<bool> RefreshAsync()
+    {
+        if (_pageIndex > 0) return false;
+        return await LoadPageAsync(_pageIndex, _pageSize);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await base.OnParametersSetAsync();
+        _pageSize = Query?.PageSize > 0 ? Query.PageSize : _pageSize;
+        _pageIndex = Query?.Page >= 0 ? Query.Page : 0;
+        if (!string.IsNullOrWhiteSpace(InstanceId) && Query is not null)
+            await LoadPageAsync(_pageIndex, _pageSize);
+    }
+
+    private async Task<bool> LoadPageAsync(int page, int pageSize)
+    {
+        if (string.IsNullOrWhiteSpace(InstanceId) || Query is null)
+        {
+            _rows.Clear();
+            _totalCount = 0;
+            _pageIndex = 0;
+            await InvokeAsync(StateHasChanged);
+            return false;
+        }
+
+        try { _savedScrollTop = await JS.InvokeAsync<double>("revi_getScrollTop", _scrollRef); } catch { }
+        _loading = true;
+        await InvokeAsync(StateHasChanged);
+        var changed = false;
+        try
+        {
+            var q = Query with { InstanceId = InstanceId, Page = page, PageSize = pageSize };
+            var prevTotal = _totalCount;
+            _totalCount = await Svc.CountLogsAsync(q);
+
+            var pc = _pageCount;
+            if (pc > 0 && page >= pc) page = Math.Max(0, pc - 1);
+            if (page < 0) page = 0;
+            q = q with { Page = page };
+
+            var events = await Svc.GetLogsPageAsync(q);
+            var parentIds = events.Where(e => !string.IsNullOrWhiteSpace(e.ParentId)).Select(e => e.ParentId!).Distinct().ToList();
+            var parents = parentIds.Count == 0 ? Array.Empty<RlogEvent>() : await Svc.GetChildrenAsync(parentIds);
+            var rows = LogFeedFlattener.Flatten(events, parents.Where(p => !string.IsNullOrWhiteSpace(p.Id)).ToDictionary(p => p.Id!));
+
+            _rows.Clear();
+            _rows.AddRange(rows);
+            _pageIndex = page;
+            _pageSize = pageSize;
+            changed = _totalCount != prevTotal;
+        }
+        catch { }
+        finally
+        {
+            _loading = false;
+            await InvokeAsync(StateHasChanged);
+            try { await JS.InvokeVoidAsync("revi_setScrollTop", _scrollRef, _savedScrollTop); } catch { }
+        }
+        return changed;
+    }
+
+    private void OpenDetails(RlogEvent e) => _dialog?.Show(e);
+
+    private async Task OnPageSizeChanged(ChangeEventArgs e)
+    {
+        if (e?.Value is null) return;
+        if (int.TryParse(e.Value.ToString(), out var newSize))
+        {
+            _savedScrollTop = 0;
+            await LoadPageAsync(0, newSize);
+        }
+    }
+
+    private async Task FirstPage() { _savedScrollTop = 0; await LoadPageAsync(0, _pageSize); }
+    private async Task PrevPage() { _savedScrollTop = 0; await LoadPageAsync(Math.Max(0, _pageIndex - 1), _pageSize); }
+    private async Task NextPage() { _savedScrollTop = 0; await LoadPageAsync(Math.Min(Math.Max(0, _pageCount - 1), _pageIndex + 1), _pageSize); }
+    private async Task LastPage() { _savedScrollTop = 0; await LoadPageAsync(Math.Max(0, _pageCount - 1), _pageSize); }
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        try { Limiter.Changed += OnLimiterChanged; } catch { }
+    }
+
+    private async void OnLimiterChanged()
+    {
+        try { await RefreshAsync(); } catch { }
+    }
+
+    public void Dispose()
+    {
+        try { Limiter.Changed -= OnLimiterChanged; } catch { }
+    }
+
+    private async Task ToggleSort()
+    {
+        try { await DescendingChanged.InvokeAsync(!(Query?.Descending ?? true)); }
+        catch { }
+    }
+
+    private static string CsvEscape(string? s)
+    {
+        if (string.IsNullOrEmpty(s)) return string.Empty;
+        var needsQuotes = s.Contains('"') || s.Contains(',') || s.Contains('\n') || s.Contains('\r');
+        var escaped = s.Replace("\"", "\"\"");
+        return needsQuotes ? $"\"{escaped}\"" : escaped;
+    }
+
+    private async Task ExportCurrentPage()
+    {
+        try
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine(string.Join(',', new[] { "Timestamp","Level","Message","Id","ParentId","Identifier","Cycle","Tags","File","Member","ClassName","Line","MachineId","InstanceId" }));
+            foreach (var r in _rows)
+            {
+                if (r.Kind != RowKind.Event || r.Event is null) continue;
+                var e = r.Event;
+                sb.AppendLine(string.Join(',', new[]
+                {
+                    CsvEscape(e.Timestamp.ToLocalTime().ToString("o")), CsvEscape(e.Level.ToString()), CsvEscape(e.Message),
+                    CsvEscape(e.Id), CsvEscape(e.ParentId), CsvEscape(e.Identifier), CsvEscape(e.Cycle.ToString()),
+                    CsvEscape(e.Tags), CsvEscape(e.File), CsvEscape(e.Member), CsvEscape(e.ClassName),
+                    CsvEscape(e.Line?.ToString()), CsvEscape(e.MachineId), CsvEscape(e.InstanceId)
+                }));
+            }
+            var safe = string.IsNullOrWhiteSpace(InstanceId) ? "unknown" : new string(InstanceId.Where(char.IsLetterOrDigit).ToArray());
+            var fileName = $"revilogs_{safe}_page{_pageIndex + 1}_{DateTime.UtcNow:yyyyMMdd_HHmmss}.csv";
+            await JS.InvokeVoidAsync("revi_saveFile", fileName, "text/csv;charset=utf-8", sb.ToString());
+        }
+        catch { }
+    }
+}

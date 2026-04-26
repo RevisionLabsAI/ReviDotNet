@@ -8,7 +8,7 @@ using System.Text;
 using Microsoft.Extensions.Configuration;
 using Revi;
 
-namespace ReviDotNet.Optimizer.Services;
+namespace ReviDotNet.Forge.Services;
 
 /// <summary>
 /// Provides access to the Revi prompt registry with editing and persistence support.
@@ -19,7 +19,7 @@ public class PromptRegistryService
 
     public PromptRegistryService(IConfiguration configuration)
     {
-        _promptsSourcePath = configuration["Optimizer:PromptsSourcePath"] ?? "RConfigs/Prompts";
+        _promptsSourcePath = configuration["Forge:PromptsSourcePath"] ?? "RConfigs/Prompts";
     }
 
     /// <summary>

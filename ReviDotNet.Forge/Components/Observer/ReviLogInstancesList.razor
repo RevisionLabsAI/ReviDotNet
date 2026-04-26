@@ -1,0 +1,93 @@
+@using ReviDotNet.Forge.Services.Observer
+@inject IReviLogViewerService Svc
+@implements IAsyncDisposable
+
+<Virtualize @ref="_virt" ItemsProvider="LoadInstances" Context="inst" ItemSize="64">
+    <ItemContent>
+        <div @key="inst.Dto.InstanceId" class="instance @(inst.Dto.InstanceId == SelectedInstanceId ? "selected" : null)" @onclick="() => OnSelected.InvokeAsync(inst.Dto)">
+            <div class="row">
+                <div class="left title">Instance #@inst.Number</div>
+                <div class="right seen">Seen @FormatRelative(inst.Dto.LastSeenAt) ago</div>
+            </div>
+            <div class="row small">
+                <div class="left label">Event Count</div>
+                <div class="right value">@inst.Dto.EventCount.ToString("N0") items</div>
+            </div>
+            <div class="row small">
+                <div class="left label">Launched</div>
+                <div class="right value">@inst.Dto.StartedAt.ToLocalTime().ToString("g")</div>
+            </div>
+        </div>
+    </ItemContent>
+    <Placeholder>
+        <div class="pa-2">Loading instances…</div>
+    </Placeholder>
+</Virtualize>
+
+@code {
+    [Parameter] public EventCallback<ReviInstanceDto> OnSelected { get; set; }
+    [Parameter] public string? SelectedInstanceId { get; set; }
+
+    private record ViewInstance(int Number, ReviInstanceDto Dto);
+
+    private Virtualize<ViewInstance>? _virt;
+    private PeriodicTimer? _timer;
+    private CancellationTokenSource? _cts;
+
+    private async ValueTask<ItemsProviderResult<ViewInstance>> LoadInstances(ItemsProviderRequest req)
+    {
+        var raw = await Svc.GetInstancesAsync(req.StartIndex, req.Count);
+        var total = await Svc.CountInstancesAsync();
+        int totalInt = total > int.MaxValue ? int.MaxValue : (int)total;
+        var list = raw.Select((x, i) => new ViewInstance(req.StartIndex + i + 1, x)).ToList();
+        return new ItemsProviderResult<ViewInstance>(list, totalInt);
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _cts = new CancellationTokenSource();
+            _timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+            _ = RunRefreshLoop(_cts.Token);
+        }
+    }
+
+    private async Task RunRefreshLoop(CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested && _timer != null)
+            {
+                var ticked = await _timer.WaitForNextTickAsync(ct);
+                if (!ticked || ct.IsCancellationRequested) break;
+                await InvokeAsync(async () =>
+                {
+                    if (_virt is not null) await _virt.RefreshDataAsync();
+                    else StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { _cts?.Cancel(); } catch { }
+        _timer?.Dispose();
+        _cts?.Dispose();
+        await Task.CompletedTask;
+    }
+
+    private static string FormatRelative(DateTime utc)
+    {
+        var span = DateTime.UtcNow - utc.ToUniversalTime();
+        if (span.TotalSeconds < 60) return $"{Math.Max(0, (int)span.TotalSeconds)}s";
+        if (span.TotalMinutes < 60) return $"{(int)Math.Round(span.TotalMinutes)} minutes";
+        if (span.TotalHours < 24) return $"{(int)Math.Round(span.TotalHours)} hours";
+        if (span.TotalDays < 30) return $"{(int)Math.Round(span.TotalDays)} days";
+        int months = (int)Math.Round(span.TotalDays / 30.0);
+        if (months < 12) return $"{months} months";
+        return $"{(int)Math.Round(span.TotalDays / 365.0)} years";
+    }
+}

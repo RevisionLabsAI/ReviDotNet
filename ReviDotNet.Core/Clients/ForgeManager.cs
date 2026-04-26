@@ -1,0 +1,72 @@
+// ===================================================================
+//  Copyright © 2026 Revision Labs and contributors
+//  SPDX-License-Identifier: MIT
+//  See LICENSE.txt in the project root for full license information.
+// ===================================================================
+
+namespace Revi;
+
+/// <summary>
+/// Optional Forge gateway integration. When a forge.rcfg is present and enabled,
+/// Infer.Completion and Infer.CompletionStream route through Forge instead of calling
+/// providers directly. When absent or disabled, behavior is identical to before.
+/// </summary>
+public static class ForgeManager
+{
+    public static bool IsConfigured { get; private set; }
+    public static ForgeInferClient? Client { get; private set; }
+
+    public static void Init(ForgeInferConfig config)
+    {
+        Client?.Dispose();
+        Client = new ForgeInferClient(config);
+        IsConfigured = true;
+        Util.Log($"ForgeManager: configured for {config.ForgeUrl} as client '{config.ClientId}'");
+    }
+
+    public static void Reset()
+    {
+        Client?.Dispose();
+        Client = null;
+        IsConfigured = false;
+    }
+
+    public static void Load()
+    {
+        try
+        {
+            var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "RConfigs", "forge.rcfg");
+            if (!File.Exists(path)) return;
+
+            var data = RConfigParser.Read(path);
+
+            if (!data.TryGetValue("general.enabled", out var enabledStr)
+                || !bool.TryParse(enabledStr, out var enabled)
+                || !enabled)
+                return;
+
+            data.TryGetValue("general.forge-url", out var forgeUrl);
+            data.TryGetValue("general.api-key", out var apiKey);
+            data.TryGetValue("general.client-id", out var clientId);
+            data.TryGetValue("general.timeout-seconds", out var timeoutStr);
+
+            if (string.IsNullOrWhiteSpace(forgeUrl)) return;
+
+            // Resolve "environment" sentinel for the API key
+            if (string.Equals(apiKey, "environment", StringComparison.OrdinalIgnoreCase))
+                apiKey = Environment.GetEnvironmentVariable("FORGE_API_KEY") ?? string.Empty;
+
+            Init(new ForgeInferConfig
+            {
+                ForgeUrl = forgeUrl,
+                ApiKey = apiKey ?? string.Empty,
+                ClientId = clientId ?? "unknown",
+                TimeoutSeconds = int.TryParse(timeoutStr, out var t) ? t : 300
+            });
+        }
+        catch (Exception ex)
+        {
+            Util.Log($"ForgeManager: failed to load forge.rcfg: {ex.Message}");
+        }
+    }
+}

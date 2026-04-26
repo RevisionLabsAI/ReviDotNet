@@ -1,0 +1,147 @@
+@page "/usage"
+@using ReviDotNet.Forge.Services.Gateway
+@inject UsageDashboardService DashboardSvc
+
+<PageTitle>Usage</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Usage Dashboard</MudText>
+
+<div class="mb-4">
+    <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+        <MudButton Color="@(_range == 1 ? Color.Primary : Color.Default)" OnClick="@(() => SetRange(1))">24h</MudButton>
+        <MudButton Color="@(_range == 7 ? Color.Primary : Color.Default)" OnClick="@(() => SetRange(7))">7d</MudButton>
+        <MudButton Color="@(_range == 30 ? Color.Primary : Color.Default)" OnClick="@(() => SetRange(30))">30d</MudButton>
+    </MudButtonGroup>
+</div>
+
+@if (_summary is not null)
+{
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard>
+                <MudCardContent>
+                    <MudText Typo="Typo.caption">Total Requests</MudText>
+                    <MudText Typo="Typo.h5">@_summary.TotalRequests</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard>
+                <MudCardContent>
+                    <MudText Typo="Typo.caption">Success Rate</MudText>
+                    <MudText Typo="Typo.h5">@(_summary.SuccessRate.ToString("F1"))%</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard>
+                <MudCardContent>
+                    <MudText Typo="Typo.caption">P50 Latency</MudText>
+                    <MudText Typo="Typo.h5">@(_summary.P50LatencyMs)ms</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard>
+                <MudCardContent>
+                    <MudText Typo="Typo.caption">P95 Latency</MudText>
+                    <MudText Typo="Typo.h5">@(_summary.P95LatencyMs)ms</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+
+    <MudGrid Class="mb-4">
+        @if (_summary.ByProvider.Count > 0)
+        {
+            <MudItem xs="12" md="6">
+                <MudCard>
+                    <MudCardHeader><MudCardHeaderContent><MudText Typo="Typo.subtitle1">By Provider</MudText></MudCardHeaderContent></MudCardHeader>
+                    <MudCardContent>
+                        <MudTable T="KeyValuePair<string,int>" Items="@_summary.ByProvider" Dense="true" Hover="false" Elevation="0">
+                            <HeaderContent>
+                                <MudTh>Provider</MudTh>
+                                <MudTh>Requests</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd>@context.Key</MudTd>
+                                <MudTd>@context.Value</MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        }
+        @if (_summary.ByModel.Count > 0)
+        {
+            <MudItem xs="12" md="6">
+                <MudCard>
+                    <MudCardHeader><MudCardHeaderContent><MudText Typo="Typo.subtitle1">By Model</MudText></MudCardHeaderContent></MudCardHeader>
+                    <MudCardContent>
+                        <MudTable T="KeyValuePair<string,int>" Items="@_summary.ByModel" Dense="true" Hover="false" Elevation="0">
+                            <HeaderContent>
+                                <MudTh>Model</MudTh>
+                                <MudTh>Requests</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd>@context.Key</MudTd>
+                                <MudTd>@context.Value</MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@if (_records is not null)
+{
+    <MudTable T="ReviDotNet.Forge.Models.ForgeUsageRecord" Items="@_records" Dense="true" Hover="true" Striped="true">
+        <HeaderContent>
+            <MudTh>Time</MudTh>
+            <MudTh>Client</MudTh>
+            <MudTh>Prompt</MudTh>
+            <MudTh>Model</MudTh>
+            <MudTh>Provider</MudTh>
+            <MudTh>Latency</MudTh>
+            <MudTh>Status</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.Timestamp.ToLocalTime().ToString("MM/dd HH:mm:ss")</MudTd>
+            <MudTd>@context.ClientId</MudTd>
+            <MudTd>@context.PromptName</MudTd>
+            <MudTd>@context.ModelName</MudTd>
+            <MudTd>@context.ProviderName</MudTd>
+            <MudTd>@context.LatencyMs ms</MudTd>
+            <MudTd><MudChip T="string" Color="@(context.Success ? Color.Success : Color.Error)" Size="Size.Small">@(context.Success ? "OK" : "Fail")</MudChip></MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText Class="pa-4">No usage records for this period.</MudText>
+        </NoRecordsContent>
+    </MudTable>
+}
+
+@code {
+    private int _range = 1;
+    private UsageSummary? _summary;
+    private List<ReviDotNet.Forge.Models.ForgeUsageRecord>? _records;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task SetRange(int days)
+    {
+        _range = days;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var since = DateTime.UtcNow.AddDays(-_range);
+        _summary = await DashboardSvc.GetSummaryAsync(since);
+        _records = await DashboardSvc.GetRecentAsync(since);
+    }
+}

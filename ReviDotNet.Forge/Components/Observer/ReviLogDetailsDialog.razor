@@ -1,0 +1,103 @@
+@using Revi
+@using MudBlazor
+@inject IJSRuntime JS
+
+@if (_open && _evt is not null)
+{
+  <div class="modal-backdrop" @onclick="Close"></div>
+  <div class="modal modal-details">
+    <header class="modal-header-details">
+      <h3 class="mud-typography mud-typography-h5">Event Detail</h3>
+      <button class="close-large" @onclick="Close">×</button>
+    </header>
+    <div class="modal-content-split">
+      <section class="modal-left-panel">
+        <MudTable T="(string Key, string? Value)" Items="@_details" Dense="true" Bordered="true" Hover="false">
+          <HeaderContent>
+            <MudTh>Field</MudTh>
+            <MudTh>Value</MudTh>
+          </HeaderContent>
+          <RowTemplate>
+            <MudTd DataLabel="Field">@context.Key</MudTd>
+            <MudTd DataLabel="Value"><code>@context.Value</code></MudTd>
+          </RowTemplate>
+        </MudTable>
+      </section>
+      <section class="modal-right-panel">
+        @if (!string.IsNullOrWhiteSpace(_evt.Object1))
+        {
+          <MudText Typo="Typo.subtitle1">@GetObjectLabel("Object1", _evt.Object1Name)</MudText>
+          <MudTextField @ref="_obj1Ref" Value="@PrettifyIfJson(_evt.Object1!)" ReadOnly="true" Lines="10" FullWidth="true" Variant="Variant.Filled" Margin="Margin.Dense"
+                        Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.ContentCopy" OnAdornmentClick="@(() => CopyAsync(_evt.Object1!))" />
+        }
+        @if (!string.IsNullOrWhiteSpace(_evt.Object2))
+        {
+          <MudDivider Class="my-2" />
+          <MudText Typo="Typo.subtitle1">@GetObjectLabel("Object2", _evt.Object2Name)</MudText>
+          <MudTextField @ref="_obj2Ref" Value="@PrettifyIfJson(_evt.Object2!)" ReadOnly="true" Lines="10" FullWidth="true" Variant="Variant.Filled" Margin="Margin.Dense"
+                        Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.ContentCopy" OnAdornmentClick="@(() => CopyAsync(_evt.Object2!))" />
+        }
+      </section>
+    </div>
+  </div>
+}
+
+@code {
+  private bool _open;
+  private RlogEvent? _evt;
+  private MudTextField<string?>? _obj1Ref;
+  private MudTextField<string?>? _obj2Ref;
+  private List<(string Key, string? Value)> _details = new();
+
+  public void Show(RlogEvent e) { _evt = e; BuildDetails(); _open = true; StateHasChanged(); }
+  private void Close() => _open = false;
+
+  private async Task CopyAsync(string text)
+  {
+    try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", text); }
+    catch { }
+  }
+
+  private static string PrettifyIfJson(string raw)
+  {
+    if (string.IsNullOrWhiteSpace(raw)) return raw;
+    try
+    {
+      var elem = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(raw);
+      return System.Text.Json.JsonSerializer.Serialize(elem, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+    }
+    catch { return raw; }
+  }
+
+  private string GetSourceDisplay()
+  {
+    if (_evt is null) return string.Empty;
+    var cls = string.IsNullOrWhiteSpace(_evt.ClassName) ? string.Empty : _evt.ClassName + ".";
+    var member = _evt.Member ?? string.Empty;
+    var line = _evt.Line is not null ? ":" + _evt.Line.Value : string.Empty;
+    return cls + member + line;
+  }
+
+  private string GetObjectLabel(string objectName, string? variableName) =>
+    !string.IsNullOrWhiteSpace(variableName) ? $"{objectName} ({variableName})" : $"{objectName} (prettified)";
+
+  private void BuildDetails()
+  {
+    _details.Clear();
+    if (_evt is null) return;
+    _details.Add(("Message", _evt.Message));
+    _details.Add(("Id", _evt.Id));
+    _details.Add(("ParentId", _evt.ParentId));
+    _details.Add(("Timestamp (Local ISO)", _evt.Timestamp.ToLocalTime().ToString("O")));
+    _details.Add(("Timestamp (UTC)", _evt.Timestamp.ToUniversalTime().ToString("O")));
+    _details.Add(("Level", _evt.Level.ToString()));
+    _details.Add(("Identifier", _evt.Identifier));
+    _details.Add(("Cycle", _evt.Cycle.ToString()));
+    _details.Add(("Source (Class.Member:Line)", GetSourceDisplay()));
+    _details.Add(("File", _evt.File));
+    _details.Add(("MachineId", _evt.MachineId));
+    _details.Add(("InstanceId", _evt.InstanceId));
+    if (!string.IsNullOrWhiteSpace(_evt.Tags))
+      _details.Add(("Tags", _evt.Tags));
+  }
+}

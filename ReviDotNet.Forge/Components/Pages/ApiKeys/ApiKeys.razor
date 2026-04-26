@@ -1,0 +1,129 @@
+@page "/apikeys"
+@using ReviDotNet.Forge.Models
+@using ReviDotNet.Forge.Services.ApiKeys
+@inject IForgeApiKeyService KeyService
+@inject IDialogService Dialogs
+
+<PageTitle>API Keys</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">API Keys</MudText>
+
+<div class="mb-4">
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+               OnClick="OpenCreateDialog">Generate New Key</MudButton>
+</div>
+
+@if (_keys is not null)
+{
+    <MudDataGrid T="ForgeApiKey" Items="@_keys" Dense="true" Hover="true" Striped="true">
+        <Columns>
+            <PropertyColumn Property="k => k.ClientId" Title="Client ID" />
+            <PropertyColumn Property="k => k.KeyPrefix" Title="Key Prefix" />
+            <TemplateColumn Title="Enabled">
+                <CellTemplate>
+                    <MudSwitch T="bool" Value="@context.Item.Enabled"
+                               ValueChanged="async v => await ToggleEnabled(context.Item, v)"
+                               Color="Color.Primary" />
+                </CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="k => k.CreatedAt" Title="Created" Format="yyyy-MM-dd HH:mm" />
+            <TemplateColumn Title="Last Used">
+                <CellTemplate>
+                    @(context.Item.LastUsedAt.HasValue ? context.Item.LastUsedAt.Value.ToString("yyyy-MM-dd HH:mm") : "Never")
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn>
+                <CellTemplate>
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
+                                   OnClick="() => ConfirmDelete(context.Item)" />
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+    </MudDataGrid>
+}
+
+@if (_showNewKey)
+{
+    <div class="modal-backdrop" @onclick="CloseNewKey"></div>
+    <div class="modal" style="min-width:400px">
+        <header>
+            <h3>New API Key Generated</h3>
+            <button class="close" @onclick="CloseNewKey">×</button>
+        </header>
+        <section>
+            <MudAlert Severity="Severity.Warning" Class="mb-3">Copy this key now — it will not be shown again.</MudAlert>
+            <MudTextField Value="@_newRawKey" ReadOnly="true" Label="API Key" FullWidth="true" Variant="Variant.Outlined"
+                          Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.ContentCopy"
+                          OnAdornmentClick="CopyNewKey" />
+        </section>
+        <footer>
+            <button @onclick="CloseNewKey">Done</button>
+        </footer>
+    </div>
+}
+
+@code {
+    private List<ForgeApiKey>? _keys;
+    private bool _showNewKey;
+    private string? _newRawKey;
+    private string _newClientId = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _keys = await KeyService.GetAllAsync();
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        bool? confirmed = await Dialogs.ShowMessageBox(
+            "Generate API Key",
+            new MarkupString("<label>Client ID:</label><br/><input id='clientIdInput' style='width:100%;margin-top:4px' placeholder='e.g. BetterNamer-Prod' />"),
+            yesText: "Generate", cancelText: "Cancel");
+
+        if (confirmed != true) return;
+        _newClientId = "NewClient";
+        await CreateKeyAsync(_newClientId);
+    }
+
+    private async Task CreateKeyAsync(string clientId)
+    {
+        var (_, raw) = await KeyService.CreateAsync(clientId);
+        _newRawKey = raw;
+        _showNewKey = true;
+        await LoadAsync();
+    }
+
+    private void CloseNewKey()
+    {
+        _showNewKey = false;
+        _newRawKey = null;
+    }
+
+    private async Task CopyNewKey()
+    {
+        // JS clipboard not wired here — user can select+copy
+    }
+
+    private async Task ToggleEnabled(ForgeApiKey key, bool enabled)
+    {
+        await KeyService.SetEnabledAsync(key.Id!, enabled);
+        await LoadAsync();
+    }
+
+    private async Task ConfirmDelete(ForgeApiKey key)
+    {
+        bool? confirmed = await Dialogs.ShowMessageBox(
+            "Confirm Delete",
+            $"Delete key '{key.KeyPrefix}...' for client '{key.ClientId}'? This cannot be undone.",
+            yesText: "Delete", cancelText: "Cancel");
+
+        if (confirmed != true) return;
+        await KeyService.DeleteAsync(key.Id!);
+        await LoadAsync();
+    }
+}

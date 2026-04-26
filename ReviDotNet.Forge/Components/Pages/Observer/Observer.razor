@@ -1,0 +1,307 @@
+@page "/observer"
+@using Revi
+@using ReviDotNet.Forge.Services.Observer
+@using ReviDotNet.Forge.Components.Observer
+@inject IReviLogViewerService LogSvc
+@inject IDialogService Dialogs
+@implements IDisposable
+
+<PageTitle>Observer</PageTitle>
+
+<div class="revi-grid @( _instancesCollapsed ? "instances-collapsed" : null)">
+    <aside>
+        <ReviLogInstancesList SelectedInstanceId="@_instanceId" OnSelected="OnInstanceSelected" />
+    </aside>
+    <section>
+        <div class="toolbar">
+            <button class="chip" title="Collapse/Expand instances list" @onclick="ToggleInstances">
+                @(_instancesCollapsed ? "» Show Instances" : "« Hide Instances")
+            </button>
+            <input class="search" placeholder="search" value="@_searchText" @oninput="OnSearch" />
+            <button class="chip" title="Toggle between Filter and Highlight search modes" @onclick="ToggleSearchMode">@(_highlightMode ? "Highlight" : "Filter")</button>
+            <div class="levels">
+                @foreach (var lvl in _allLevels)
+                {
+                    var active = _levelFilter.Contains(lvl);
+                    <button class=@($"chip level-{lvl.ToString().ToLowerInvariant()} {(active ? "active" : "")}") @onclick="() => ToggleLevel(lvl)">@lvl</button>
+                }
+            </div>
+            <button class="chip" title="Hide/Unhide filters" @onclick="OpenLimiter">Hide/Unhide…</button>
+            <button class="chip" title="Toggle live updates" @onclick="ToggleAutoRefresh">
+                @(_autoRefresh ? "⏸ Pause" : "🔄 Live")
+            </button>
+            @if (!string.IsNullOrWhiteSpace(_instanceId))
+            {
+                <div class="dropdown clear-logs-dropdown">
+                    <button class="chip" disabled="@_clearBusy">🧹 Clear Logs</button>
+                    <div class="menu">
+                        <button @onclick="() => OnClearLogsAsync(ClearLogsRange.All)" disabled="@_clearBusy">Clear All</button>
+                        <button @onclick="() => OnClearLogsAsync(ClearLogsRange.OlderThanHour)" disabled="@_clearBusy">Clear &gt; 1 Hour</button>
+                        <button @onclick="() => OnClearLogsAsync(ClearLogsRange.OlderThanDay)" disabled="@_clearBusy">Clear &gt; 1 Day</button>
+                    </div>
+                </div>
+            }
+        </div>
+        <ReviLogFeed @ref="_feed" InstanceId="@_instanceId" Query="@_query" DescendingChanged="OnDescendingChanged"
+                     HighlightEnabled="@_highlightMode" HighlightText="@_searchText"
+                     ClientFilterEnabled="@_clientFilterEnabled" ClientFilterText="@_clientFilterText" />
+    </section>
+</div>
+
+<ReviLogLimiterDialog @ref="_limiterDlg" />
+
+@code {
+    private string? _instanceId;
+    private bool _descending = true;
+    private bool _autoRefreshFlag = true;
+    private DateTime _lastUpdateUtc = DateTime.MinValue;
+    private bool _autoRefresh
+    {
+        get => _autoRefreshFlag;
+        set
+        {
+            if (_autoRefreshFlag == value) return;
+            _autoRefreshFlag = value;
+            ConfigureAutoRefreshTimer();
+            if (value) _ = _feed?.RefreshAsync();
+        }
+    }
+    private readonly Revi.LogLevel[] _allLevels = Enum.GetValues<Revi.LogLevel>();
+    private HashSet<Revi.LogLevel> _levelFilter = new(Enum.GetValues<Revi.LogLevel>());
+    private ReviLogQuery _query = new(null, null, null, new HashSet<Revi.LogLevel>(Enum.GetValues<Revi.LogLevel>()), null, true, 50, 0);
+    private ReviLogFeed? _feed;
+    private System.Timers.Timer? _autoTimer;
+    private ReviLogLimiterDialog? _limiterDlg;
+    private bool _didInitialRefresh;
+    private bool _refreshAfterNextRender;
+    private bool _instancesCollapsed;
+    private bool _highlightMode;
+    private string? _searchText;
+    private bool _clientFilterEnabled;
+    private string? _clientFilterText;
+    private bool _clearBusy;
+
+    private enum ClearLogsRange { All, OlderThanHour, OlderThanDay }
+
+    void OnInstanceSelected(ReviInstanceDto i)
+    {
+        _instanceId = i.InstanceId;
+        _query = _query with { InstanceId = i.InstanceId, Page = 0, Descending = _descending, Levels = _levelFilter };
+        _refreshAfterNextRender = true;
+        StateHasChanged();
+    }
+
+    void OnDescendingChanged(bool d)
+    {
+        _descending = d;
+        _query = _query with { Descending = d, Page = 0 };
+        _ = _feed?.RefreshAsync();
+        StateHasChanged();
+    }
+
+    void OnSearch(ChangeEventArgs e)
+    {
+        var s = e.Value?.ToString();
+        _searchText = s;
+        if (_highlightMode)
+        {
+            _query = _query with { Search = null, Page = 0 };
+            _clientFilterEnabled = false;
+            _clientFilterText = null;
+        }
+        else
+        {
+            var hasWild = !string.IsNullOrWhiteSpace(s) && (s!.Contains('*') || s.Contains('?'));
+            if (hasWild)
+            {
+                _clientFilterEnabled = true;
+                _clientFilterText = s;
+                _query = _query with { Search = null, Page = 0, PageSize = 500 };
+            }
+            else
+            {
+                _clientFilterEnabled = false;
+                _clientFilterText = null;
+                _query = _query with { Search = s, Page = 0, PageSize = 50 };
+            }
+        }
+        _ = _feed?.RefreshAsync();
+    }
+
+    void ToggleSearchMode()
+    {
+        _highlightMode = !_highlightMode;
+        if (_highlightMode)
+        {
+            _query = _query with { Search = null, Page = 0, PageSize = 50 };
+            _clientFilterEnabled = false;
+            _clientFilterText = null;
+        }
+        else
+        {
+            var s = _searchText;
+            var hasWild = !string.IsNullOrWhiteSpace(s) && (s!.Contains('*') || s.Contains('?'));
+            if (hasWild)
+            {
+                _clientFilterEnabled = true;
+                _clientFilterText = s;
+                _query = _query with { Search = null, Page = 0, PageSize = 500 };
+            }
+            else
+            {
+                _clientFilterEnabled = false;
+                _clientFilterText = null;
+                _query = _query with { Search = _searchText, Page = 0, PageSize = 50 };
+            }
+        }
+        _ = _feed?.RefreshAsync();
+        StateHasChanged();
+    }
+
+    void ToggleInstances() => _instancesCollapsed = !_instancesCollapsed;
+
+    void ToggleLevel(Revi.LogLevel lvl)
+    {
+        if (!_levelFilter.Add(lvl)) _levelFilter.Remove(lvl);
+        _query = _query with { Levels = _levelFilter, Page = 0 };
+        _ = _feed?.RefreshAsync();
+    }
+
+    private async Task OnClearLogsAsync(ClearLogsRange range)
+    {
+        if (string.IsNullOrWhiteSpace(_instanceId)) return;
+
+        string label = range switch
+        {
+            ClearLogsRange.All => "all logs",
+            ClearLogsRange.OlderThanHour => "> 1 hour old logs",
+            ClearLogsRange.OlderThanDay => "> 1 day old logs",
+            _ => "selected logs"
+        };
+
+        bool? confirmed = await Dialogs.ShowMessageBox(
+            "Confirm Clear Logs",
+            $"Are you sure you want to clear {label} for instance '{_instanceId}'? This cannot be undone.",
+            yesText: "Clear", cancelText: "Cancel");
+
+        if (confirmed != true) return;
+
+        _clearBusy = true;
+        StateHasChanged();
+        try
+        {
+            DateTime? cutoffUtc = range switch
+            {
+                ClearLogsRange.OlderThanHour => DateTime.UtcNow.AddHours(-1),
+                ClearLogsRange.OlderThanDay => DateTime.UtcNow.AddDays(-1),
+                _ => null
+            };
+            await LogSvc.ClearInstanceLogsAsync(_instanceId, cutoffUtc);
+            _query = _query with { Page = 0 };
+            _ = _feed?.RefreshAsync();
+        }
+        finally
+        {
+            _clearBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        ConfigureAutoRefreshTimer();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await base.OnAfterRenderAsync(firstRender);
+        if (firstRender && !_didInitialRefresh)
+        {
+            _didInitialRefresh = true;
+            try
+            {
+                var list = await LogSvc.GetInstancesAsync(0, 1);
+                var first = list.FirstOrDefault();
+                if (first is not null)
+                {
+                    _instanceId = first.InstanceId;
+                    _query = _query with { InstanceId = _instanceId, Page = 0, Descending = _descending, Levels = _levelFilter };
+                }
+            }
+            catch { }
+            _refreshAfterNextRender = true;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+        if (_refreshAfterNextRender)
+        {
+            _refreshAfterNextRender = false;
+            try { await (_feed?.RefreshAsync() ?? Task.FromResult(false)); }
+            catch { }
+        }
+    }
+
+    private void ConfigureAutoRefreshTimer()
+    {
+        try
+        {
+            if (_autoRefreshFlag)
+            {
+                if (_autoTimer is null)
+                {
+                    _autoTimer = new System.Timers.Timer(2000);
+                    _autoTimer.AutoReset = true;
+                    _autoTimer.Elapsed += async (_, __) =>
+                    {
+                        try
+                        {
+                            await InvokeAsync(async () =>
+                            {
+                                if (!_autoRefreshFlag) return;
+                                var updated = await (_feed?.RefreshAsync() ?? Task.FromResult(false));
+                                var now = DateTime.UtcNow;
+                                if (updated)
+                                {
+                                    _lastUpdateUtc = now;
+                                    if (_autoTimer != null && Math.Abs(_autoTimer.Interval - 500) > 1)
+                                        _autoTimer.Interval = 500;
+                                }
+                                else if ((now - _lastUpdateUtc) > TimeSpan.FromSeconds(5))
+                                {
+                                    if (_autoTimer != null && Math.Abs(_autoTimer.Interval - 2000) > 1)
+                                        _autoTimer.Interval = 2000;
+                                }
+                            });
+                        }
+                        catch { }
+                    };
+                }
+                _lastUpdateUtc = DateTime.MinValue;
+                _autoTimer.Interval = 2000;
+                _autoTimer.Enabled = true;
+                _autoTimer.Start();
+            }
+            else
+            {
+                _autoTimer?.Stop();
+                if (_autoTimer is not null) _autoTimer.Enabled = false;
+            }
+        }
+        catch { }
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            _autoTimer?.Stop();
+            _autoTimer?.Dispose();
+            _autoTimer = null;
+        }
+        catch { }
+    }
+
+    private void OpenLimiter() => _limiterDlg?.Show();
+    private void ToggleAutoRefresh() => _autoRefresh = !_autoRefresh;
+}

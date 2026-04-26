@@ -8,7 +8,7 @@ using System.Diagnostics;
 using System.Threading.Channels;
 using Revi;
 
-namespace ReviDotNet.Optimizer.Services;
+namespace ReviDotNet.Forge.Services;
 
 /// <summary>
 /// Tracks the result of a single prompt test run.

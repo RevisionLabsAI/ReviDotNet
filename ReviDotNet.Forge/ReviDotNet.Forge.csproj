@@ -5,7 +5,7 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <LangVersion>12</LangVersion>
-        <RootNamespace>ReviDotNet.Optimizer</RootNamespace>
+        <RootNamespace>ReviDotNet.Forge</RootNamespace>
     </PropertyGroup>
 
     <ItemGroup>
@@ -13,6 +13,8 @@
     </ItemGroup>
 
     <ItemGroup>
+        <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="9.0.*" />
+        <PackageReference Include="MongoDB.Driver" Version="3.*" />
         <PackageReference Include="MudBlazor" Version="8.14.0" />
     </ItemGroup>
 
