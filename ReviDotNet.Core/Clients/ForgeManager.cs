@@ -13,21 +13,43 @@ namespace Revi;
 /// </summary>
 public static class ForgeManager
 {
+    /// <summary>Whether Forge has been configured and is active.</summary>
     public static bool IsConfigured { get; private set; }
+
+    /// <summary>The active Forge inference client used for gateway routing.</summary>
     public static ForgeInferClient? Client { get; private set; }
 
+    /// <summary>The active Forge reporter used for direct-route usage reporting.</summary>
+    public static ForgeReporter? Reporter { get; private set; }
+
+    /// <summary>The configuration used to initialise the Forge connection.</summary>
+    public static ForgeInferConfig? Config { get; private set; }
+
+    /// <summary>
+    /// Initialises Forge with the supplied configuration.
+    /// </summary>
+    /// <param name="config">The Forge connection configuration.</param>
     public static void Init(ForgeInferConfig config)
     {
         Client?.Dispose();
+        Reporter?.Dispose();
         Client = new ForgeInferClient(config);
+        Reporter = new ForgeReporter(config.ForgeUrl, config.ApiKey);
+        Config = config;
         IsConfigured = true;
         Util.Log($"ForgeManager: configured for {config.ForgeUrl} as client '{config.ClientId}'");
     }
 
+    /// <summary>
+    /// Resets Forge configuration and disposes active clients.
+    /// </summary>
     public static void Reset()
     {
         Client?.Dispose();
+        Reporter?.Dispose();
         Client = null;
+        Reporter = null;
+        Config = null;
         IsConfigured = false;
     }
 

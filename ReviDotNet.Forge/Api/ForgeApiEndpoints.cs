@@ -6,6 +6,7 @@
 
 using System.Text;
 using Revi;
+using ReviDotNet.Forge.Models;
 using ReviDotNet.Forge.Services;
 using ReviDotNet.Forge.Services.ApiKeys;
 using ReviDotNet.Forge.Services.Gateway;
@@ -21,6 +22,7 @@ public static class ForgeApiEndpoints
         api.MapGet("/health", () => Results.Ok(new { status = "ok", timestamp = DateTime.UtcNow }));
 
         api.MapPost("/infer", HandleInferAsync);
+        api.MapPost("/usage/report", HandleUsageReportAsync);
         api.MapGet("/prompts", HandleListPromptsAsync);
         api.MapGet("/prompts/{name}", HandleGetPromptAsync);
         api.MapGet("/models", HandleListModelsAsync);
@@ -32,6 +34,8 @@ public static class ForgeApiEndpoints
         GatewayRouterService router)
     {
         if (!await ApiKeyAuth.ValidateAsync(context, keyService)) return;
+
+        string apiKeyPrefix = GetApiKeyPrefix(context);
 
         ForgeInferRequest? request;
         try
@@ -58,7 +62,7 @@ public static class ForgeApiEndpoints
             context.Response.Headers.CacheControl = "no-cache";
             context.Response.Headers.Connection = "keep-alive";
 
-            await foreach (var chunk in router.RouteStreamAsync(request, context.RequestAborted))
+            await foreach (var chunk in router.RouteStreamAsync(request, context.RequestAborted, apiKeyPrefix))
             {
                 await context.Response.WriteAsync(chunk, Encoding.UTF8, context.RequestAborted);
                 await context.Response.Body.FlushAsync(context.RequestAborted);
@@ -66,8 +70,8 @@ public static class ForgeApiEndpoints
         }
         else
         {
-            var (success, output, modelName, providerName, error) =
-                await router.RouteAsync(request, context.RequestAborted);
+            var (success, output, modelName, providerName, error, inputTokens, outputTokens) =
+                await router.RouteAsync(request, context.RequestAborted, apiKeyPrefix);
 
             var response = new ForgeInferResponse
             {
@@ -75,12 +79,67 @@ public static class ForgeApiEndpoints
                 Output = output,
                 ModelUsed = modelName,
                 ProviderUsed = providerName,
+                InputTokens = inputTokens > 0 ? inputTokens : null,
+                OutputTokens = outputTokens > 0 ? outputTokens : null,
                 ErrorMessage = error
             };
 
             if (!success) context.Response.StatusCode = 502;
             await context.Response.WriteAsJsonAsync(response);
         }
+    }
+
+    private static async Task HandleUsageReportAsync(
+        HttpContext context,
+        IForgeApiKeyService keyService,
+        UsageDashboardService usageDashboard)
+    {
+        if (!await ApiKeyAuth.ValidateAsync(context, keyService)) return;
+
+        ForgeUsageReportRequest? report;
+        try
+        {
+            report = await context.Request.ReadFromJsonAsync<ForgeUsageReportRequest>();
+        }
+        catch
+        {
+            context.Response.StatusCode = 400;
+            await context.Response.WriteAsJsonAsync(new { error = "Invalid request body" });
+            return;
+        }
+
+        if (report is null || string.IsNullOrWhiteSpace(report.ClientId))
+        {
+            context.Response.StatusCode = 400;
+            await context.Response.WriteAsJsonAsync(new { error = "ClientId is required" });
+            return;
+        }
+
+        await usageDashboard.RecordAsync(new ForgeUsageRecord
+        {
+            ClientId = report.ClientId,
+            ClientApiKeyPrefix = GetApiKeyPrefix(context),
+            Timestamp = DateTime.UtcNow,
+            PromptName = report.PromptName ?? string.Empty,
+            ModelName = report.ModelName,
+            ProviderName = report.ProviderName,
+            Success = report.Success,
+            FailureReason = report.FailureReason,
+            FailoverAttempts = 0,
+            InputTokens = report.InputTokens,
+            OutputTokens = report.OutputTokens,
+            LatencyMs = report.LatencyMs,
+            TtftMs = 0,
+            WasStreaming = report.WasStreaming
+        });
+
+        await context.Response.WriteAsJsonAsync(new { recorded = true });
+    }
+
+    private static string GetApiKeyPrefix(HttpContext context)
+    {
+        string raw = context.Request.Headers["X-Forge-ApiKey"].ToString();
+        return raw.Length > 8 ? raw[..8] + "..." : raw;
     }
 
     private static async Task HandleListPromptsAsync(

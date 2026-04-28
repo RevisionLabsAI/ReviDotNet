@@ -300,10 +300,12 @@ public class InferClient : IDisposable
         List<string> outputs = new List<string>();
         string selected = serverResponse.GetValueOrDefault("text", "");
         string finishReason = serverResponse.GetValueOrDefault("finish_reason", "");
+        int? inputTokens = serverResponse.TryGetValue("input_tokens", out string? itStr) && int.TryParse(itStr, out int itVal) ? itVal : null;
+        int? outputTokens = serverResponse.TryGetValue("output_tokens", out string? otStr) && int.TryParse(otStr, out int otVal) ? otVal : null;
 
-        outputs.Add(selected); // Simulating multiple outputs; adjust based on actual API capabilities
+        outputs.Add(selected);
 
-        return new CompletionResult { FullPrompt = prompt, Outputs = outputs, Selected = selected, FinishReason = finishReason };
+        return new CompletionResult { FullPrompt = prompt, Outputs = outputs, Selected = selected, FinishReason = finishReason, InputTokens = inputTokens, OutputTokens = outputTokens };
     }
     #endregion
     

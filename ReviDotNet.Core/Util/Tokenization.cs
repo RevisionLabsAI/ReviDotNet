@@ -62,9 +62,8 @@ public static partial class Util
     
     public async static Task<int> CountTokens(string inputText)
     {
-	    //var tokens = await Tokenize(inputText);
-	    //return tokens.Count;
-	    return Util.EstTokenCountFromCharCount(inputText.Length);
+	    var tokens = await Tokenize(inputText);
+	    return tokens.Count;
     }
 
     public static bool MayExceedTokenLimit(string text, int maxTokens)

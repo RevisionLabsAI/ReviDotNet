@@ -30,4 +30,14 @@ public class CompletionResult
     /// Reason the model finished generating the response.
     /// </summary>
     public string FinishReason { get; set; }
+
+    /// <summary>
+    /// Number of input (prompt) tokens as reported by the provider. Null if the provider did not return usage data.
+    /// </summary>
+    public int? InputTokens { get; set; }
+
+    /// <summary>
+    /// Number of output (completion) tokens as reported by the provider. Null if the provider did not return usage data.
+    /// </summary>
+    public int? OutputTokens { get; set; }
 }

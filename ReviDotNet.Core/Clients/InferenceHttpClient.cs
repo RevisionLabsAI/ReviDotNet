@@ -198,7 +198,7 @@ internal class InferenceHttpClient : IDisposable
         // Handle Anthropic Claude response format
         if (_config.Protocol == Protocol.Claude)
         {
-            // Anthropic messages response: { content:[{type:"text", text:"..."}], stop_reason, ... }
+            // Anthropic messages response: { content:[{type:"text", text:"..."}], stop_reason, usage:{input_tokens, output_tokens} }
             if (data.TryGetValue("content", out var contentElem) && contentElem.ValueKind == JsonValueKind.Array)
             {
                 foreach (var item in contentElem.EnumerateArray())
@@ -214,8 +214,11 @@ internal class InferenceHttpClient : IDisposable
                 }
             }
             if (data.TryGetValue("stop_reason", out var stopReason))
-            {
                 result["finish_reason"] = stopReason.GetString() ?? string.Empty;
+            if (data.TryGetValue("usage", out var claudeUsage) && claudeUsage.ValueKind == JsonValueKind.Object)
+            {
+                if (claudeUsage.TryGetProperty("input_tokens", out var it)) result["input_tokens"] = it.GetInt32().ToString();
+                if (claudeUsage.TryGetProperty("output_tokens", out var ot)) result["output_tokens"] = ot.GetInt32().ToString();
             }
             return result;
         }
@@ -223,7 +226,7 @@ internal class InferenceHttpClient : IDisposable
         // Handle Gemini response format
         if (_config.Protocol == Protocol.Gemini)
         {
-            if (data.TryGetValue("candidates", out JsonElement candidates) && 
+            if (data.TryGetValue("candidates", out JsonElement candidates) &&
                 candidates.ValueKind == JsonValueKind.Array)
             {
                 JsonElement firstCandidate = candidates[0];
@@ -233,15 +236,15 @@ internal class InferenceHttpClient : IDisposable
                 {
                     JsonElement firstPart = parts[0];
                     if (firstPart.TryGetProperty("text", out JsonElement textElement))
-                    {
                         result.Add("text", textElement.GetString() ?? "");
-                    }
                 }
-                
                 if (firstCandidate.TryGetProperty("finishReason", out JsonElement finishReason))
-                {
                     result.Add("finish_reason", finishReason.GetString() ?? string.Empty);
-                }
+            }
+            if (data.TryGetValue("usageMetadata", out var geminiMeta) && geminiMeta.ValueKind == JsonValueKind.Object)
+            {
+                if (geminiMeta.TryGetProperty("promptTokenCount", out var pt)) result["input_tokens"] = pt.GetInt32().ToString();
+                if (geminiMeta.TryGetProperty("candidatesTokenCount", out var ct)) result["output_tokens"] = ct.GetInt32().ToString();
             }
         }
         else
@@ -252,8 +255,11 @@ internal class InferenceHttpClient : IDisposable
             {
                 result["text"] = outputText.GetString() ?? string.Empty;
                 if (data.TryGetValue("status", out JsonElement statusEl))
-                {
                     result["finish_reason"] = statusEl.GetString() ?? string.Empty;
+                if (data.TryGetValue("usage", out var respUsage) && respUsage.ValueKind == JsonValueKind.Object)
+                {
+                    if (respUsage.TryGetProperty("input_tokens", out var it)) result["input_tokens"] = it.GetInt32().ToString();
+                    if (respUsage.TryGetProperty("output_tokens", out var ot)) result["output_tokens"] = ot.GetInt32().ToString();
                 }
                 return result;
             }
@@ -275,9 +281,15 @@ internal class InferenceHttpClient : IDisposable
                     result.Add("text", contentElement.GetString() ?? "");
                 }
             }
-            
             if (choices[0].TryGetProperty("finish_reason", out JsonElement finishReason))
                 result.Add("finish_reason", finishReason.GetString() ?? string.Empty);
+
+            // OpenAI/vLLM usage: { prompt_tokens, completion_tokens }
+            if (data.TryGetValue("usage", out var oaiUsage) && oaiUsage.ValueKind == JsonValueKind.Object)
+            {
+                if (oaiUsage.TryGetProperty("prompt_tokens", out var pt)) result["input_tokens"] = pt.GetInt32().ToString();
+                if (oaiUsage.TryGetProperty("completion_tokens", out var ct)) result["output_tokens"] = ct.GetInt32().ToString();
+            }
         }
 
         return result;

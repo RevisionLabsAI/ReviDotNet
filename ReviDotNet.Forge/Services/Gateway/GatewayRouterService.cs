@@ -7,6 +7,7 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using ReviDotNet.Forge.Api;
+using ReviDotNet.Forge.Models;
 using ReviDotNet.Forge.Services;
 using Revi;
 
@@ -14,14 +15,16 @@ namespace ReviDotNet.Forge.Services.Gateway;
 
 public class GatewayRouterService(
     PromptRegistryService prompts,
-    IForgeRateLimiterService rateLimiter)
+    IForgeRateLimiterService rateLimiter,
+    UsageDashboardService usageDashboard)
 {
     private readonly ConcurrentDictionary<string, DateTime> _cooldowns = new();
     private const int CooldownSeconds = 60;
 
     public async IAsyncEnumerable<string> RouteStreamAsync(
         ForgeInferRequest request,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        [EnumeratorCancellation] CancellationToken cancellationToken = default,
+        string clientApiKeyPrefix = "")
     {
         var candidates = GetCandidates(request);
         if (candidates.Count == 0)
@@ -31,6 +34,7 @@ public class GatewayRouterService(
         }
 
         var messages = BuildMessages(request);
+        int failoverAttempts = 0;
 
         foreach (var model in candidates)
         {
@@ -58,27 +62,49 @@ public class GatewayRouterService(
             {
                 AddCooldown(model.Name);
                 rateLimiter.Release(model.Provider.Name!);
+                failoverAttempts++;
                 continue;
             }
 
             // Phase 2: stream chunks — try/finally only (no catch) so yield return is legal
             var success = false;
             var startTime = DateTime.UtcNow;
+            var outputBuilder = new System.Text.StringBuilder();
             try
             {
                 await foreach (var chunk in streamHandle.Stream.WithCancellation(cancellationToken))
+                {
+                    outputBuilder.Append(chunk);
                     yield return BuildSseEvent("chunk", System.Text.Json.JsonSerializer.Serialize(new { text = chunk }));
+                }
 
                 var meta = await streamHandle.Completion;
                 if (meta.IsSuccess)
                 {
                     success = true;
+                    long latencyMs = (long)(DateTime.UtcNow - startTime).TotalMilliseconds;
                     yield return BuildSseEvent("done", System.Text.Json.JsonSerializer.Serialize(new
                     {
                         model = model.Name,
                         provider = model.Provider.Name,
-                        latencyMs = (long)(DateTime.UtcNow - startTime).TotalMilliseconds
+                        latencyMs
                     }));
+                    _ = usageDashboard.RecordAsync(new ForgeUsageRecord
+                    {
+                        ClientId = request.ClientId,
+                        ClientApiKeyPrefix = clientApiKeyPrefix,
+                        Timestamp = startTime,
+                        PromptName = request.PromptName ?? string.Empty,
+                        ModelName = model.Name,
+                        ProviderName = model.Provider.Name ?? string.Empty,
+                        Success = true,
+                        FailoverAttempts = failoverAttempts,
+                        InputTokens = EstimateInputTokens(messages),
+                        OutputTokens = Util.EstTokenCountFromCharCount(outputBuilder.Length),
+                        LatencyMs = latencyMs,
+                        TtftMs = 0,
+                        WasStreaming = true
+                    });
                 }
             }
             finally
@@ -88,25 +114,28 @@ public class GatewayRouterService(
             }
 
             if (success) yield break;
+            failoverAttempts++;
         }
 
         yield return BuildSseEvent("error", """{"message":"All candidate models failed or are in cooldown"}""");
     }
 
-    public async Task<(bool Success, string? Output, string ModelName, string ProviderName, string? Error)>
-        RouteAsync(ForgeInferRequest request, CancellationToken cancellationToken = default)
+    public async Task<(bool Success, string? Output, string ModelName, string ProviderName, string? Error, int InputTokens, int OutputTokens)>
+        RouteAsync(ForgeInferRequest request, CancellationToken cancellationToken = default, string clientApiKeyPrefix = "")
     {
         var candidates = GetCandidates(request);
         if (candidates.Count == 0)
-            return (false, null, string.Empty, string.Empty, "No eligible models available");
+            return (false, null, string.Empty, string.Empty, "No eligible models available", 0, 0);
 
         var messages = BuildMessages(request);
+        int failoverAttempts = 0;
 
         foreach (var model in candidates)
         {
             if (IsInCooldown(model.Name)) continue;
             if (model.Provider?.InferenceClient is null) continue;
 
+            DateTime startTime = DateTime.UtcNow;
             await rateLimiter.AcquireAsync(model.Provider.Name!, cancellationToken);
             try
             {
@@ -118,16 +147,51 @@ public class GatewayRouterService(
                     inactivityTimeoutSeconds: request.InactivityTimeoutSeconds,
                     cancellationToken: cancellationToken);
 
-                return (true, result.Selected, model.Name, model.Provider.Name!, null);
+                int inputTokens = result.InputTokens ?? EstimateInputTokens(messages);
+                int outputTokens = result.OutputTokens ?? Util.EstTokenCountFromCharCount(result.Selected?.Length ?? 0);
+                long latencyMs = (long)(DateTime.UtcNow - startTime).TotalMilliseconds;
+
+                _ = usageDashboard.RecordAsync(new ForgeUsageRecord
+                {
+                    ClientId = request.ClientId,
+                    ClientApiKeyPrefix = clientApiKeyPrefix,
+                    Timestamp = startTime,
+                    PromptName = request.PromptName ?? string.Empty,
+                    ModelName = model.Name,
+                    ProviderName = model.Provider.Name ?? string.Empty,
+                    Success = true,
+                    FailoverAttempts = failoverAttempts,
+                    InputTokens = inputTokens,
+                    OutputTokens = outputTokens,
+                    LatencyMs = latencyMs,
+                    TtftMs = 0,
+                    WasStreaming = false
+                });
+
+                return (true, result.Selected, model.Name, model.Provider.Name!, null, inputTokens, outputTokens);
             }
             catch (OperationCanceledException)
             {
-                return (false, null, string.Empty, string.Empty, "Cancelled");
+                _ = usageDashboard.RecordAsync(new ForgeUsageRecord
+                {
+                    ClientId = request.ClientId,
+                    ClientApiKeyPrefix = clientApiKeyPrefix,
+                    Timestamp = startTime,
+                    PromptName = request.PromptName ?? string.Empty,
+                    ModelName = model.Name,
+                    ProviderName = model.Provider?.Name ?? string.Empty,
+                    Success = false,
+                    FailureReason = "Cancelled",
+                    FailoverAttempts = failoverAttempts,
+                    WasStreaming = false
+                });
+                return (false, null, string.Empty, string.Empty, "Cancelled", 0, 0);
             }
             catch (Exception ex)
             {
                 AddCooldown(model.Name);
                 _ = ex;
+                failoverAttempts++;
             }
             finally
             {
@@ -135,7 +199,19 @@ public class GatewayRouterService(
             }
         }
 
-        return (false, null, string.Empty, string.Empty, "All candidate models failed or are in cooldown");
+        _ = usageDashboard.RecordAsync(new ForgeUsageRecord
+        {
+            ClientId = request.ClientId,
+            ClientApiKeyPrefix = clientApiKeyPrefix,
+            Timestamp = DateTime.UtcNow,
+            PromptName = request.PromptName ?? string.Empty,
+            Success = false,
+            FailureReason = "All candidate models failed or are in cooldown",
+            FailoverAttempts = failoverAttempts,
+            WasStreaming = false
+        });
+
+        return (false, null, string.Empty, string.Empty, "All candidate models failed or are in cooldown", 0, 0);
     }
 
     private List<ModelProfile> GetCandidates(ForgeInferRequest request)
@@ -216,6 +292,9 @@ public class GatewayRouterService(
 
     private static bool IsBlocked(string modelName, List<string>? blocked) =>
         blocked?.Contains(modelName, StringComparer.OrdinalIgnoreCase) == true;
+
+    private static int EstimateInputTokens(List<Message> messages) =>
+        Util.EstTokenCountFromCharCount(messages.Sum(m => m.Role.Length + m.Content.Length));
 
     private static string BuildSseEvent(string eventName, string data) =>
         $"event: {eventName}\ndata: {data}\n\n";
