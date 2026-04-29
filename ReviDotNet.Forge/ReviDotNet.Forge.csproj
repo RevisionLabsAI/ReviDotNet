@@ -6,6 +6,8 @@
         <Nullable>enable</Nullable>
         <LangVersion>12</LangVersion>
         <RootNamespace>ReviDotNet.Forge</RootNamespace>
+        <!-- Web app — distributed as Docker image, not a NuGet package -->
+        <IsPackable>false</IsPackable>
     </PropertyGroup>
 
     <ItemGroup>

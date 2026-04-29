@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <TargetFramework>net9.0</TargetFramework>
@@ -6,20 +6,48 @@
         <Nullable>enable</Nullable>
         <LangVersion>12</LangVersion>
         <RootNamespace>ReviDotNet</RootNamespace>
+        <PackageId>ReviDotNet</PackageId>
+        <Description>Configuration-as-code LLM inference and agent orchestration library for .NET</Description>
+        <PackageTags>llm;ai;inference;agents;openai;anthropic;claude;configuration</PackageTags>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <!-- Suppress missing XML doc warnings until all public members are documented -->
+        <NoWarn>$(NoWarn);CS1591</NoWarn>
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="Ben.Demystifier" Version="0.4.1" />
-      <PackageReference Include="JsonSchema.Net.Generation" Version="4.5.1" />
-      <PackageReference Include="Microsoft.DeepDev.TokenizerLib" Version="1.3.3" />
-      <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.0-preview.2.24128.5" />
-      <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.0-preview.2.24128.5" />
-      <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.0-preview.2.24128.5" />
-      <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.0-preview.2.24128.5" />
-      <PackageReference Include="MongoDB.Driver" Version="3.1.0" />
-      <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-      <PackageReference Include="Newtonsoft.Json.Schema" Version="4.0.1" />
-      <PackageReference Include="YamlDotNet" Version="16.1.3" />
+        <None Include="../README.md" Pack="true" PackagePath="" />
     </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Ben.Demystifier" Version="0.4.1" />
+        <PackageReference Include="JsonSchema.Net.Generation" Version="4.5.1" />
+        <PackageReference Include="Microsoft.DeepDev.TokenizerLib" Version="1.3.3" />
+        <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.0" />
+        <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.0" />
+        <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.0" />
+        <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.0" />
+        <PackageReference Include="MongoDB.Driver" Version="3.1.0" />
+        <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+        <PackageReference Include="Newtonsoft.Json.Schema" Version="4.0.1" />
+        <PackageReference Include="YamlDotNet" Version="16.1.3" />
+    </ItemGroup>
+
+    <!-- Bundle the Roslyn analyzer into this package (consumers get compile-time validation automatically) -->
+    <ItemGroup>
+        <ProjectReference Include="../ReviDotNet.Analyzers/ReviDotNet.Analyzers.csproj"
+                          OutputItemType="Analyzer"
+                          ReferenceOutputAssembly="false" />
+    </ItemGroup>
+
+    <Target Name="IncludeAnalyzersInPackage" BeforeTargets="_GetPackageFiles">
+        <ItemGroup>
+            <None Include="$(MSBuildThisFileDirectory)../ReviDotNet.Analyzers/bin/$(Configuration)/netstandard2.0/ReviDotNet.Analyzers.dll"
+                  Condition="Exists('$(MSBuildThisFileDirectory)../ReviDotNet.Analyzers/bin/$(Configuration)/netstandard2.0/ReviDotNet.Analyzers.dll')"
+                  Pack="true"
+                  PackagePath="analyzers/dotnet/cs"
+                  Visible="false" />
+        </ItemGroup>
+    </Target>
 
 </Project>

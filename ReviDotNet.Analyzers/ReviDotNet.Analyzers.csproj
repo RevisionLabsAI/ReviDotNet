@@ -9,6 +9,8 @@
         <Nullable>enable</Nullable>
         <LangVersion>12</LangVersion>
         <IncludeBuildOutput>false</IncludeBuildOutput>
+        <!-- Bundled into the ReviDotNet package via Core's IncludeAnalyzersInPackage target -->
+        <IsPackable>false</IsPackable>
     </PropertyGroup>
 
     <ItemGroup>

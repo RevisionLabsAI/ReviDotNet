@@ -1,0 +1,14 @@
+<Project>
+
+    <PropertyGroup>
+        <Authors>Revision Labs</Authors>
+        <Company>Revision Labs</Company>
+        <Copyright>Copyright 2026 Revision Labs</Copyright>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageProjectUrl>https://github.com/RevisionLabsAI/ReviDotNet</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/RevisionLabsAI/ReviDotNet</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageVersion>0.1.0</PackageVersion>
+    </PropertyGroup>
+
+</Project>
