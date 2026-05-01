@@ -23,8 +23,10 @@ namespace Revi;
 public static class LoopDslParser
 {
     // Matches: -> <target> [when: SIGNAL]  OR  -> <target>
+    // State name pattern: leading word char, followed by word chars or hyphens.
+    // Allows conventional names like "resolve-conflict" and "pick-relevant".
     private static readonly Regex TransitionRegex = new(
-        @"^\s*->\s*(?<target>\[end\]|\w+)\s*(?:\[when:\s*(?<signal>[A-Z_]+)\])?",
+        @"^\s*->\s*(?<target>\[end\]|self|\w[\w-]*)\s*(?:\[when:\s*(?<signal>[A-Z0-9_]+)\])?",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     /// <summary>

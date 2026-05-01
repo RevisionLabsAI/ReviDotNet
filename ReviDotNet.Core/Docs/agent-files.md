@@ -111,7 +111,7 @@ summarize
 Notes:
 - Transition matching checks `signal` first, then first unconditional transition.
 - Signal tokens should be uppercase with underscores (for example `READY_FOR_SUMMARY`).
-- Transition targets currently match word characters (`[A-Za-z0-9_]`), so avoid hyphens in state names.
+- State names in transitions may contain word characters and hyphens (`[A-Za-z0-9_-]`). Names must start with a word character.
 
 ## Signal Validation
 
