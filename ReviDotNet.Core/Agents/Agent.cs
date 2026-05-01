@@ -26,13 +26,24 @@ public static class Agent
     /// <param name="token">Cancellation token for the entire run.</param>
     /// <returns>An AgentResult describing what happened and the final output.</returns>
     /// <exception cref="Exception">Thrown if the agent name is not found in AgentManager.</exception>
-    public static async Task<AgentResult> Run(
+    public static Task<AgentResult> Run(
         string agentName,
         Dictionary<string, object>? inputs = null,
         CancellationToken token = default)
+        => Run(agentName, inputs, AgentRunContext.Root(), token);
+
+    /// <summary>
+    /// Runs a registered agent with explicit run context. Used by InvokeAgentTool to nest
+    /// a sub-agent's ReviLog tree under the parent agent's tool-call event.
+    /// </summary>
+    public static async Task<AgentResult> Run(
+        string agentName,
+        Dictionary<string, object>? inputs,
+        AgentRunContext ctx,
+        CancellationToken token = default)
     {
         AgentProfile profile = FindAgent(agentName);
-        var runner = new AgentRunner(profile, inputs ?? new Dictionary<string, object>(), token);
+        var runner = new AgentRunner(profile, inputs ?? new Dictionary<string, object>(), token, ctx);
         return await runner.RunAsync();
     }
 

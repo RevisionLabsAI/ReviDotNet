@@ -34,6 +34,14 @@ public class AgentStepResponse
     /// </summary>
     [JsonProperty("content")]
     public string Content { get; set; } = "";
+
+    /// <summary>
+    /// Optional extended reasoning/thinking text. Captured separately from Content so it
+    /// can be surfaced as a discrete event in agent traces without polluting the main output.
+    /// Not all models populate this; null/empty is the common case.
+    /// </summary>
+    [JsonProperty("thinking")]
+    public string? Thinking { get; set; }
 }
 
 /// <summary>

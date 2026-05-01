@@ -1,0 +1,658 @@
+@page "/workshop"
+@using Revi
+@using ReviDotNet.Forge.Services.Workshop
+@using ReviDotNet.Forge.Services.Workshop.Models
+@inject IAgentWorkshopService WorkshopSvc
+@inject ISnackbar Snackbar
+
+<PageTitle>Agent Workshop — ReviDotNet Forge</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Agent Workshop</MudText>
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+    Run agents end-to-end with full ReviLog instrumentation, evaluate behavior with an LLM, and revise the
+    <code>.agent</code> file from ranked recommendations.
+</MudText>
+
+<MudTabs Elevation="2" Rounded="true" Color="Color.Primary" @bind-ActivePanelIndex="_activeTab">
+
+    <!-- =========================================================== -->
+    <!-- Tab 1: Run                                                  -->
+    <!-- =========================================================== -->
+    <MudTabPanel Text="Run" Icon="@Icons.Material.Filled.PlayArrow">
+        <div class="pa-4">
+            <MudGrid Spacing="3">
+                <MudItem xs="12" md="4">
+                    <MudSelect @bind-Value="_selectedAgentName"
+                               Label="Agent"
+                               Variant="Variant.Outlined"
+                               FullWidth="true"
+                               Class="mb-3">
+                        @foreach (var a in AgentManager.GetAll().OrderBy(a => a.Name))
+                        {
+                            <MudSelectItem Value="@(a.Name ?? string.Empty)">@a.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+
+                    <MudTextField @bind-Value="_task"
+                                  Label="Task"
+                                  Variant="Variant.Outlined"
+                                  FullWidth="true"
+                                  Lines="4"
+                                  Class="mb-3"
+                                  Placeholder="What should the agent do?" />
+
+                    <MudNumericField @bind-Value="_runs"
+                                     Label="Runs (parallel)"
+                                     Min="1" Max="20"
+                                     Variant="Variant.Outlined"
+                                     FullWidth="true"
+                                     Class="mb-3" />
+
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">Additional inputs (optional)</MudText>
+                    @for (int i = 0; i < _additionalInputs.Count; i++)
+                    {
+                        int idx = i;
+                        <div class="d-flex gap-2 mb-2">
+                            <MudTextField @bind-Value="_additionalInputs[idx].Key"
+                                          Label="Key"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Style="max-width: 130px;" />
+                            <MudTextField @bind-Value="_additionalInputs[idx].Value"
+                                          Label="Value"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Remove"
+                                           Size="Size.Small"
+                                           OnClick="@(() => RemoveInput(idx))" />
+                        </div>
+                    }
+                    <MudButton Variant="Variant.Text"
+                               StartIcon="@Icons.Material.Filled.Add"
+                               OnClick="AddInput"
+                               Class="mb-3">
+                        Add Input
+                    </MudButton>
+
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.PlayArrow"
+                               OnClick="RunAsync"
+                               Disabled="@_running"
+                               FullWidth="true">
+                        @(_running ? "Running…" : "Run")
+                    </MudButton>
+                </MudItem>
+
+                <MudItem xs="12" md="8">
+                    @if (_runUpdates.Count == 0 && !_running)
+                    {
+                        <MudPaper Class="pa-6" Elevation="0" Outlined="true">
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                Pick an agent, enter a task, then click Run. Live trace events appear here as the agent executes.
+                            </MudText>
+                        </MudPaper>
+                    }
+                    else
+                    {
+                        <MudPaper Class="pa-3 mb-3" Elevation="0" Outlined="true">
+                            <MudGrid Spacing="2">
+                                <MudItem xs="3">
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Total runs</MudText>
+                                    <MudText Typo="Typo.h6">@_lastRunStats.TotalRuns</MudText>
+                                </MudItem>
+                                <MudItem xs="3">
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Completed</MudText>
+                                    <MudText Typo="Typo.h6" Color="Color.Success">@_lastRunStats.Completed</MudText>
+                                </MudItem>
+                                <MudItem xs="3">
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Failed</MudText>
+                                    <MudText Typo="Typo.h6" Color="@(_lastRunStats.Failed > 0 ? Color.Error : Color.Default)">@_lastRunStats.Failed</MudText>
+                                </MudItem>
+                                <MudItem xs="3">
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Success rate</MudText>
+                                    <MudText Typo="Typo.h6">@($"{_lastRunStats.SuccessRate * 100:0}%")</MudText>
+                                </MudItem>
+                            </MudGrid>
+                        </MudPaper>
+
+                        @foreach (var (sessionId, runState) in _runStates.OrderBy(kv => kv.Value.RunIndex))
+                        {
+                            <MudExpansionPanel Class="mb-2">
+                                <TitleContent>
+                                    <div class="d-flex align-center gap-2 flex-grow-1">
+                                        <MudIcon Icon="@RunStateIcon(runState)" Color="@RunStateColor(runState)" Size="Size.Small" />
+                                        <MudText Typo="Typo.subtitle2">Run #@(runState.RunIndex + 1) — @sessionId[..Math.Min(8, sessionId.Length)]…</MudText>
+                                        <MudSpacer />
+                                        <MudChip T="string" Size="Size.Small" Color="@RunStateColor(runState)">@RunStateLabel(runState)</MudChip>
+                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@(runState.Events.Count) events</MudChip>
+                                    </div>
+                                </TitleContent>
+                                <ChildContent>
+                                    <div class="pa-2">
+                                        @if (runState.FinalResult != null)
+                                        {
+                                            <MudPaper Class="pa-3 mb-2" Outlined="true">
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">Final output</MudText>
+                                                <MudText Typo="Typo.body2" Style="white-space: pre-wrap; font-family: monospace;">@(runState.FinalResult.FinalOutput ?? "(empty)")</MudText>
+                                            </MudPaper>
+                                        }
+                                        @if (!string.IsNullOrEmpty(runState.ErrorMessage))
+                                        {
+                                            <MudAlert Severity="Severity.Error" Class="mb-2">@runState.ErrorMessage</MudAlert>
+                                        }
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">Trace</MudText>
+                                        <MudList T="RlogEvent" Dense="true">
+                                            @foreach (var ev in runState.Events.OrderBy(e => e.Timestamp))
+                                            {
+                                                <MudListItem T="RlogEvent">
+                                                    <div class="d-flex gap-2 align-center">
+                                                        <MudChip T="string" Size="Size.Small" Color="@StepColor(ev.Identifier)" Variant="Variant.Filled">@ev.Identifier</MudChip>
+                                                        <MudText Typo="Typo.body2">@ev.Message</MudText>
+                                                    </div>
+                                                </MudListItem>
+                                            }
+                                        </MudList>
+                                    </div>
+                                </ChildContent>
+                            </MudExpansionPanel>
+                        }
+                    }
+                </MudItem>
+            </MudGrid>
+        </div>
+    </MudTabPanel>
+
+    <!-- =========================================================== -->
+    <!-- Tab 2: Trace                                                -->
+    <!-- =========================================================== -->
+    <MudTabPanel Text="Trace" Icon="@Icons.Material.Filled.AccountTree">
+        <div class="pa-4">
+            @if (_selectedSessionEvents == null || _selectedSessionEvents.Count == 0)
+            {
+                <MudPaper Class="pa-6" Outlined="true">
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        Run an agent (or select a session in History) to see its full hierarchical trace here.
+                    </MudText>
+                </MudPaper>
+            }
+            else
+            {
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Session @_selectedSessionId</MudText>
+                @foreach (var ev in _selectedSessionEvents.OrderBy(e => e.Timestamp))
+                {
+                    <MudExpansionPanel Class="mb-1">
+                        <TitleContent>
+                            <div class="d-flex align-center gap-2 flex-grow-1">
+                                <MudChip T="string" Size="Size.Small" Color="@StepColor(ev.Identifier)">@ev.Identifier</MudChip>
+                                <MudText Typo="Typo.body2">@ev.Message</MudText>
+                                <MudSpacer />
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">@ev.Timestamp.ToString("HH:mm:ss.fff")</MudText>
+                            </div>
+                        </TitleContent>
+                        <ChildContent>
+                            <div class="pa-2">
+                                @if (!string.IsNullOrEmpty(ev.Tags))
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Tags</MudText>
+                                    <MudText Typo="Typo.body2" Style="font-family: monospace;">@ev.Tags</MudText>
+                                }
+                                @if (!string.IsNullOrEmpty(ev.Object1))
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">@(ev.Object1Name ?? "object1")</MudText>
+                                    <MudPaper Class="pa-2" Outlined="true">
+                                        <pre style="margin:0; white-space:pre-wrap; font-size:12px;">@ev.Object1</pre>
+                                    </MudPaper>
+                                }
+                                @if (!string.IsNullOrEmpty(ev.Object2))
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">@(ev.Object2Name ?? "object2")</MudText>
+                                    <MudPaper Class="pa-2" Outlined="true">
+                                        <pre style="margin:0; white-space:pre-wrap; font-size:12px;">@ev.Object2</pre>
+                                    </MudPaper>
+                                }
+                            </div>
+                        </ChildContent>
+                    </MudExpansionPanel>
+                }
+            }
+        </div>
+    </MudTabPanel>
+
+    <!-- =========================================================== -->
+    <!-- Tab 3: Evaluation                                           -->
+    <!-- =========================================================== -->
+    <MudTabPanel Text="Evaluation" Icon="@Icons.Material.Filled.RateReview">
+        <div class="pa-4">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Analytics"
+                       OnClick="EvaluateAsync"
+                       Disabled="@(_evaluating || _runStates.Count == 0)"
+                       Class="mb-3">
+                @(_evaluating ? "Evaluating…" : $"Evaluate {_runStates.Count} run(s)")
+            </MudButton>
+
+            @if (_evaluation != null)
+            {
+                <MudPaper Class="pa-4 mb-3" Outlined="true">
+                    <MudGrid Spacing="2">
+                        <MudItem xs="3">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Verdict</MudText>
+                            <MudText Typo="Typo.h6">@_evaluation.Verdict</MudText>
+                        </MudItem>
+                        <MudItem xs="3">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Score</MudText>
+                            <MudText Typo="Typo.h6">@($"{_evaluation.Score:0.0}/10")</MudText>
+                        </MudItem>
+                        <MudItem xs="3">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Success rate</MudText>
+                            <MudText Typo="Typo.h6">@($"{_evaluation.SuccessRate * 100:0}%")</MudText>
+                        </MudItem>
+                        <MudItem xs="3">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Avg duration</MudText>
+                            <MudText Typo="Typo.h6">@($"{(_evaluation.Stats?.AverageDurationSeconds ?? 0):0.0}s")</MudText>
+                        </MudItem>
+                    </MudGrid>
+                </MudPaper>
+
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudText Typo="Typo.subtitle1" Class="mb-2">Strengths</MudText>
+                        <MudList T="string" Dense="true">
+                            @foreach (var s in _evaluation.Strengths)
+                            {
+                                <MudListItem T="string" Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">@s</MudListItem>
+                            }
+                        </MudList>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudText Typo="Typo.subtitle1" Class="mb-2">Weaknesses</MudText>
+                        <MudList T="string" Dense="true">
+                            @foreach (var w in _evaluation.Weaknesses)
+                            {
+                                <MudListItem T="string" Icon="@Icons.Material.Filled.Warning" IconColor="Color.Warning">@w</MudListItem>
+                            }
+                        </MudList>
+                    </MudItem>
+                </MudGrid>
+
+                <MudText Typo="Typo.subtitle1" Class="mt-3 mb-2">Recommendations</MudText>
+                @foreach (var rec in _evaluation.Recommendations)
+                {
+                    @RenderRecommendation(rec)
+                }
+
+                @if (_evaluation.Alternatives.Any())
+                {
+                    <MudText Typo="Typo.subtitle1" Class="mt-3 mb-2">Alternatives</MudText>
+                    @foreach (var alt in _evaluation.Alternatives)
+                    {
+                        @RenderRecommendation(alt)
+                    }
+                }
+            }
+
+            @if (_diffStreaming || !string.IsNullOrEmpty(_diffOutput))
+            {
+                <MudDivider Class="my-3" />
+                <MudText Typo="Typo.subtitle1" Class="mb-2">
+                    Proposed revision @(_diffStreaming ? "(streaming…)" : "")
+                </MudText>
+                <MudPaper Class="pa-3 mb-2" Outlined="true">
+                    <pre style="margin:0; white-space:pre-wrap; font-size:12px;">@_diffOutput</pre>
+                </MudPaper>
+                @if (!_diffStreaming && !string.IsNullOrEmpty(_diffOutput))
+                {
+                    <MudButton Variant="Variant.Filled" Color="Color.Success"
+                               StartIcon="@Icons.Material.Filled.Save"
+                               OnClick="ApproveAndSaveAsync"
+                               Disabled="@_savingRevision"
+                               Class="mr-2">
+                        @(_savingRevision ? "Saving…" : "Approve & Save")
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                               StartIcon="@Icons.Material.Filled.Cancel"
+                               OnClick="DiscardDiff">
+                        Discard
+                    </MudButton>
+                }
+            }
+        </div>
+    </MudTabPanel>
+
+    <!-- =========================================================== -->
+    <!-- Tab 4: History                                              -->
+    <!-- =========================================================== -->
+    <MudTabPanel Text="History" Icon="@Icons.Material.Filled.History">
+        <div class="pa-4">
+            <MudButton Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.Refresh"
+                       OnClick="RefreshHistoryAsync"
+                       Disabled="@string.IsNullOrWhiteSpace(_selectedAgentName)"
+                       Class="mb-3">
+                Reload history for @_selectedAgentName
+            </MudButton>
+            @if (_historySessions == null || _historySessions.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">No prior sessions yet for this agent.</MudText>
+            }
+            else
+            {
+                <MudTable Items="_historySessions" Dense="true">
+                    <HeaderContent>
+                        <MudTh>Started</MudTh>
+                        <MudTh>Duration</MudTh>
+                        <MudTh>Exit</MudTh>
+                        <MudTh>Events</MudTh>
+                        <MudTh>Output</MudTh>
+                        <MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</MudTd>
+                        <MudTd>@($"{context.Duration.TotalSeconds:0.0}s")</MudTd>
+                        <MudTd>@(context.ExitReason?.ToString() ?? "?")</MudTd>
+                        <MudTd>@context.EventCount</MudTd>
+                        <MudTd Style="max-width:300px; overflow:hidden; text-overflow:ellipsis;">@context.FinalOutputPreview</MudTd>
+                        <MudTd>
+                            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => LoadSessionAsync(context.SessionId))">View</MudButton>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </div>
+    </MudTabPanel>
+
+</MudTabs>
+
+@code {
+    private int _activeTab;
+    private string _selectedAgentName = "";
+    private string _task = "";
+    private int _runs = 1;
+    private bool _running;
+    private bool _evaluating;
+    private bool _diffStreaming;
+    private bool _savingRevision;
+    private CancellationTokenSource? _cts;
+
+    private readonly List<KvPair> _additionalInputs = new();
+    private readonly List<WorkshopRunUpdate> _runUpdates = new();
+    private readonly Dictionary<string, RunState> _runStates = new();
+    private AggregateStats _lastRunStats = new() { TotalRuns = 0, Completed = 0, Failed = 0, SuccessRate = 0, AverageDurationSeconds = 0, AverageSteps = 0 };
+
+    private string? _selectedSessionId;
+    private IReadOnlyList<RlogEvent>? _selectedSessionEvents;
+
+    private AgentEvaluationResult? _evaluation;
+    private AgentRecommendation? _selectedRecommendation;
+    private string _diffOutput = "";
+
+    private IReadOnlyList<AgentSessionSummary>? _historySessions;
+
+    private sealed class KvPair { public string Key { get; set; } = ""; public string Value { get; set; } = ""; }
+
+    private sealed class RunState
+    {
+        public required int RunIndex { get; init; }
+        public required string SessionId { get; init; }
+        public List<RlogEvent> Events { get; } = new();
+        public AgentResult? FinalResult { get; set; }
+        public string? ErrorMessage { get; set; }
+        public bool IsDone => FinalResult != null || !string.IsNullOrEmpty(ErrorMessage);
+    }
+
+    private void AddInput() => _additionalInputs.Add(new KvPair());
+    private void RemoveInput(int idx) { if (idx >= 0 && idx < _additionalInputs.Count) _additionalInputs.RemoveAt(idx); }
+
+    private async Task RunAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedAgentName) || string.IsNullOrWhiteSpace(_task))
+        {
+            Snackbar.Add("Pick an agent and enter a task first.", Severity.Warning);
+            return;
+        }
+
+        _running = true;
+        _runUpdates.Clear();
+        _runStates.Clear();
+        _evaluation = null;
+        _diffOutput = "";
+        StateHasChanged();
+
+        var additional = _additionalInputs
+            .Where(kv => !string.IsNullOrWhiteSpace(kv.Key))
+            .ToDictionary(kv => kv.Key, kv => (object)kv.Value, StringComparer.OrdinalIgnoreCase);
+
+        _cts?.Dispose();
+        _cts = new CancellationTokenSource();
+
+        var request = new WorkshopRunRequest
+        {
+            AgentName = _selectedAgentName,
+            Task = _task,
+            AdditionalInputs = additional,
+            Runs = _runs
+        };
+
+        try
+        {
+            await foreach (var update in WorkshopSvc.RunMultiAsync(request, _cts.Token))
+            {
+                _runUpdates.Add(update);
+                if (!_runStates.TryGetValue(update.SessionId, out var state))
+                {
+                    state = new RunState { RunIndex = update.RunIndex, SessionId = update.SessionId };
+                    _runStates[update.SessionId] = state;
+                }
+                if (update.Event != null) state.Events.Add(update.Event);
+                if (update.FinalResult != null) state.FinalResult = update.FinalResult;
+                if (!string.IsNullOrEmpty(update.ErrorMessage)) state.ErrorMessage = update.ErrorMessage;
+
+                RecomputeStats();
+                if (state.SessionId == _selectedSessionId || _selectedSessionId == null)
+                {
+                    _selectedSessionId = state.SessionId;
+                    _selectedSessionEvents = state.Events.OrderBy(e => e.Timestamp).ToList();
+                }
+                StateHasChanged();
+            }
+        }
+        catch (OperationCanceledException) { /* user cancelled */ }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Run failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _running = false;
+            StateHasChanged();
+        }
+    }
+
+    private void RecomputeStats()
+    {
+        int total = _runStates.Count;
+        int completed = _runStates.Values.Count(r => r.FinalResult?.ExitReason == AgentExitReason.Completed);
+        int failed = _runStates.Values.Count(r => r.IsDone && r.FinalResult?.ExitReason != AgentExitReason.Completed);
+        double avgDur = 0, avgSteps = 0;
+        var done = _runStates.Values.Where(r => r.FinalResult != null).ToList();
+        if (done.Count > 0)
+        {
+            avgSteps = done.Average(r => r.FinalResult!.TotalSteps);
+            avgDur = done.Where(r => r.Events.Count > 0)
+                .Select(r => (r.Events.Max(e => e.Timestamp) - r.Events.Min(e => e.Timestamp)).TotalSeconds)
+                .DefaultIfEmpty(0)
+                .Average();
+        }
+        _lastRunStats = new AggregateStats
+        {
+            TotalRuns = total,
+            Completed = completed,
+            Failed = failed,
+            SuccessRate = total == 0 ? 0 : (double)completed / total,
+            AverageDurationSeconds = avgDur,
+            AverageSteps = avgSteps
+        };
+    }
+
+    private async Task EvaluateAsync()
+    {
+        if (_runStates.Count == 0) return;
+        _evaluating = true;
+        _evaluation = null;
+        _diffOutput = "";
+        StateHasChanged();
+
+        try
+        {
+            _evaluation = await WorkshopSvc.EvaluateSessionsAsync(
+                _selectedAgentName,
+                _runStates.Keys.ToList(),
+                CancellationToken.None);
+
+            if (_evaluation == null)
+                Snackbar.Add("Evaluator returned no result.", Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Evaluation failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _evaluating = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task GenerateDiffAsync(AgentRecommendation rec)
+    {
+        if (_evaluation == null) return;
+        _selectedRecommendation = rec;
+        _diffOutput = "";
+        _diffStreaming = true;
+        StateHasChanged();
+
+        try
+        {
+            await foreach (var token in WorkshopSvc.GenerateAgentDiffAsync(_selectedAgentName, rec, _evaluation, CancellationToken.None))
+            {
+                _diffOutput += token;
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Diff generation failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _diffStreaming = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ApproveAndSaveAsync()
+    {
+        if (string.IsNullOrEmpty(_diffOutput)) return;
+        _savingRevision = true;
+        StateHasChanged();
+        try
+        {
+            await WorkshopSvc.SaveAgentRevisionAsync(_selectedAgentName, _diffOutput, CancellationToken.None);
+            Snackbar.Add($"Saved new revision of {_selectedAgentName}", Severity.Success);
+            _diffOutput = "";
+            _selectedRecommendation = null;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Save failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _savingRevision = false;
+            StateHasChanged();
+        }
+    }
+
+    private void DiscardDiff()
+    {
+        _diffOutput = "";
+        _selectedRecommendation = null;
+    }
+
+    private async Task LoadSessionAsync(string sessionId)
+    {
+        try
+        {
+            _selectedSessionId = sessionId;
+            _selectedSessionEvents = await WorkshopSvc.GetSessionEventsAsync(sessionId, CancellationToken.None);
+            _activeTab = 1;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load session: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task RefreshHistoryAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedAgentName)) return;
+        try
+        {
+            _historySessions = await WorkshopSvc.GetSessionsForAgentAsync(_selectedAgentName, 0, 50, CancellationToken.None);
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load history: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // ── visual helpers ────────────────────────────────────────────────────────
+
+    private RenderFragment RenderRecommendation(AgentRecommendation rec) => __builder =>
+    {
+        <MudPaper Class="pa-3 mb-2" Outlined="true">
+            <div class="d-flex align-center gap-2 mb-1">
+                <MudText Typo="Typo.subtitle2">@rec.Title</MudText>
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@rec.Impact</MudChip>
+                <MudSpacer />
+                <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.Edit"
+                           OnClick="@(() => GenerateDiffAsync(rec))">
+                    Generate Diff
+                </MudButton>
+            </div>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">@rec.Rationale</MudText>
+        </MudPaper>
+    };
+
+    private static Color StepColor(string? step) => step switch
+    {
+        AgentReviLogger.Step.Start => Color.Primary,
+        AgentReviLogger.Step.LlmRequest => Color.Info,
+        AgentReviLogger.Step.LlmResponse => Color.Info,
+        AgentReviLogger.Step.Thinking => Color.Tertiary,
+        AgentReviLogger.Step.ToolCall => Color.Warning,
+        AgentReviLogger.Step.ToolResult => Color.Warning,
+        AgentReviLogger.Step.StateTransition => Color.Secondary,
+        AgentReviLogger.Step.End => Color.Success,
+        AgentReviLogger.Step.GuardrailViolation => Color.Error,
+        AgentReviLogger.Step.Error => Color.Error,
+        _ => Color.Default
+    };
+
+    private static string RunStateIcon(RunState s) =>
+        s.FinalResult?.ExitReason == AgentExitReason.Completed ? Icons.Material.Filled.CheckCircle :
+        !string.IsNullOrEmpty(s.ErrorMessage) || (s.FinalResult != null && s.FinalResult.ExitReason != AgentExitReason.Completed) ? Icons.Material.Filled.Error :
+        Icons.Material.Filled.HourglassEmpty;
+
+    private static Color RunStateColor(RunState s) =>
+        s.FinalResult?.ExitReason == AgentExitReason.Completed ? Color.Success :
+        !string.IsNullOrEmpty(s.ErrorMessage) || (s.FinalResult != null && s.FinalResult.ExitReason != AgentExitReason.Completed) ? Color.Error :
+        Color.Info;
+
+    private static string RunStateLabel(RunState s) =>
+        s.FinalResult?.ExitReason.ToString() ?? (string.IsNullOrEmpty(s.ErrorMessage) ? "running" : "error");
+}

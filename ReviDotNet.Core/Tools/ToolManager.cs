@@ -31,6 +31,7 @@ public static class ToolManager
     {
         Register(new WebSearchTool());
         Register(new WebScrapeTool());
+        Register(new InvokeAgentTool());
     }
 
     private static void Register(IBuiltInTool tool)

@@ -18,6 +18,7 @@ using ReviDotNet.Forge.Services.ApiKeys;
 using ReviDotNet.Forge.Services.Gateway;
 using ReviDotNet.Forge.Services.Mongo;
 using ReviDotNet.Forge.Services.Observer;
+using ReviDotNet.Forge.Services.Workshop;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
@@ -96,8 +97,27 @@ if (useAuthentication)
     builder.Services.AddCascadingAuthenticationState();
 }
 
-// Revi logging
-builder.Services.AddSingleton<IRlogEventPublisher, NullRlogEventPublisher>();
+// Workshop event bus — in-memory pub/sub for live agent run trace events.
+// Registered before publishers so the BroadcastingRlogEventPublisher can resolve it.
+builder.Services.AddSingleton<IWorkshopEventBus, WorkshopEventBus>();
+
+// Revi logging — choose Mongo-backed or null inner publisher based on config,
+// then wrap with BroadcastingRlogEventPublisher so Workshop UI gets live events.
+if (!string.IsNullOrWhiteSpace(builder.Configuration["Observer:MongoDb:ConnectionString"]))
+{
+    builder.Services.AddSingleton<MongoRlogEventPublisher>();
+    builder.Services.AddSingleton<IRlogEventPublisher>(sp =>
+        new BroadcastingRlogEventPublisher(
+            sp.GetRequiredService<MongoRlogEventPublisher>(),
+            sp.GetRequiredService<IWorkshopEventBus>()));
+}
+else
+{
+    builder.Services.AddSingleton<IRlogEventPublisher>(sp =>
+        new BroadcastingRlogEventPublisher(
+            new NullRlogEventPublisher(),
+            sp.GetRequiredService<IWorkshopEventBus>()));
+}
 builder.Services.AddSingleton<IReviLogger, ReviLogger>();
 builder.Services.AddSingleton(typeof(IReviLogger<>), typeof(ReviLogger<>));
 
@@ -124,6 +144,9 @@ builder.Services.AddSingleton<TestRunnerService>();
 builder.Services.AddSingleton<PromptGeneratorService>();
 builder.Services.AddSingleton<OptimizerService>();
 
+// Agent Workshop
+builder.Services.AddSingleton<IAgentWorkshopService, AgentWorkshopService>();
+
 // Gateway services
 builder.Services.AddSingleton<IForgeRateLimiterService, ForgeRateLimiterService>();
 builder.Services.AddSingleton<GatewayRouterService>();
@@ -134,6 +157,10 @@ builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<IForgeApiKeyService, ForgeApiKeyService>();
 
 WebApplication app = builder.Build();
+
+// Bridge static logging (Util.Log, AgentReviLogger) to the DI container so any
+// agent run anywhere in the process publishes structured events to ReviLog.
+ReviServiceLocator.SetProvider(app.Services);
 
 if (!app.Environment.IsDevelopment())
 {

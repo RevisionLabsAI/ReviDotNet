@@ -17,6 +17,8 @@
             <button class="chip" title="Collapse/Expand instances list" @onclick="ToggleInstances">
                 @(_instancesCollapsed ? "» Show Instances" : "« Hide Instances")
             </button>
+            <input class="search" placeholder="agent name" value="@_agentName" @oninput="OnAgentNameChanged" style="max-width: 180px;" />
+            <input class="search" placeholder="session id" value="@_agentSessionId" @oninput="OnAgentSessionChanged" style="max-width: 160px;" />
             <input class="search" placeholder="search" value="@_searchText" @oninput="OnSearch" />
             <button class="chip" title="Toggle between Filter and Highlight search modes" @onclick="ToggleSearchMode">@(_highlightMode ? "Highlight" : "Filter")</button>
             <div class="levels">
@@ -77,6 +79,8 @@
     private bool _instancesCollapsed;
     private bool _highlightMode;
     private string? _searchText;
+    private string? _agentName;
+    private string? _agentSessionId;
     private bool _clientFilterEnabled;
     private string? _clientFilterText;
     private bool _clearBusy;
@@ -159,6 +163,20 @@
     }
 
     void ToggleInstances() => _instancesCollapsed = !_instancesCollapsed;
+
+    void OnAgentNameChanged(ChangeEventArgs e)
+    {
+        _agentName = e.Value?.ToString();
+        _query = _query with { AgentName = string.IsNullOrWhiteSpace(_agentName) ? null : _agentName, Page = 0 };
+        _ = _feed?.RefreshAsync();
+    }
+
+    void OnAgentSessionChanged(ChangeEventArgs e)
+    {
+        _agentSessionId = e.Value?.ToString();
+        _query = _query with { AgentSessionId = string.IsNullOrWhiteSpace(_agentSessionId) ? null : _agentSessionId, Page = 0 };
+        _ = _feed?.RefreshAsync();
+    }
 
     void ToggleLevel(Revi.LogLevel lvl)
     {

@@ -29,4 +29,13 @@ public sealed class NullReviLogViewerService : IReviLogViewerService
 
     public Task<long> ClearInstanceLogsAsync(string instanceId, DateTime? olderThanUtc = null, CancellationToken ct = default) =>
         Task.FromResult(0L);
+
+    public Task<IReadOnlyList<AgentNameDto>> GetAgentNamesAsync(int take, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<AgentNameDto>>(Array.Empty<AgentNameDto>());
+
+    public Task<IReadOnlyList<AgentSessionDto>> GetAgentSessionsAsync(string agentName, int skip, int take, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<AgentSessionDto>>(Array.Empty<AgentSessionDto>());
+
+    public Task<IReadOnlyList<RlogEvent>> GetSessionEventsAsync(string sessionId, int maxEvents = 5000, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<RlogEvent>>(Array.Empty<RlogEvent>());
 }

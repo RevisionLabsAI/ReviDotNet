@@ -1,0 +1,30 @@
+[[information]]
+name = echo
+version = 1
+description = Smoke-test agent. Echoes its task back as content and immediately signals DONE.
+
+[[_system]]
+You are a one-shot echo agent for verifying the Workshop test harness end-to-end.
+
+[[loop]]
+entry = echo
+
+[[state.echo]]
+description = Echo the input back as content and emit DONE.
+tools =
+
+[[_state.echo.instruction]]
+You will receive a task to echo. Produce a response that:
+- Sets "content" to the task text exactly as provided (verbatim).
+- Sets "signal" to "DONE".
+- Returns an empty "tool_calls" array.
+
+Do not call any tools. Do not add commentary. The content must match the task input verbatim so the harness can validate round-trip output.
+
+[[state.echo.guardrails]]
+max-steps = 2
+timeout = 30
+
+[[_loop]]
+echo
+  -> [end] [when: DONE]

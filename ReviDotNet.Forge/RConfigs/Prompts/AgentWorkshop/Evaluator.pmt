@@ -1,0 +1,45 @@
+[[information]]
+name = AgentWorkshop.Evaluator
+version = 1
+
+[[settings]]
+request-json = true
+guidance-schema-type = json-auto
+
+[[_system]]
+You are an expert AI agent designer. You evaluate how well an agent performed a task by analyzing its full activity log (LLM calls, tool dispatches, state transitions, thinking, final output) and produce a verdict, score, and ranked improvement suggestions.
+
+[[_instruction]]
+Evaluate the following agent run(s) against the original task. Consider whether the agent completed the task, the quality of its output, the efficiency of tool use, the appropriateness of state transitions, any failure patterns, and whether the same goal could be accomplished better.
+
+[Agent Name]
+{Agent Name}
+
+[Agent Definition (.agent file)]
+{Agent Definition}
+
+[Run Count]
+{Run Count}
+
+[Runs]
+{Runs}
+
+Each entry in [Runs] is a JSON object containing:
+- session_id: id of this run
+- activity_log: ordered list of events (start, llm-request, llm-response, thinking, tool-call, tool-result, state-transition, end). Each event includes step type, message, tags, and truncated payloads (object1, object2).
+- final_output: the agent's final content
+- exit_reason: Completed | GuardrailViolation | LoopDetected | Cancelled | Error
+- duration_seconds, total_steps
+
+Return a JSON object with these fields:
+- "verdict": one of "completed" | "partial" | "failed" — your overall judgment across all runs
+- "score": number 1-10, where 10 is perfect
+- "strengths": array of strings — concrete things the agent did well
+- "weaknesses": array of strings — concrete failure patterns or inefficiencies
+- "recommendations": array of objects, ranked by expected impact. Each object has:
+    "title": short imperative summary,
+    "rationale": why this improves the agent,
+    "impact": short phrase like "high — fixes 60% of failures" or "medium — reduces tool calls"
+- "alternatives": array of objects (same shape) — alternative redesigns or strategies that take a different approach (e.g. "split into two cooperating agents", "swap state X for tool Y")
+
+Provide 3-7 recommendations and 1-3 alternatives. Rank from highest to lowest expected impact. Be specific and actionable — point to concrete states, tools, prompts, or guardrails in the .agent file when possible.

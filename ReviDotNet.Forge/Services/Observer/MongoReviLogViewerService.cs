@@ -149,6 +149,25 @@ public sealed class MongoReviLogViewerService : IReviLogViewerService
             f &= Builders<RlogEvent>.Filter.Lte(x => x.Timestamp, q.To.Value);
         if (q.Levels is { Count: > 0 })
             f &= Builders<RlogEvent>.Filter.In(x => x.Level, q.Levels);
+
+        if (!string.IsNullOrWhiteSpace(q.AgentName))
+        {
+            var pattern = $@"(^|\s)agent:{System.Text.RegularExpressions.Regex.Escape(q.AgentName)}(\s|$)";
+            f &= Builders<RlogEvent>.Filter.Regex(x => x.Tags, new BsonRegularExpression(pattern, "i"));
+        }
+        if (!string.IsNullOrWhiteSpace(q.AgentSessionId))
+        {
+            var pattern = $@"(^|\s)agent-session:{System.Text.RegularExpressions.Regex.Escape(q.AgentSessionId)}(\s|$)";
+            f &= Builders<RlogEvent>.Filter.Regex(x => x.Tags, new BsonRegularExpression(pattern, "i"));
+        }
+        if (q.AgentMaxDepth is int maxDepth)
+        {
+            // Match agent-depth:N where N <= maxDepth (handles 0..9 cleanly; broader patterns require numeric extraction).
+            var allowedDepths = string.Join('|', Enumerable.Range(0, Math.Max(0, maxDepth) + 1));
+            var pattern = $@"(^|\s)agent-depth:({allowedDepths})(\s|$)";
+            f &= Builders<RlogEvent>.Filter.Regex(x => x.Tags, new BsonRegularExpression(pattern, "i"));
+        }
+
         if (!string.IsNullOrWhiteSpace(q.Search))
         {
             var regex = new BsonRegularExpression(q.Search, "i");
@@ -165,6 +184,111 @@ public sealed class MongoReviLogViewerService : IReviLogViewerService
             f &= ors;
         }
         return f;
+    }
+
+    public async Task<IReadOnlyList<AgentNameDto>> GetAgentNamesAsync(int take, CancellationToken ct = default)
+    {
+        if (take <= 0) return Array.Empty<AgentNameDto>();
+
+        // Match any tags containing "agent:<name>", look at recent events to keep it bounded.
+        var filter = Builders<RlogEvent>.Filter.Regex(x => x.Tags, new BsonRegularExpression("(^|\\s)agent:", "i"));
+        var recent = await _col.Find(filter)
+            .SortByDescending(x => x.Timestamp)
+            .Limit(5000)
+            .Project(x => new { x.Tags, x.Timestamp })
+            .ToListAsync(ct);
+
+        var counts = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        var rx = new System.Text.RegularExpressions.Regex(@"(?:^|\s)agent:([^\s]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        foreach (var r in recent)
+        {
+            if (string.IsNullOrEmpty(r.Tags)) continue;
+            var m = rx.Match(r.Tags);
+            if (!m.Success) continue;
+            var name = m.Groups[1].Value;
+            counts[name] = counts.GetValueOrDefault(name, 0) + 1;
+        }
+
+        return counts
+            .OrderByDescending(kv => kv.Value)
+            .Take(take)
+            .Select(kv => new AgentNameDto(kv.Key, kv.Value))
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<AgentSessionDto>> GetAgentSessionsAsync(string agentName, int skip, int take, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(agentName) || take <= 0) return Array.Empty<AgentSessionDto>();
+
+        // Pull recent events tagged with this agent and a start step. Aggregate by session id from tags.
+        var startPattern = $@"(^|\s)agent:{System.Text.RegularExpressions.Regex.Escape(agentName)}(\s|$).*?(^|\s)agent-step:start(\s|$)";
+        var filter = Builders<RlogEvent>.Filter.Regex(x => x.Tags, new BsonRegularExpression(startPattern, "is"));
+
+        var docs = await _col.Find(filter)
+            .SortByDescending(x => x.Timestamp)
+            .Skip(skip)
+            .Limit(take)
+            .ToListAsync(ct);
+
+        var rx = new System.Text.RegularExpressions.Regex(@"(?:^|\s)agent-session:([^\s]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var list = new List<AgentSessionDto>(docs.Count);
+        foreach (var d in docs)
+        {
+            if (string.IsNullOrEmpty(d.Tags)) continue;
+            var m = rx.Match(d.Tags);
+            if (!m.Success) continue;
+            string sessionId = m.Groups[1].Value;
+
+            // Count events for this session and find last seen.
+            long count = 1;
+            DateTime lastSeen = d.Timestamp;
+            var sessionFilter = Builders<RlogEvent>.Filter.Regex(x => x.Tags,
+                new BsonRegularExpression($@"(^|\s)agent-session:{System.Text.RegularExpressions.Regex.Escape(sessionId)}(\s|$)", "i"));
+            count = await _col.CountDocumentsAsync(sessionFilter, cancellationToken: ct);
+            var last = await _col.Find(sessionFilter).SortByDescending(x => x.Timestamp).Limit(1).FirstOrDefaultAsync(ct);
+            if (last != null) lastSeen = last.Timestamp;
+
+            list.Add(new AgentSessionDto(sessionId, agentName, d.Timestamp, lastSeen, count, d.Id));
+        }
+        return list;
+    }
+
+    public async Task<IReadOnlyList<RlogEvent>> GetSessionEventsAsync(string sessionId, int maxEvents = 5000, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId)) return Array.Empty<RlogEvent>();
+
+        var pattern = $@"(^|\s)agent-session:{System.Text.RegularExpressions.Regex.Escape(sessionId)}(\s|$)";
+        var filter = Builders<RlogEvent>.Filter.Regex(x => x.Tags, new BsonRegularExpression(pattern, "i"));
+
+        var direct = await _col.Find(filter)
+            .SortBy(x => x.Timestamp)
+            .Limit(maxEvents)
+            .ToListAsync(ct);
+
+        // Expand: also include events whose ParentId chains up to a session event but don't carry the session tag
+        // (e.g. sub-agent root nests under tool-call but starts a new session). One BFS layer should be enough
+        // for the common case; deeper nesting is bounded by MaxAgentDepth (default 3).
+        var resultMap = direct.ToDictionary(e => e.Id ?? Guid.NewGuid().ToString(), e => e);
+        var frontier = direct.Select(e => e.Id).Where(id => !string.IsNullOrEmpty(id)).Cast<string>().ToList();
+
+        for (int hop = 0; hop < 5 && frontier.Count > 0 && resultMap.Count < maxEvents; hop++)
+        {
+            var children = await _col.Find(Builders<RlogEvent>.Filter.In(x => x.ParentId, frontier))
+                .Limit(maxEvents - resultMap.Count)
+                .ToListAsync(ct);
+            if (children.Count == 0) break;
+            var nextFrontier = new List<string>();
+            foreach (var c in children)
+            {
+                if (string.IsNullOrEmpty(c.Id)) continue;
+                if (resultMap.ContainsKey(c.Id)) continue;
+                resultMap[c.Id] = c;
+                nextFrontier.Add(c.Id);
+            }
+            frontier = nextFrontier;
+        }
+
+        return resultMap.Values.OrderBy(e => e.Timestamp).ToList();
     }
 
     private static void EnsureIndexes(IMongoCollection<RlogEvent> col)

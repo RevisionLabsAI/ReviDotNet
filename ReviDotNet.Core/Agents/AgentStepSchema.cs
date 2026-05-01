@@ -41,6 +41,10 @@ public static class AgentStepSchema
             "content": {
               "type": "string",
               "description": "Main reasoning or output text for this step."
+            },
+            "thinking": {
+              "type": ["string", "null"],
+              "description": "Optional extended reasoning surfaced separately from content for trace visibility. Null when not used."
             }
           },
           "additionalProperties": false
