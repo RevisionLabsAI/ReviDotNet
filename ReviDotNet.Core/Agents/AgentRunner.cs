@@ -4,6 +4,7 @@
 //  See LICENSE.txt in the project root for full license information.
 // ===================================================================
 
+using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 
 namespace Revi;
@@ -17,6 +18,12 @@ public class AgentRunner
 {
     /// <summary>Default maximum sub-agent nesting depth when no guardrail override is supplied.</summary>
     public const int DefaultMaxAgentDepth = 3;
+
+    /// <summary>How many invalid-signal corrections to absorb per state activation before terminating.</summary>
+    public const int MaxSignalCorrectionsPerActivation = 2;
+
+    /// <summary>Conservative output-token estimate used in cost projection when a model has no max-tokens configured.</summary>
+    public const int DefaultProjectedOutputTokens = 4096;
 
     // ==============
     //  State
@@ -40,12 +47,17 @@ public class AgentRunner
     private int _currentStateCycles;   // number of times the current state has been activated
     private int _currentStateSteps;    // LLM calls in the current activation
     private int _currentStateToolCalls; // tool calls dispatched in the current activation
+    private int _signalsCorrectedThisActivation; // unknown-signal nudges sent in the current activation
+    private decimal _currentStateCost; // cumulative USD cost of LLM calls in the current activation
+    private bool _currentStateBudgetWarned; // whether the 80% warning has been emitted for this activation
     private DateTime _stateActivatedAt;
 
     // Run-wide tracking
     private readonly List<Message> _conversationHistory = new();
     private readonly List<string> _stateTraversalHistory = new();
     private int _totalSteps;
+    private decimal _runTotalCost; // run-wide cumulative USD cost across all states
+    private bool _runBudgetWarned; // whether the run-wide 80% warning has been emitted
     private string? _lastContent;
 
 
@@ -105,6 +117,15 @@ public class AgentRunner
                 return Terminate(AgentExitReason.GuardrailViolation, guardrailMessage: violationMsg);
             }
 
+            // ── Budget check (graceful: refuses the next call rather than mid-call) ──
+            var (overBudget, budgetMsg) = CheckBudget();
+            if (overBudget)
+            {
+                Util.Log($"AgentRunner '{_profile.Name}': Budget exceeded in state '{_currentStateName}': {budgetMsg}");
+                LogStep(AgentReviLogger.Step.GuardrailViolation, $"Budget exceeded: {budgetMsg}", level: LogLevel.Warning);
+                return Terminate(AgentExitReason.BudgetExceeded, guardrailMessage: budgetMsg);
+            }
+
             // ── Loop detection check ─────────────────────────────────────────
             if (_currentState.Guardrails.LoopDetection == true && DetectLoop())
             {
@@ -141,6 +162,18 @@ public class AgentRunner
 
             _currentStateSteps++;
             _totalSteps++;
+
+            // ── Accumulate actual cost from provider-reported usage ──────────
+            if (llmResult != null)
+            {
+                ModelProfile? resolvedModel = ResolveModel();
+                if (resolvedModel != null)
+                {
+                    decimal actualCost = ComputeCost(resolvedModel, llmResult.InputTokens, llmResult.OutputTokens);
+                    _currentStateCost += actualCost;
+                    _runTotalCost += actualCost;
+                }
+            }
 
             string rawResponse = llmResult?.Selected ?? "";
             _conversationHistory.Add(new Message("assistant", rawResponse));
@@ -221,8 +254,47 @@ public class AgentRunner
 
             if (transition == null)
             {
-                // No matching transition — stay in current state for next step
-                Util.Log($"AgentRunner '{_profile.Name}': No transition found for signal '{signal}' in state '{_currentStateName}'. Staying.");
+                // Two cases:
+                //   (a) signal is non-null but unknown — typo / hallucination. Nudge the LLM.
+                //   (b) signal is null and there's no unconditional fallback. Stay (existing behaviour).
+                if (!string.IsNullOrEmpty(signal))
+                {
+                    _signalsCorrectedThisActivation++;
+
+                    var validSignals = _profile.ValidSignalsByState.TryGetValue(_currentStateName, out var s)
+                        ? s
+                        : (IReadOnlySet<string>)new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                    if (_signalsCorrectedThisActivation > MaxSignalCorrectionsPerActivation)
+                    {
+                        string termMsg = $"State '{_currentStateName}' received {_signalsCorrectedThisActivation} unknown signals " +
+                                         $"(latest: '{signal}'); declared signals are " +
+                                         $"[{string.Join(", ", validSignals)}].";
+                        Util.Log($"AgentRunner '{_profile.Name}': {termMsg}");
+                        LogStep(AgentReviLogger.Step.Error, termMsg, level: LogLevel.Error);
+                        return Terminate(AgentExitReason.InvalidSignal, guardrailMessage: termMsg);
+                    }
+
+                    string validList = validSignals.Count > 0
+                        ? string.Join(", ", validSignals)
+                        : "(none declared from this state)";
+                    string nudge = $"Signal '{signal}' is not valid from state '{_currentStateName}'. " +
+                                   $"Valid signals are: {validList}. " +
+                                   "Re-emit your decision with one of these signals.";
+                    _conversationHistory.Add(new Message("user", nudge));
+
+                    Util.Log($"AgentRunner '{_profile.Name}': Nudging LLM after unknown signal '{signal}' (valid: {validList}).");
+                    LogStep(
+                        AgentReviLogger.Step.Error,
+                        $"Unknown signal '{signal}' from state '{_currentStateName}'; nudged LLM with valid set.",
+                        object1: new { signal, validSignals = validSignals.ToArray() },
+                        object1Name: "signal-correction",
+                        level: LogLevel.Warning);
+                }
+                else
+                {
+                    Util.Log($"AgentRunner '{_profile.Name}': No transition found (no signal, no fallback) in state '{_currentStateName}'. Staying.");
+                }
                 continue;
             }
 
@@ -281,6 +353,9 @@ public class AgentRunner
         // Reset per-activation counters
         _currentStateSteps = 0;
         _currentStateToolCalls = 0;
+        _signalsCorrectedThisActivation = 0;
+        _currentStateCost = 0m;
+        _currentStateBudgetWarned = false;
         _stateActivatedAt = DateTime.UtcNow;
 
         _stateTraversalHistory.Add(stateName);
@@ -310,6 +385,125 @@ public class AgentRunner
         }
 
         return (false, null);
+    }
+
+    /// <summary>
+    /// Checks the projected cost of the next LLM call against the state-level and run-wide
+    /// cost budgets. Returns a violation message that callers should pair with
+    /// <see cref="AgentExitReason.BudgetExceeded"/>. Emits a one-shot 80%-of-budget warning
+    /// event the first time either budget crosses that threshold.
+    /// </summary>
+    private (bool exceeded, string? message) CheckBudget()
+    {
+        decimal? stateBudget = _currentState.Guardrails.CostBudget;
+        decimal? runBudget = _profile.RunCostBudget;
+
+        if (!stateBudget.HasValue && !runBudget.HasValue)
+            return (false, null);
+
+        decimal projected = ProjectNextCallCost();
+
+        if (stateBudget.HasValue)
+        {
+            decimal projectedTotal = _currentStateCost + projected;
+            if (projectedTotal > stateBudget.Value)
+            {
+                return (true, $"State '{_currentStateName}' cost-budget would be exceeded " +
+                              $"(budget {stateBudget.Value:0.####}, spent {_currentStateCost:0.####}, " +
+                              $"projected next call ~{projected:0.####}).");
+            }
+
+            if (!_currentStateBudgetWarned && projectedTotal >= stateBudget.Value * 0.80m)
+            {
+                _currentStateBudgetWarned = true;
+                LogStep(
+                    AgentReviLogger.Step.GuardrailViolation,
+                    $"State cost-budget at {(projectedTotal / stateBudget.Value):P0} " +
+                    $"(spent {_currentStateCost:0.####} of {stateBudget.Value:0.####}).",
+                    level: LogLevel.Warning);
+            }
+        }
+
+        if (runBudget.HasValue)
+        {
+            decimal projectedTotal = _runTotalCost + projected;
+            if (projectedTotal > runBudget.Value)
+            {
+                return (true, $"Run cost-budget would be exceeded " +
+                              $"(budget {runBudget.Value:0.####}, spent {_runTotalCost:0.####}, " +
+                              $"projected next call ~{projected:0.####}).");
+            }
+
+            if (!_runBudgetWarned && projectedTotal >= runBudget.Value * 0.80m)
+            {
+                _runBudgetWarned = true;
+                LogStep(
+                    AgentReviLogger.Step.GuardrailViolation,
+                    $"Run cost-budget at {(projectedTotal / runBudget.Value):P0} " +
+                    $"(spent {_runTotalCost:0.####} of {runBudget.Value:0.####}).",
+                    level: LogLevel.Warning);
+            }
+        }
+
+        return (false, null);
+    }
+
+    /// <summary>
+    /// Worst-case USD cost for the next LLM call against the current state's resolved model.
+    /// Estimates input tokens from the current message buffer (rough char/4 heuristic) and
+    /// output tokens from the model's configured MaxTokens (or DefaultProjectedOutputTokens).
+    /// Returns 0 when the model has no cost rates configured.
+    /// </summary>
+    private decimal ProjectNextCallCost()
+    {
+        ModelProfile? model = ResolveModel();
+        if (model == null) return 0m;
+        if (!model.CostPerMillionInputTokens.HasValue && !model.CostPerMillionOutputTokens.HasValue)
+            return 0m;
+
+        int approxInputChars = 0;
+        if (!string.IsNullOrEmpty(_profile.SystemPrompt))
+            approxInputChars += _profile.SystemPrompt.Length;
+        if (!string.IsNullOrEmpty(_currentState.Instruction))
+            approxInputChars += _currentState.Instruction.Length;
+        foreach (var m in _conversationHistory)
+            if (!string.IsNullOrEmpty(m.Content))
+                approxInputChars += m.Content.Length;
+
+        // ~4 characters per token is the standard rough estimate for English text.
+        int estInputTokens = Math.Max(1, approxInputChars / 4);
+
+        int estOutputTokens = ParseInt(model.MaxTokens) ?? DefaultProjectedOutputTokens;
+
+        return ComputeCost(model, estInputTokens, estOutputTokens);
+    }
+
+    /// <summary>
+    /// Translates a token usage pair into USD cost using the model's per-million-token rates.
+    /// Either rate may be unset (no cost contribution from that side).
+    /// </summary>
+    private static decimal ComputeCost(ModelProfile model, int? inputTokens, int? outputTokens)
+    {
+        decimal cost = 0m;
+        if (inputTokens.HasValue && model.CostPerMillionInputTokens.HasValue)
+            cost += (decimal)inputTokens.Value / 1_000_000m * model.CostPerMillionInputTokens.Value;
+        if (outputTokens.HasValue && model.CostPerMillionOutputTokens.HasValue)
+            cost += (decimal)outputTokens.Value / 1_000_000m * model.CostPerMillionOutputTokens.Value;
+        return cost;
+    }
+
+    /// <summary>
+    /// Resolves the model profile for the current state. Mirrors the lookup logic in
+    /// <see cref="CallLlmAsync"/> but does not throw — returns null when no eligible
+    /// model is configured (cost projection is skipped in that case).
+    /// </summary>
+    private ModelProfile? ResolveModel()
+    {
+        ModelProfile? model = null;
+        if (!string.IsNullOrWhiteSpace(_currentState.Model))
+            model = ModelManager.Get(_currentState.Model);
+        model ??= ModelManager.Find(ModelTier.A);
+        return model;
     }
 
     /// <summary>
@@ -355,17 +549,40 @@ public class AgentRunner
 
     /// <summary>
     /// Builds the full message list for the current step.
-    /// System message = agent global system prompt + current state instruction.
-    /// Followed by the full conversation history.
+    /// System message is composed (in order) from:
+    ///   1. agent-level <c>[[_system]]</c> prompt,
+    ///   2. the <c>state.X.prompt</c>-referenced .pmt file's system + instruction (if set, with
+    ///      <c>{key}</c> placeholders substituted from the agent's initial inputs),
+    ///   3. the inline <c>[[_state.X.instruction]]</c> text (if set; appended after the resolved
+    ///      prompt's instruction so it can act as a per-run override).
+    /// Sections are joined by <c>\n\n---\n\n</c>. Followed by the full conversation history.
     /// </summary>
     private List<Message> BuildStepMessages()
     {
         var messages = new List<Message>();
 
-        // Combine agent system prompt with state-specific instruction
         var systemParts = new List<string>();
         if (!string.IsNullOrWhiteSpace(_profile.SystemPrompt))
             systemParts.Add(_profile.SystemPrompt);
+
+        // Resolve the state's named prompt reference, if any.
+        if (!string.IsNullOrWhiteSpace(_currentState.Prompt))
+        {
+            Prompt? resolved = PromptManager.Get(_currentState.Prompt);
+            if (resolved != null)
+            {
+                if (!string.IsNullOrWhiteSpace(resolved.System))
+                    systemParts.Add(SubstituteInputs(resolved.System));
+                if (!string.IsNullOrWhiteSpace(resolved.Instruction))
+                    systemParts.Add(SubstituteInputs(resolved.Instruction));
+            }
+            else
+            {
+                Util.Log($"AgentRunner '{_profile.Name}': Prompt '{_currentState.Prompt}' referenced from state " +
+                         $"'{_currentStateName}' was not found. Falling back to inline instruction only.");
+            }
+        }
+
         if (!string.IsNullOrWhiteSpace(_currentState.Instruction))
             systemParts.Add(_currentState.Instruction);
 
@@ -375,6 +592,27 @@ public class AgentRunner
 
         messages.AddRange(_conversationHistory);
         return messages;
+    }
+
+    /// <summary>
+    /// Replaces <c>{identifier}</c> placeholders in the given text with the corresponding
+    /// agent input value. Identifiers are derived from input keys via Util.Identifierize so
+    /// callers may use natural keys ("topic", "Issue Title") that resolve to the canonical
+    /// placeholder form.
+    /// </summary>
+    private string SubstituteInputs(string text)
+    {
+        if (string.IsNullOrEmpty(text) || _inputs.Count == 0)
+            return text;
+
+        foreach (var (key, value) in _inputs)
+        {
+            string placeholder = "{" + Util.Identifierize(key) + "}";
+            if (text.Contains(placeholder, StringComparison.OrdinalIgnoreCase))
+                text = Regex.Replace(text, Regex.Escape(placeholder), value?.ToString() ?? "", RegexOptions.IgnoreCase);
+        }
+
+        return text;
     }
 
 

@@ -61,7 +61,21 @@ public class ModelProfile
     /// </summary>
     [RConfigProperty("settings_supports-response-completion")]
     public bool? SupportsResponseCompletion { get; set; }
-    
+
+    /// <summary>
+    /// USD cost per 1,000,000 prompt/input tokens. Optional — when unset, this model
+    /// contributes 0 to cost-budget tracking (useful for free or locally-hosted models).
+    /// </summary>
+    [RConfigProperty("settings_cost-per-million-input-tokens")]
+    public decimal? CostPerMillionInputTokens { get; set; }
+
+    /// <summary>
+    /// USD cost per 1,000,000 completion/output tokens. Optional — when unset, this model
+    /// contributes 0 to cost-budget tracking.
+    /// </summary>
+    [RConfigProperty("settings_cost-per-million-output-tokens")]
+    public decimal? CostPerMillionOutputTokens { get; set; }
+
     // Setting Overrides
     [RConfigProperty("override-settings_filter")]
     public string? Filter { get; set; }

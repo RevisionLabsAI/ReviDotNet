@@ -47,11 +47,28 @@ public class AgentProfile
     [RConfigProperty("loop_entry")]
     public string? EntryState { get; set; }
 
+    /// <summary>
+    /// Optional run-wide USD cost budget. When set, the runner tracks cumulative cost
+    /// across every state activation in the run and refuses an LLM call that would
+    /// project to exceed the budget. State-level cost-budget guardrails apply
+    /// independently — both must be satisfied for a call to proceed.
+    /// </summary>
+    [RConfigProperty("settings_cost-budget")]
+    public decimal? RunCostBudget { get; set; }
+
     /// <summary>All declared states, populated by ToObject().</summary>
     public List<AgentState> States { get; set; } = new();
 
     /// <summary>Parsed loop graph, populated by Init() after ToObject().</summary>
     public List<LoopNode> LoopGraph { get; set; } = new();
+
+    /// <summary>
+    /// Cached set of valid signal tokens for each state (uppercase, no nulls).
+    /// Populated by Init() after the loop graph is parsed. Used by AgentRunner to
+    /// nudge the LLM when it emits a signal not declared from the current state.
+    /// </summary>
+    public Dictionary<string, IReadOnlySet<string>> ValidSignalsByState { get; set; }
+        = new(StringComparer.OrdinalIgnoreCase);
 
     // Stored during ToObject(), consumed by Init()
     private string? _rawLoopDsl;
@@ -80,6 +97,17 @@ public class AgentProfile
             LoopGraph = LoopDslParser.Parse(_rawLoopDsl);
         else
             Util.Log($"Agent '{Name}': No [[_loop]] section found. Agent will have no state transitions.");
+
+        // Pre-compute valid-signal sets per state for graceful signal validation in AgentRunner.
+        ValidSignalsByState = new Dictionary<string, IReadOnlySet<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var node in LoopGraph)
+        {
+            var signals = node.Transitions
+                .Where(t => !string.IsNullOrEmpty(t.Signal))
+                .Select(t => t.Signal!.ToUpperInvariant())
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            ValidSignalsByState[node.StateName] = signals;
+        }
     }
 
 

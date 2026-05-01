@@ -39,6 +39,14 @@ string? output = await Agent.ToString("research/market-scan", "Find recent prici
 | :--- | :--- | :--- |
 | `entry` | string | Entry state name. Must exist in `[[state.<name>]]`. |
 
+### `[[settings]]` (Optional)
+
+Run-wide configuration applied across every state in the run.
+
+| Option | Type | Description |
+| :--- | :--- | :--- |
+| `cost-budget` | decimal | Optional run-wide USD cost budget. The runner accumulates the cost of every LLM call across the run (using each model's `cost-per-million-input-tokens` / `cost-per-million-output-tokens`). When the projected cost of the next call would exceed this cap, the run terminates gracefully with `AgentExitReason.BudgetExceeded` and returns whatever output was last accumulated. State-level `cost-budget` guardrails still apply independently. |
+
 ### `[[state.<name>]]` (At least one required)
 
 Defines each state.
@@ -46,7 +54,7 @@ Defines each state.
 | Option | Type | Description |
 | :--- | :--- | :--- |
 | `description` | string | Optional human-readable state summary. |
-| `prompt` | string | Reserved for prompt reference metadata; currently parsed but not applied by `AgentRunner`. |
+| `prompt` | string | Optional reference to a `.pmt` prompt name (resolved via `PromptManager.Get`). When set, the prompt's system + instruction are rendered with `{key}` placeholders substituted from the agent's initial inputs and prepended to the state's per-step system message. If both `prompt` and `[[_state.X.instruction]]` are set, the inline instruction is appended after the resolved prompt's instruction (allowing per-run overrides). |
 | `model` | string | Optional model profile name override for this state. |
 | `tools` | list | Comma/space-separated tool names allowed in this state. |
 
@@ -59,10 +67,11 @@ All values are optional.
 | `cycle-limit` | integer | Max activations of this state across a run. |
 | `max-steps` | integer | Max LLM calls per activation. |
 | `timeout` | integer | Max seconds per activation. |
-| `cost-budget` | decimal | Parsed but not currently enforced by `AgentRunner`. |
+| `cost-budget` | decimal | Optional USD cost budget for one activation of this state. Tracked alongside the run-wide `[[settings]] cost-budget`; the runner refuses an LLM call whose projected cost would exceed either cap. A warning event fires when consumption first crosses 80% of the cap. Models without `cost-per-million-*-tokens` rates contribute zero to tracking. |
 | `tool-call-limit` | integer | Max tool calls per activation. |
 | `retry-limit` | integer | Parsed but not currently enforced by `AgentRunner`. |
 | `loop-detection` | boolean | Enables repeated-traversal loop detection. |
+| `max-agent-depth` | integer | Maximum sub-agent nesting depth permitted from this state. If `invoke_agent` would push depth above this, the call is refused. Defaults to `AgentRunner.DefaultMaxAgentDepth` (3). |
 
 ### `[[_system]]` (Optional)
 
@@ -103,6 +112,26 @@ Notes:
 - Transition matching checks `signal` first, then first unconditional transition.
 - Signal tokens should be uppercase with underscores (for example `READY_FOR_SUMMARY`).
 - Transition targets currently match word characters (`[A-Za-z0-9_]`), so avoid hyphens in state names.
+
+## Signal Validation
+
+When the LLM emits a `signal` value that does not appear in the current state's loop transitions, the runner does not silently spin. Instead it:
+
+1. Emits a `signal-unknown` error event under the current step.
+2. Appends a corrective system note to the conversation history listing the valid signal set: `"Signal 'XXX' is not valid from state 'NAME'. Valid signals are: A, B, C. Re-emit your decision with one of these signals."`
+3. Continues to the next step, where the LLM has a chance to retry with the corrected guidance.
+
+Up to `MaxSignalCorrectionsPerActivation` (currently 2) corrections are absorbed per state activation. Beyond that the run terminates with `AgentExitReason.InvalidSignal` and a guardrail message naming the latest bad signal and the declared signal set. A null/empty `signal` (no decision yet) is not counted as a correction — it triggers the existing "stay in state" behaviour and the next step proceeds normally.
+
+## Tool Registration
+
+Built-in tools are registered statically in `ToolManager`. Both built-ins shipped with ReviDotNet (`web-search`, `web-scrape`, `invoke_agent`) are auto-registered at process start. Hosting applications can register their own tools via:
+
+```csharp
+ToolManager.Register(new MyCustomTool());
+```
+
+Call this during host startup (e.g. from an `IHostedService.StartAsync`), before the first `Agent.Run`. `ToolManager.Unregister(name)` removes a tool by name and is primarily intended for tests. Custom MCP/HTTP tool profiles loaded from `RConfigs/Tools/*.tool` are still parsed but their dispatch is not yet implemented.
 
 ## LLM Step Contract
 

@@ -34,8 +34,33 @@ public static class ToolManager
         Register(new InvokeAgentTool());
     }
 
-    private static void Register(IBuiltInTool tool)
-        => _builtIns[tool.Name] = tool;
+    /// <summary>
+    /// Registers a built-in tool. If a tool with the same name already exists it is overwritten,
+    /// and the replacement is logged. Intended to be called during host startup, before any
+    /// <see cref="Agent.Run(string, Dictionary{string, object}?, CancellationToken)"/> calls —
+    /// concurrent registration during agent execution is not synchronized.
+    /// </summary>
+    public static void Register(IBuiltInTool tool)
+    {
+        if (tool == null) throw new ArgumentNullException(nameof(tool));
+        if (string.IsNullOrWhiteSpace(tool.Name))
+            throw new ArgumentException("Tool name must not be null or empty.", nameof(tool));
+
+        if (_builtIns.ContainsKey(tool.Name))
+            Util.Log($"ToolManager: Overwriting existing built-in tool \"{tool.Name}\".");
+
+        _builtIns[tool.Name] = tool;
+    }
+
+    /// <summary>
+    /// Removes a built-in tool by name. Returns true if a tool was removed, false otherwise.
+    /// Primarily intended for tests that need to swap stub tools in and out.
+    /// </summary>
+    public static bool Unregister(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return false;
+        return _builtIns.Remove(name);
+    }
 
 
     // ==================

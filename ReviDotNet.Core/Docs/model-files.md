@@ -31,6 +31,8 @@ Core operational parameters for the model.
 | `max-token-type` | enum | `null` | How the model handles maximum token limits. |
 | `supports-prompt-completion` | boolean | `null` | Whether this specific model supports legacy prompt completion (non-chat) endpoints. Overrides provider-level defaults when set. |
 | `supports-response-completion` | boolean | `null` | Whether this specific model supports the Responses API completion endpoint. Overrides provider-level defaults when set. |
+| `cost-per-million-input-tokens` | decimal | `null` | USD cost per 1,000,000 prompt/input tokens. Used by `AgentRunner` to enforce `cost-budget` guardrails. When unset, this model contributes 0 to cost tracking (suitable for free or locally-hosted models). |
+| `cost-per-million-output-tokens` | decimal | `null` | USD cost per 1,000,000 completion/output tokens. Used by `AgentRunner` to enforce `cost-budget` guardrails. When unset, this model contributes 0 to cost tracking. |
 
 ### `[[override-settings]]` (Optional)
 Allows this model to override default settings normally found in `.pmt` files.
