@@ -78,6 +78,24 @@ public class InferClientTests
     }
 
     [Fact]
+    public async Task GenerateAsync_Chat_Perplexity_ReturnsParsedMessageContent()
+    {
+        var (client, server) = CreateClient(Protocol.Perplexity, supportsCompletion: false);
+        using var _ = client; using var __ = server;
+
+        var messages = new List<Message>
+        {
+            new("user", "What is the capital of France?")
+        };
+
+        var response = await client.GenerateAsync(messages, model: "sonar");
+
+        response.Selected.Should().Be("Hello world (chat)");
+        response.FinishReason.Should().Be("stop");
+        response.FullPrompt.Should().Contain("What is the capital of France?");
+    }
+
+    [Fact]
     public async Task GenerateAsync_Prompt_Gemini_UsesGeminiEndpointAndParses()
     {
         var (client, server) = CreateClient(Protocol.Gemini, supportsCompletion: true, defaultModel: "gemini-pro", apiKey: "abc123");

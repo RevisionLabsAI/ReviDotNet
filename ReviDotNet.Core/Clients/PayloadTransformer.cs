@@ -374,6 +374,7 @@ public class PayloadTransformer
         switch (_config.Protocol)
         {
             case Protocol.OpenAI:
+            case Protocol.Perplexity:
             {
                 // OpenAI Parameters - no bestOf support
                 
