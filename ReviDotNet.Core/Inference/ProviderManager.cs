@@ -8,7 +8,7 @@ using System.Reflection;
 
 namespace Revi;
 
-public static class ProviderManager
+internal static class ProviderManager
 {
     // ==============
     //  Declarations

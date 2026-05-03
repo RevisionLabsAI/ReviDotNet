@@ -16,7 +16,8 @@ namespace ReviDotNet.Forge.Services.Gateway;
 public class GatewayRouterService(
     PromptRegistryService prompts,
     IForgeRateLimiterService rateLimiter,
-    UsageDashboardService usageDashboard)
+    UsageDashboardService usageDashboard,
+    IModelManager models)
 {
     private readonly ConcurrentDictionary<string, DateTime> _cooldowns = new();
     private const int CooldownSeconds = 60;
@@ -218,14 +219,14 @@ public class GatewayRouterService(
     {
         if (!string.IsNullOrWhiteSpace(request.ExplicitModel))
         {
-            var explicit_ = ModelManager.Get(request.ExplicitModel);
+            var explicit_ = models.Get(request.ExplicitModel);
             return explicit_ is not null ? [explicit_] : [];
         }
 
         if (request.PreferredModels?.Count > 0)
         {
             return request.PreferredModels
-                .Select(name => ModelManager.Get(name))
+                .Select(name => models.Get(name))
                 .Where(m => m is not null && m.Enabled && !IsBlocked(m.Name, request.BlockedModels))
                 .Select(m => m!)
                 .ToList();
@@ -235,7 +236,7 @@ public class GatewayRouterService(
             or Revi.CompletionType.PromptChatOne
             or Revi.CompletionType.PromptChatMulti;
 
-        return ModelManager.GetAll()
+        return models.GetAll()
             .Where(m => m.Enabled
                 && (request.MinTier is null || m.Tier >= request.MinTier)
                 && !IsBlocked(m.Name, request.BlockedModels)

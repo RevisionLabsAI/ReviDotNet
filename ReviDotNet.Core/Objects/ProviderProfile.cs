@@ -113,22 +113,22 @@ public class ProviderProfile
         
         switch (Protocol)
         {
-            case Revi.Protocol.OpenAI: 
+            case global::Revi.Protocol.OpenAI: 
                 SupportsCompletion = false;
                 break;
             
-            case Revi.Protocol.vLLM:
+            case global::Revi.Protocol.vLLM:
                 break;
             
-            case Revi.Protocol.LLamaAPI:
+            case global::Revi.Protocol.LLamaAPI:
                 break;
             
-            case Revi.Protocol.Claude:
+            case global::Revi.Protocol.Claude:
                 SupportsGuidance = false;
                 SupportsCompletion = true;
                 break;
             
-            case Revi.Protocol.Gemini:
+            case global::Revi.Protocol.Gemini:
                 //SupportsGuidance = true;
                 //SupportsCompletion = true;
                 break;
@@ -147,7 +147,7 @@ public class ProviderProfile
         InferenceClient = new InferClient(
             apiUrl: APIURL,
             apiKey: APIKey ?? "",
-            protocol: Protocol ?? Revi.Protocol.vLLM,
+            protocol: Protocol ?? global::Revi.Protocol.vLLM,
             defaultModel: DefaultModel ?? "default",
             timeoutSeconds: TimeoutSeconds ?? 100,
             delayBetweenRequestsMs: DelayBetweenRequestsMs ?? 0,
@@ -164,7 +164,7 @@ public class ProviderProfile
         EmbeddingClient = new EmbedClient(
             apiUrl: APIURL,
             apiKey: APIKey ?? "",
-            protocol: Protocol ?? Revi.Protocol.OpenAI,
+            protocol: Protocol ?? global::Revi.Protocol.OpenAI,
             defaultModel: DefaultModel ?? "text-embedding-ada-002",
             timeoutSeconds: TimeoutSeconds ?? 100,
             delayBetweenRequestsMs: DelayBetweenRequestsMs ?? 0,
@@ -180,7 +180,7 @@ public class ProviderProfile
     public ProviderProfile(
         string name,
         bool enabled = true,
-        Protocol protocol = Revi.Protocol.OpenAI, 
+        global::Revi.Protocol protocol = global::Revi.Protocol.OpenAI,
         string apiURL = "", 
         string apiKey = "",
         int timeoutSeconds = 100,

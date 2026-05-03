@@ -22,6 +22,14 @@ namespace Revi;
 /// </summary>
 public class InvokeAgentTool : IBuiltInTool
 {
+    private readonly Lazy<IAgentService> _agentService;
+
+    /// <summary>Initializes a new <see cref="InvokeAgentTool"/> with a lazy reference to avoid circular DI.</summary>
+    public InvokeAgentTool(Lazy<IAgentService> agentService)
+    {
+        _agentService = agentService;
+    }
+
     public string Name => "invoke_agent";
 
     public string Description =>
@@ -88,7 +96,7 @@ public class InvokeAgentTool : IBuiltInTool
 
         try
         {
-            AgentResult result = await Agent.Run(req.Agent, inputs, childCtx, token);
+            AgentResult result = await _agentService.Value.Run(req.Agent, inputs, childCtx, token);
 
             return new ToolCallResult
             {

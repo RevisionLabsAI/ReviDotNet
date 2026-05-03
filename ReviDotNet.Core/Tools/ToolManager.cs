@@ -13,7 +13,7 @@ namespace Revi;
 /// Built-in tools are registered in the static constructor and always available.
 /// Custom tools are loaded from: RConfigs/Tools/**/*.tool
 /// </summary>
-public static class ToolManager
+internal static class ToolManager
 {
     // ==============
     //  Declarations
@@ -31,7 +31,7 @@ public static class ToolManager
     {
         Register(new WebSearchTool());
         Register(new WebScrapeTool());
-        Register(new InvokeAgentTool());
+        // InvokeAgentTool requires Lazy<IAgentService> — registered by ToolManagerService in the DI path.
     }
 
     /// <summary>

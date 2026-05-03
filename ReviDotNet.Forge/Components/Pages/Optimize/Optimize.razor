@@ -3,6 +3,7 @@
 @inject OptimizerService Optimizer
 @inject TestRunnerService Runner
 @inject ISnackbar Snackbar
+@inject IModelManager Models
 
 <PageTitle>Optimizer — ReviDotNet Optimizer</PageTitle>
 
@@ -31,7 +32,7 @@
                                Variant="Variant.Outlined"
                                FullWidth="true"
                                Class="mb-3">
-                        @foreach (var m in ModelManager.GetAll())
+                        @foreach (var m in Models.GetAll())
                         {
                             <MudSelectItem Value="@(m.Name ?? string.Empty)">@m.Name</MudSelectItem>
                         }
@@ -282,7 +283,7 @@
 
     protected override void OnInitialized()
     {
-        var models = ModelManager.GetAll();
+        var models = Models.GetAll();
         _selectedModelName = models.FirstOrDefault()?.Name ?? string.Empty;
 
         if (!string.IsNullOrWhiteSpace(Prompt))

@@ -8,7 +8,7 @@ using System.Reflection;
 
 namespace Revi;
 
-public static class ModelManager
+internal static class ModelManager
 {
     // ==============
     //  Declarations

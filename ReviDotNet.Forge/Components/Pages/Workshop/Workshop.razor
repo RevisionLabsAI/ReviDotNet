@@ -4,6 +4,7 @@
 @using ReviDotNet.Forge.Services.Workshop.Models
 @inject IAgentWorkshopService WorkshopSvc
 @inject ISnackbar Snackbar
+@inject IAgentManager Agents
 
 <PageTitle>Agent Workshop — ReviDotNet Forge</PageTitle>
 
@@ -27,7 +28,7 @@
                                Variant="Variant.Outlined"
                                FullWidth="true"
                                Class="mb-3">
-                        @foreach (var a in AgentManager.GetAll().OrderBy(a => a.Name))
+                        @foreach (var a in Agents.GetAll().OrderBy(a => a.Name))
                         {
                             <MudSelectItem Value="@(a.Name ?? string.Empty)">@a.Name</MudSelectItem>
                         }

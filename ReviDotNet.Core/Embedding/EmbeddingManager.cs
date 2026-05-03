@@ -12,7 +12,7 @@ namespace Revi;
 /// Manages the loading, storage, and retrieval of embedding model profiles.
 /// Provides static methods to access configured embedding models from the RConfigs/Models/Embedding/ directory.
 /// </summary>
-public static class EmbeddingManager
+internal static class EmbeddingManager
 {
     // ==============
     //  Declarations

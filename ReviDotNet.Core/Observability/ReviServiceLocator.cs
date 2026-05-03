@@ -67,4 +67,27 @@ public static class ReviServiceLocator
             return false;
         }
     }
+
+    /// <summary>
+    /// Try to retrieve any registered service of type <typeparamref name="T"/> from the assigned provider.
+    /// Returns false when no provider is set or the service is not registered.
+    /// </summary>
+    public static bool TryGetService<T>(out T? service) where T : class
+    {
+        service = default;
+        try
+        {
+            IServiceProvider? p = _provider;
+            if (p == null)
+                return false;
+
+            service = p.GetService<T>();
+            return service != null;
+        }
+        catch
+        {
+            service = default;
+            return false;
+        }
+    }
 }

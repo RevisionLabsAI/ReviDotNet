@@ -179,11 +179,12 @@ public static class ForgeApiEndpoints
 
     private static async Task HandleListModelsAsync(
         HttpContext context,
-        IForgeApiKeyService keyService)
+        IForgeApiKeyService keyService,
+        IModelManager modelManager)
     {
         if (!await ApiKeyAuth.ValidateAsync(context, keyService)) return;
 
-        var models = ModelManager.GetAll()
+        var models = modelManager.GetAll()
             .Where(m => m.Enabled)
             .Select(m => new
             {

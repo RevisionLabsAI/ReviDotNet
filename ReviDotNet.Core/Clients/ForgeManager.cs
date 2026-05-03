@@ -11,7 +11,7 @@ namespace Revi;
 /// Infer.Completion and Infer.CompletionStream route through Forge instead of calling
 /// providers directly. When absent or disabled, behavior is identical to before.
 /// </summary>
-public static class ForgeManager
+internal static class ForgeManager
 {
     /// <summary>Whether Forge has been configured and is active.</summary>
     public static bool IsConfigured { get; private set; }

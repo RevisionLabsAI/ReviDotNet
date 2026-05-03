@@ -16,7 +16,7 @@ using Newtonsoft.Json.Linq;
 
 namespace Revi;
 
-public class Infer
+internal class Infer
 {
 	// ===================
 	//  Inference Calling 

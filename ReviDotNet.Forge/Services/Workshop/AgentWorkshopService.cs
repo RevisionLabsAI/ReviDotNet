@@ -32,11 +32,29 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
 
     private readonly IWorkshopEventBus _bus;
     private readonly IReviLogViewerService _logs;
+    private readonly IInferService _infer;
+    private readonly IAgentManager _agents;
+    private readonly IModelManager _models;
+    private readonly IPromptManager _prompts;
+    private readonly IToolManager _tools;
 
-    public AgentWorkshopService(IWorkshopEventBus bus, IReviLogViewerService logs)
+    /// <summary>Initialises the workshop service with all required dependencies.</summary>
+    public AgentWorkshopService(
+        IWorkshopEventBus bus,
+        IReviLogViewerService logs,
+        IInferService infer,
+        IAgentManager agents,
+        IModelManager models,
+        IPromptManager prompts,
+        IToolManager tools)
     {
         _bus = bus;
         _logs = logs;
+        _infer = infer;
+        _agents = agents;
+        _models = models;
+        _prompts = prompts;
+        _tools = tools;
     }
 
     // =====================================================
@@ -50,7 +68,7 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
         if (string.IsNullOrWhiteSpace(request.AgentName))
             throw new ArgumentException("AgentName is required", nameof(request));
 
-        AgentProfile profile = AgentManager.Get(request.AgentName)
+        AgentProfile profile = _agents.Get(request.AgentName)
             ?? throw new InvalidOperationException($"Agent '{request.AgentName}' not found.");
 
         int runs = Math.Max(1, request.Runs);
@@ -84,7 +102,8 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
     {
         Dictionary<string, object> inputs = BuildInputs(request);
 
-        AgentRunner runner = new(profile, inputs, ct, AgentRunContext.Root());
+        AgentRunner runner = new(profile, inputs, ct, AgentRunContext.Root(),
+            _models, _prompts, _tools);
         string sessionId = runner.SessionId;
 
         // Subscribe to live events for this session before starting the run.
@@ -270,7 +289,7 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
             new("Runs", JsonConvert.SerializeObject(runs, Formatting.Indented))
         };
 
-        EvaluatorResponse? raw = await Infer.ToObject<EvaluatorResponse>(EvaluatorPrompt, evalInputs, token: ct);
+        EvaluatorResponse? raw = await _infer.ToObject<EvaluatorResponse>(EvaluatorPrompt, evalInputs, token: ct);
         if (raw == null) return null;
 
         return new AgentEvaluationResult
@@ -335,7 +354,7 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
         if (current == null)
             throw new InvalidOperationException($"Cannot generate revision: source .agent file for '{agentName}' not on disk.");
 
-        Prompt? reviser = PromptManager.Get(ReviserPrompt)
+        Prompt? reviser = _prompts.Get(ReviserPrompt)
             ?? throw new InvalidOperationException($"Prompt '{ReviserPrompt}' not found.");
 
         var summary = new
@@ -361,7 +380,7 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
             new("Evaluation Summary", JsonConvert.SerializeObject(summary, Formatting.Indented))
         };
 
-        await foreach (var token in Infer.CompletionStream(reviser, inputs).WithCancellation(ct))
+        await foreach (var token in _infer.CompletionStream(reviser, inputs).WithCancellation(ct))
             yield return token;
     }
 
@@ -375,8 +394,8 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
 
         await File.WriteAllTextAsync(path, newContent, ct);
 
-        // Reload AgentManager so the new revision is picked up.
-        AgentManager.Load(Assembly.GetExecutingAssembly());
+        // Reload agent registry so the new revision is picked up.
+        await _agents.LoadAsync(Assembly.GetExecutingAssembly());
     }
 
     public Task<string?> ReadAgentSourceAsync(string agentName, CancellationToken ct)

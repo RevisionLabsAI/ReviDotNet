@@ -24,6 +24,16 @@ public class PromptSuggestion
 /// </summary>
 public class OptimizerService
 {
+    private readonly IInferService _infer;
+    private readonly IPromptManager _prompts;
+
+    /// <summary>Initializes OptimizerService with required inference and registry services.</summary>
+    public OptimizerService(IInferService infer, IPromptManager prompts)
+    {
+        _infer = infer;
+        _prompts = prompts;
+    }
+
     /// <summary>
     /// Analyzes a single prompt execution result using the Optimizer.Analyzer prompt.
     /// </summary>
@@ -41,7 +51,7 @@ public class OptimizerService
             new("Response", response)
         };
 
-        return await Infer.ToObject<AnalysisResult>("Optimizer.Analyzer", analysisInputs);
+        return await _infer.ToObject<AnalysisResult>("Optimizer.Analyzer", analysisInputs);
     }
 
     /// <summary>
@@ -75,7 +85,7 @@ public class OptimizerService
             new("Analysis Results", aggregatedAnalyses.ToString())
         };
 
-        var result = await Infer.ToObject<SuggesterResult>("Optimizer.Suggester", inputs);
+        var result = await _infer.ToObject<SuggesterResult>("Optimizer.Suggester", inputs);
         return result?.Suggestions ?? [];
     }
 
@@ -100,11 +110,11 @@ public class OptimizerService
             new("Selected Suggestions", suggestionsText)
         };
 
-        Prompt? reviserPrompt = PromptManager.Get("Optimizer.Reviser");
+        Prompt? reviserPrompt = _prompts.Get("Optimizer.Reviser");
         if (reviserPrompt is null)
             throw new InvalidOperationException("Optimizer.Reviser prompt not found.");
 
-        await foreach (string token in Infer.CompletionStream(reviserPrompt, inputs).WithCancellation(ct))
+        await foreach (string token in _infer.CompletionStream(reviserPrompt, inputs).WithCancellation(ct))
             yield return token;
     }
 

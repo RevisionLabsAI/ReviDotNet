@@ -22,7 +22,7 @@ namespace Revi;
 /// All methods are static and thread-safe. The class automatically handles model selection,
 /// provider management, and embedding generation through the configured EmbedClient instances.
 /// </remarks>
-public static class Embed
+internal static class Embed
 {
 	// ===================
 	//  Embedding Generation 

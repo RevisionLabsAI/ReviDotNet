@@ -16,10 +16,13 @@ namespace ReviDotNet.Forge.Services;
 public class PromptRegistryService
 {
     private readonly string _promptsSourcePath;
+    private readonly IPromptManager _prompts;
 
-    public PromptRegistryService(IConfiguration configuration)
+    /// <summary>Initialises the service with configuration and the DI prompt registry.</summary>
+    public PromptRegistryService(IConfiguration configuration, IPromptManager prompts)
     {
         _promptsSourcePath = configuration["Forge:PromptsSourcePath"] ?? "RConfigs/Prompts";
+        _prompts = prompts;
     }
 
     /// <summary>
@@ -27,7 +30,7 @@ public class PromptRegistryService
     /// </summary>
     public List<Prompt> GetAll()
     {
-        return PromptManager.GetAll();
+        return _prompts.GetAll();
     }
 
     /// <summary>
@@ -35,7 +38,7 @@ public class PromptRegistryService
     /// </summary>
     public Prompt? GetByName(string name)
     {
-        return PromptManager.Get(name);
+        return _prompts.Get(name);
     }
 
     /// <summary>
@@ -55,7 +58,7 @@ public class PromptRegistryService
         File.WriteAllText(fullPath, SerializePrompt(prompt), Encoding.UTF8);
 
         // Reload the prompt into the in-memory registry
-        PromptManager.LoadFromFile(fullPath);
+        _prompts.LoadFromFile(fullPath);
     }
 
     /// <summary>
@@ -69,7 +72,7 @@ public class PromptRegistryService
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
         File.WriteAllText(fullPath, content, Encoding.UTF8);
 
-        PromptManager.LoadFromFile(fullPath);
+        _prompts.LoadFromFile(fullPath);
     }
 
     /// <summary>

@@ -118,13 +118,7 @@ else
             new NullRlogEventPublisher(),
             sp.GetRequiredService<IWorkshopEventBus>()));
 }
-builder.Services.AddSingleton<IReviLogger, ReviLogger>();
-builder.Services.AddSingleton(typeof(IReviLogger<>), typeof(ReviLogger<>));
-
-// Revi registry init (loads providers, models, prompts from embedded resources)
-builder.Services.AddHostedService(sp => new RegistryInitService(
-    sp.GetRequiredService<IReviLogger<RegistryInitService>>(),
-    typeof(Program).Assembly));
+builder.Services.AddReviDotNet(typeof(Program).Assembly);
 
 // Observer services (log viewer)
 if (!string.IsNullOrWhiteSpace(builder.Configuration["Observer:MongoDb:ConnectionString"]))

@@ -11,7 +11,7 @@ namespace Revi
     /// <summary>
     /// Manages the conversion and handling of prompts into serialized data formats and vice-versa.
     /// </summary>
-    public static class PromptManager
+    internal static class PromptManager
     {
         // ==============
         //  Declarations

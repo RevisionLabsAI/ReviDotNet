@@ -1,5 +1,6 @@
 @page "/"
 @inject PromptRegistryService Registry
+@inject IModelManager Models
 
 <PageTitle>Dashboard — ReviDotNet Optimizer</PageTitle>
 
@@ -99,6 +100,6 @@
     protected override void OnInitialized()
     {
         _promptCount = Registry.GetAll().Count;
-        _modelCount = ModelManager.GetAll().Count;
+        _modelCount = Models.GetAll().Count;
     }
 }

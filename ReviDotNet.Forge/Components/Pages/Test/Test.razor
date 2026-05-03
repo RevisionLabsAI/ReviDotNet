@@ -2,6 +2,7 @@
 @inject PromptRegistryService Registry
 @inject TestRunnerService Runner
 @inject ISnackbar Snackbar
+@inject IModelManager Models
 
 <PageTitle>Test Runner — ReviDotNet Optimizer</PageTitle>
 
@@ -271,7 +272,7 @@
 
     protected override void OnInitialized()
     {
-        AllModels = ModelManager.GetAll()
+        AllModels = Models.GetAll()
             .Select(m => new ModelEntry(m.Name ?? "unknown"))
             .ToList();
 

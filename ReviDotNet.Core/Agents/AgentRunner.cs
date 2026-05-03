@@ -33,6 +33,9 @@ public class AgentRunner
     private readonly Dictionary<string, object> _inputs;
     private readonly CancellationToken _token;
     private readonly AgentRunContext _ctx;
+    private readonly IModelManager _models;
+    private readonly IPromptManager _prompts;
+    private readonly IToolManager _tools;
 
     /// <summary>Unique id for this agent activation. Tagged on every emitted log event.</summary>
     public string SessionId { get; }
@@ -65,17 +68,17 @@ public class AgentRunner
     //  Constructor
     // ==============
 
-    public AgentRunner(AgentProfile profile, Dictionary<string, object> inputs, CancellationToken token)
-        : this(profile, inputs, token, AgentRunContext.Root())
-    {
-    }
-
-    public AgentRunner(AgentProfile profile, Dictionary<string, object> inputs, CancellationToken token, AgentRunContext ctx)
+    /// <summary>Creates an <see cref="AgentRunner"/> using the injected service managers (preferred path).</summary>
+    public AgentRunner(AgentProfile profile, Dictionary<string, object> inputs, CancellationToken token,
+        AgentRunContext ctx, IModelManager models, IPromptManager prompts, IToolManager tools)
     {
         _profile = profile;
         _inputs = inputs;
         _token = token;
         _ctx = ctx;
+        _models = models;
+        _prompts = prompts;
+        _tools = tools;
 
         SessionId = Guid.NewGuid().ToString("n");
 
@@ -501,8 +504,8 @@ public class AgentRunner
     {
         ModelProfile? model = null;
         if (!string.IsNullOrWhiteSpace(_currentState.Model))
-            model = ModelManager.Get(_currentState.Model);
-        model ??= ModelManager.Find(ModelTier.A);
+            model = _models.Get(_currentState.Model);
+        model ??= _models.Find(ModelTier.A);
         return model;
     }
 
@@ -568,7 +571,7 @@ public class AgentRunner
         // Resolve the state's named prompt reference, if any.
         if (!string.IsNullOrWhiteSpace(_currentState.Prompt))
         {
-            Prompt? resolved = PromptManager.Get(_currentState.Prompt);
+            Prompt? resolved = _prompts.Get(_currentState.Prompt);
             if (resolved != null)
             {
                 if (!string.IsNullOrWhiteSpace(resolved.System))
@@ -622,11 +625,11 @@ public class AgentRunner
 
     private async Task<CompletionResult?> CallLlmAsync(List<Message> messages)
     {
-        // Resolve model: state override → ModelManager.Find(Tier.A)
+        // Resolve model: state override → _models.Find(Tier.A)
         ModelProfile? model = null;
         if (!string.IsNullOrWhiteSpace(_currentState.Model))
-            model = ModelManager.Get(_currentState.Model);
-        model ??= ModelManager.Find(ModelTier.A);
+            model = _models.Get(_currentState.Model);
+        model ??= _models.Find(ModelTier.A);
 
         if (model == null)
             throw new Exception($"AgentRunner '{_profile.Name}': No eligible model found.");
@@ -725,7 +728,7 @@ public class AgentRunner
     private async Task<ToolCallResult> ExecuteToolAsync(string toolName, string input)
     {
         // Check built-in registry first
-        var builtIn = ToolManager.GetBuiltIn(toolName);
+        IBuiltInTool? builtIn = _tools.GetBuiltIn(toolName);
         if (builtIn != null)
         {
             try { return await builtIn.ExecuteAsync(input, _token); }
@@ -736,7 +739,7 @@ public class AgentRunner
         }
 
         // Check custom tool profiles (MCP/HTTP)
-        var customTool = ToolManager.GetCustom(toolName);
+        ToolProfile? customTool = _tools.GetCustom(toolName);
         if (customTool != null)
             return await ExecuteCustomToolAsync(customTool, input);
 

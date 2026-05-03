@@ -1,33 +1,37 @@
-﻿// ===================================================================
+// ===================================================================
 //  Copyright © 2026 Revision Labs and contributors
 //  SPDX-License-Identifier: MIT
 //  See LICENSE.txt in the project root for full license information.
 // ===================================================================
 
-// =================================================================================
-//   Copyright © 2025 Revision Labs, Inc. - All Rights Reserved
-// =================================================================================
-//   This is proprietary and confidential source code of Revision Labs, Inc., and
-//   is safeguarded by international copyright laws. Unauthorized use, copying, 
-//   modification, or distribution is strictly forbidden.
-//
-//   If you are not authorized and have this file, notify Revision Labs at 
-//   contact@rlab.ai and delete it immediately.
-//
-//   See LICENSE.txt in the project root for full license information.
-// =================================================================================
+using System.Reflection;
 
 namespace Revi;
 
+/// <summary>DI interface for the inference model registry.</summary>
 public interface IModelManager
 {
-    /// <summary>
-    /// Gets all available models.
-    /// </summary>
-    /// <returns>A list of all model profiles.</returns>
+    /// <summary>Loads model profiles from the application assembly.</summary>
+    Task LoadAsync(Assembly assembly, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns the model profile with the given name, or null if not found.</summary>
+    ModelProfile? Get(string name);
+
+    /// <summary>Returns all loaded model profiles.</summary>
     List<ModelProfile> GetAll();
 
-    ModelProfile? Get(string name);
+    /// <summary>Finds the lowest-tier enabled model meeting the minimum tier string.</summary>
     ModelProfile? Find(string? minTier, bool needsPromptCompletion = false);
+
+    /// <summary>Finds the lowest-tier enabled model meeting the minimum tier string, excluding blocked models.</summary>
+    ModelProfile? Find(string? minTier, bool needsPromptCompletion, List<string>? blockedModels);
+
+    /// <summary>Finds the lowest-tier enabled model meeting the minimum tier enum.</summary>
     ModelProfile? Find(ModelTier? minTier, bool needsPromptCompletion = false);
+
+    /// <summary>Finds the lowest-tier enabled model meeting the minimum tier enum, excluding blocked models.</summary>
+    ModelProfile? Find(ModelTier? minTier, bool needsPromptCompletion, List<string>? blockedModels);
+
+    /// <summary>Programmatically adds a model profile to the registry.</summary>
+    void Add(ModelProfile model);
 }

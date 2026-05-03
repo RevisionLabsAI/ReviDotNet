@@ -15,7 +15,7 @@ namespace Revi;
 /// Agents are loaded from: RConfigs/Agents/**/*.agent
 /// Embedded resource fallback: resources containing ".Agents." ending in ".agent"
 /// </summary>
-public static class AgentManager
+internal static class AgentManager
 {
     // ==============
     //  Declarations

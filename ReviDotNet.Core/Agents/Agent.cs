@@ -13,7 +13,7 @@ namespace Revi;
 ///   AgentResult result = await Agent.Run("research/research-agent", inputs, token);
 ///   string? output = await Agent.ToString("research/research-agent", "my query", token);
 /// </summary>
-public static class Agent
+internal static class Agent
 {
     /// <summary>
     /// Runs a registered agent by name with the given named inputs.
@@ -35,6 +35,8 @@ public static class Agent
     /// <summary>
     /// Runs a registered agent with explicit run context. Used by InvokeAgentTool to nest
     /// a sub-agent's ReviLog tree under the parent agent's tool-call event.
+    /// Delegates to the DI-registered <see cref="IAgentService"/> when running inside a host;
+    /// falls back to direct <see cref="AgentRunner"/> construction (test / standalone path).
     /// </summary>
     public static async Task<AgentResult> Run(
         string agentName,
@@ -42,8 +44,19 @@ public static class Agent
         AgentRunContext ctx,
         CancellationToken token = default)
     {
+        if (ReviServiceLocator.TryGetService<IAgentService>(out IAgentService? svc) && svc != null)
+            return await svc.Run(agentName, inputs, ctx, token);
+
+        // Standalone / test path: resolve registries from the static managers directly.
         AgentProfile profile = FindAgent(agentName);
-        var runner = new AgentRunner(profile, inputs ?? new Dictionary<string, object>(), token, ctx);
+        AgentRunner runner = new(
+            profile,
+            inputs ?? new Dictionary<string, object>(),
+            token,
+            ctx,
+            ReviServiceLocator.TryGetService<IModelManager>(out IModelManager? mm) ? mm! : new StaticModelAdapter(),
+            ReviServiceLocator.TryGetService<IPromptManager>(out IPromptManager? pm) ? pm! : new StaticPromptAdapter(),
+            ReviServiceLocator.TryGetService<IToolManager>(out IToolManager? tm) ? tm! : new StaticToolAdapter());
         return await runner.RunAsync();
     }
 
@@ -66,7 +79,7 @@ public static class Agent
         Dictionary<string, object>? inputs = null,
         CancellationToken token = default)
     {
-        var result = await Run(agentName, inputs, token);
+        AgentResult result = await Run(agentName, inputs, token);
         return result.ExitReason == AgentExitReason.Completed ? result.FinalOutput : null;
     }
 
@@ -78,7 +91,7 @@ public static class Agent
         string input,
         CancellationToken token = default)
     {
-        var result = await Run(agentName, input, token);
+        AgentResult result = await Run(agentName, input, token);
         return result.ExitReason == AgentExitReason.Completed ? result.FinalOutput : null;
     }
 
@@ -87,9 +100,43 @@ public static class Agent
     /// </summary>
     public static AgentProfile FindAgent(string name)
     {
-        var agent = AgentManager.Get(name);
+        AgentProfile? agent = AgentManager.Get(name);
         if (agent == null)
             throw new Exception($"Agent '{name}' not found. Ensure the .agent file is in RConfigs/Agents/ and is registered.");
         return agent;
+    }
+
+    // Minimal adapters for the standalone / test path only — not used when DI is configured.
+
+    private sealed class StaticModelAdapter : IModelManager
+    {
+        public List<ModelProfile> GetAll() => ModelManager.GetAll();
+        public ModelProfile? Get(string name) => ModelManager.Get(name);
+        public ModelProfile? Find(string? minTier, bool needsPromptCompletion = false) => ModelManager.Find(minTier, needsPromptCompletion);
+        public ModelProfile? Find(string? minTier, bool needsPromptCompletion, List<string>? blockedModels) => ModelManager.Find(minTier, needsPromptCompletion, blockedModels);
+        public ModelProfile? Find(ModelTier? minTier, bool needsPromptCompletion = false) => ModelManager.Find(minTier, needsPromptCompletion);
+        public ModelProfile? Find(ModelTier? minTier, bool needsPromptCompletion, List<string>? blockedModels) => ModelManager.Find(minTier, needsPromptCompletion, blockedModels);
+        public void Add(ModelProfile model) => ModelManager.Add(model);
+        public Task LoadAsync(System.Reflection.Assembly assembly, CancellationToken cancellationToken = default) { ModelManager.Load(assembly); return Task.CompletedTask; }
+    }
+
+    private sealed class StaticPromptAdapter : IPromptManager
+    {
+        public Prompt? Get(string name) => PromptManager.Get(name);
+        public List<Prompt> GetAll() => PromptManager.GetAll();
+        public void AddOrUpdate(Prompt prompt) => PromptManager.AddOrUpdate(prompt);
+        public void LoadFromFile(string filePath) => PromptManager.LoadFromFile(filePath);
+        public Task LoadAsync(System.Reflection.Assembly assembly, CancellationToken cancellationToken = default) { PromptManager.Load(assembly); return Task.CompletedTask; }
+    }
+
+    private sealed class StaticToolAdapter : IToolManager
+    {
+        public IBuiltInTool? GetBuiltIn(string name) => ToolManager.GetBuiltIn(name);
+        public IReadOnlyCollection<string> GetBuiltInNames() => ToolManager.GetBuiltInNames();
+        public ToolProfile? GetCustom(string name) => ToolManager.GetCustom(name);
+        public List<ToolProfile> GetAllCustom() => ToolManager.GetAllCustom();
+        public void Register(IBuiltInTool tool) => ToolManager.Register(tool);
+        public bool Unregister(string name) => ToolManager.Unregister(name);
+        public Task LoadAsync(System.Reflection.Assembly assembly, CancellationToken cancellationToken = default) { ToolManager.Load(assembly); return Task.CompletedTask; }
     }
 }

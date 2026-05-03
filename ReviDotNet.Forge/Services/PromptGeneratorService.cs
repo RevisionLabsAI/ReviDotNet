@@ -22,6 +22,16 @@ public class GeneratorExample
 /// </summary>
 public class PromptGeneratorService
 {
+    private readonly IInferService _infer;
+    private readonly IPromptManager _prompts;
+
+    /// <summary>Initializes PromptGeneratorService with required inference and registry services.</summary>
+    public PromptGeneratorService(IInferService infer, IPromptManager prompts)
+    {
+        _infer = infer;
+        _prompts = prompts;
+    }
+
     /// <summary>
     /// Streams a generated .pmt file from the AI given a description and examples.
     /// Returns the full generated content.
@@ -55,11 +65,11 @@ public class PromptGeneratorService
             new("Guidance Schema Type", string.IsNullOrWhiteSpace(guidanceSchemaType) ? "none" : guidanceSchemaType)
         };
 
-        Prompt? generatorPrompt = PromptManager.Get("Optimizer.Generator");
+        Prompt? generatorPrompt = _prompts.Get("Optimizer.Generator");
         if (generatorPrompt is null)
             throw new InvalidOperationException("Optimizer.Generator prompt not found. Ensure it exists in RConfigs/Prompts/Optimizer/.");
 
-        await foreach (string token in Infer.CompletionStream(generatorPrompt, inputs).WithCancellation(ct))
+        await foreach (string token in _infer.CompletionStream(generatorPrompt, inputs).WithCancellation(ct))
             yield return token;
     }
 }

@@ -33,6 +33,18 @@ public class TestRunResult
 /// </summary>
 public class TestRunnerService
 {
+    private readonly IInferService _infer;
+    private readonly IPromptManager _prompts;
+    private readonly IModelManager _models;
+
+    /// <summary>Initializes TestRunnerService with required inference and registry services.</summary>
+    public TestRunnerService(IInferService infer, IPromptManager prompts, IModelManager models)
+    {
+        _infer = infer;
+        _prompts = prompts;
+        _models = models;
+    }
+
     /// <summary>
     /// Runs a prompt against one or more models for a given number of runs.
     /// Results are pushed to the returned channel as they complete.
@@ -56,7 +68,7 @@ public class TestRunnerService
 
                 foreach (string modelName in modelNames)
                 {
-                    ModelProfile? model = ModelManager.Get(modelName);
+                    ModelProfile? model = _models.Get(modelName);
                     if (model is null) continue;
 
                     for (int i = 0; i < runsPerModel; i++)
@@ -80,8 +92,8 @@ public class TestRunnerService
                                 var sw = Stopwatch.StartNew();
                                 var sb = new System.Text.StringBuilder();
 
-                                await foreach (string token in Infer.CompletionStream(
-                                    PromptManager.Get(promptName)!, inputs,
+                                await foreach (string token in _infer.CompletionStream(
+                                    _prompts.Get(promptName)!, inputs,
                                     modelProfile: capturedProfile).WithCancellation(ct))
                                 {
                                     if (result.Ttft is null)
@@ -126,7 +138,7 @@ public class TestRunnerService
         return channel;
     }
 
-    private static async Task<AnalysisResult?> AnalyzeAsync(
+    private async Task<AnalysisResult?> AnalyzeAsync(
         string promptName,
         string modelName,
         List<Input> inputs,
@@ -143,7 +155,7 @@ public class TestRunnerService
                 new("Response", response)
             };
 
-            return await Infer.ToObject<AnalysisResult>("Optimizer.Analyzer", analysisInputs);
+            return await _infer.ToObject<AnalysisResult>("Optimizer.Analyzer", analysisInputs);
         }
         catch
         {
