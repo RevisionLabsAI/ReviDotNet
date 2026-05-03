@@ -587,7 +587,7 @@ public class AgentRunner
         }
 
         if (!string.IsNullOrWhiteSpace(_currentState.Instruction))
-            systemParts.Add(_currentState.Instruction);
+            systemParts.Add(SubstituteInputs(_currentState.Instruction));
 
         string systemText = string.Join("\n\n---\n\n", systemParts);
         if (!string.IsNullOrWhiteSpace(systemText))
@@ -637,23 +637,25 @@ public class AgentRunner
         if (model.Provider?.InferenceClient is null)
             throw new Exception($"AgentRunner '{_profile.Name}': Model '{model.Name}' has no inference client.");
 
+        // Apply state-level inline settings overrides on top of model defaults.
+        var s = _currentState.InlineSettings;
         return await model.Provider.InferenceClient.GenerateAsync(
             messages: messages,
             model: model.ModelString,
-            temperature: ParseFloat(model.Temperature),
-            topK: ParseInt(model.TopK),
-            topP: ParseFloat(model.TopP),
-            minP: ParseFloat(model.MinP),
-            bestOf: null,
+            temperature: s?.Temperature ?? ParseFloat(model.Temperature),
+            topK: s?.TopK ?? ParseInt(model.TopK),
+            topP: s?.TopP ?? ParseFloat(model.TopP),
+            minP: s?.MinP ?? ParseFloat(model.MinP),
+            bestOf: s?.BestOf ?? null,
             maxTokenType: model.MaxTokenType,
-            maxTokens: ParseInt(model.MaxTokens),
-            frequencyPenalty: ParseFloat(model.FrequencyPenalty),
-            presencePenalty: ParseFloat(model.PresencePenalty),
-            repetitionPenalty: ParseFloat(model.RepetitionPenalty),
+            maxTokens: s?.MaxTokens ?? ParseInt(model.MaxTokens),
+            frequencyPenalty: s?.FrequencyPenalty ?? ParseFloat(model.FrequencyPenalty),
+            presencePenalty: s?.PresencePenalty ?? ParseFloat(model.PresencePenalty),
+            repetitionPenalty: s?.RepetitionPenalty ?? ParseFloat(model.RepetitionPenalty),
             stopSequences: null,
             guidanceType: GuidanceType.Json,
             guidanceString: AgentStepSchema.Schema,
-            useSearchGrounding: null,
+            useSearchGrounding: s?.UseSearchGrounding ?? null,
             cancellationToken: _token,
             inactivityTimeoutSeconds: _currentState.Guardrails.TimeoutSeconds);
     }

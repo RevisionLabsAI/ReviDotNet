@@ -42,6 +42,12 @@ public class AgentState
     /// </summary>
     public string? Instruction { get; set; }
 
+    /// <summary>
+    /// Optional inline settings for this state, parsed from [[_state.&lt;name&gt;.settings]] in the .agent file.
+    /// Overrides model-level parameters (max-tokens, temperature, etc.) for LLM calls in this state.
+    /// </summary>
+    public Prompt? InlineSettings { get; set; }
+
     /// <summary>Guardrail limits for this state. All limits are optional.</summary>
     public AgentGuardrails Guardrails { get; set; } = new();
 }

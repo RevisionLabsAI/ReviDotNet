@@ -235,6 +235,38 @@ public class AgentProfile
         if (data.TryGetValue(instructionKey, out var instruction))
             state.Instruction = instruction;
 
+        // Settings is a raw section: key is "_state.<name>.settings"
+        string settingsKey = $"_state.{stateName}.settings";
+        if (data.TryGetValue(settingsKey, out var settingsText))
+            state.InlineSettings = ParseInlineSettings(settingsText);
+
         return state;
+    }
+
+    // Parses a [[_state.X.settings]] raw section (key = value lines) into a Prompt
+    // that holds only the settings/tuning fields. Init() is intentionally skipped.
+    private static Prompt ParseInlineSettings(string settingsText)
+    {
+        var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in settingsText.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            int eq = line.IndexOf('=');
+            if (eq < 0) continue;
+            string key = line[..eq].Trim();
+            string val = line[(eq + 1)..].Trim();
+            if (!string.IsNullOrEmpty(key))
+                dict[$"settings_{key}"] = val;
+        }
+
+        var settings = new Prompt();
+        foreach (var prop in typeof(Prompt).GetProperties())
+        {
+            var attr = prop.GetCustomAttributes(typeof(RConfigPropertyAttribute), false)
+                .FirstOrDefault() as RConfigPropertyAttribute;
+            if (attr == null || !dict.TryGetValue(attr.Name, out var val)) continue;
+            try { prop.SetValue(settings, RConfigParser.ConvertToType(val, prop.PropertyType)); }
+            catch { /* skip unrecognized or malformed settings */ }
+        }
+        return settings;
     }
 }
