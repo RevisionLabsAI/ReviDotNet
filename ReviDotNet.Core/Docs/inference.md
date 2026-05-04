@@ -1,6 +1,16 @@
 # Inference in ReviDotNet
 
-The `Infer` class is the primary entry point for performing AI inference in ReviDotNet. It provides a high-level API for interacting with Large Language Models (LLMs), handling prompt construction, model selection, output parsing, and error recovery.
+`IInferService` is the primary entry point for performing AI inference in ReviDotNet. It provides a high-level API for interacting with Large Language Models (LLMs), handling prompt construction, model selection, output parsing, and error recovery.
+
+Register it with `services.AddReviDotNet()` and inject it wherever you need inference:
+
+```csharp
+public sealed class MyService(IInferService infer)
+{
+    public Task<string?> SummarizeAsync(string text, CancellationToken token = default)
+        => infer.ToString("my-folder/summarize", new Input("Text", text), token: token);
+}
+```
 
 ## Core Concepts
 
@@ -9,11 +19,11 @@ Inference in ReviDotNet revolves around three main components:
 2.  **Models (`.rcfg`)**: Define the specific LLM to use and its parameters.
 3.  **Providers (`.rcfg`)**: Define the API connection details.
 
-The `Infer` class orchestrates these components to provide a seamless experience for developers.
+`IInferService` orchestrates these components to provide a seamless experience for developers.
 
 ## Primary Inference Methods
 
-The `Infer` class provides several static methods to execute prompts and retrieve results in various formats. Most methods have two primary overloads:
+`IInferService` provides methods to execute prompts and retrieve results in various formats. Most methods have two primary overloads:
 1.  **List-based**: Accepts `List<Input>` for multiple inputs.
 2.  **Single-input**: Accepts a single `Input` object (or null) for simplicity.
 
@@ -21,7 +31,7 @@ The `Infer` class provides several static methods to execute prompts and retriev
 Executes a prompt and deserializes the JSON output into a C# object of type `T`. This is the preferred method for structured data.
 
 ```csharp
-public static async Task<T?> ToObject<T>(
+Task<T?> ToObject<T>(
     string promptName,
     List<Input>? inputs = null,
     ModelProfile? modelProfile = null,
@@ -39,7 +49,7 @@ public static async Task<T?> ToObject<T>(
 Executes a prompt and attempts to parse the result into a specific C# `Enum`.
 
 ```csharp
-public static async Task<TEnum> ToEnum<TEnum>(
+Task<TEnum> ToEnum<TEnum>(
     string promptName,
     List<Input>? inputs = null,
     ModelProfile? modelProfile = null,
@@ -56,7 +66,7 @@ public static async Task<TEnum> ToEnum<TEnum>(
 Executes a prompt and parses the output into a `List<string>`. 
 
 ```csharp
-public static async Task<List<string>> ToStringList(
+Task<List<string>> ToStringList(
     string promptName,
     List<Input>? inputs = null,
     ModelProfile? modelProfile = null,
@@ -73,7 +83,7 @@ It intelligently handles various list formats:
 A powerful streaming version of `ToStringList` that allows for early termination based on count or custom logic.
 
 ```csharp
-public static async Task<List<string>> ToStringListLimited(
+Task<List<string>> ToStringListLimited(
     string promptName,
     List<Input>? inputs = null,
     ModelProfile? modelProfile = null,
@@ -91,7 +101,7 @@ public static async Task<List<string>> ToStringListLimited(
 Convenience method for prompts that return a boolean value.
 
 ```csharp
-public static async Task<bool?> ToBool(
+Task<bool?> ToBool(
     string promptName,
     List<Input>? inputs = null,
     ModelProfile? modelProfile = null,
@@ -125,9 +135,9 @@ List<Input> inputs = [
 If your prompt only needs one piece of data, you can use the single-input overload:
 
 ```csharp
-await Infer.ToString("my-prompt", new Input("UserRequest", "Help me!"));
+await infer.ToString("my-prompt", new Input("UserRequest", "Help me!"));
 // Or even null if no inputs are required
-await Infer.ToString("static-prompt", (Input?)null);
+await infer.ToString("static-prompt", (Input?)null);
 ```
 
 ### Label Matching

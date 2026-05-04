@@ -69,7 +69,7 @@ The core docs are in this repo:
 1) Add ReviDotNet to your solution
 
 - Reference the `ReviDotNet.Core` project (or consume the package if you publish it internally).
-- (Recommended) Add the analyzers to projects that call the `Infer.*` API:
+- (Recommended) Add the analyzers to projects that call `IInferService`:
 
 ```xml
 <ItemGroup>
@@ -77,7 +77,17 @@ The core docs are in this repo:
 </ItemGroup>
 ```
 
-2) Create minimal configuration files in your app repo
+2) Register ReviDotNet in your DI container
+
+Call `AddReviDotNet()` once from your host's `ConfigureServices` (or `Program.cs`):
+
+```csharp
+builder.Services.AddReviDotNet(typeof(Program).Assembly);
+```
+
+This registers `IInferService`, `IAgentService`, `IEmbedService`, all registry managers, logging, and a hosted startup initializer that loads your `RConfigs` files at app start.
+
+3) Create minimal configuration files in your app repo
 
 - Provider (`RConfigs/Providers/claude.rcfg`):
 
@@ -134,17 +144,20 @@ The system should be fast.
 - Responsive
 ```
 
-3) Call the API from C#
+4) Inject and call the inference service
+
+Inject `IInferService` (or `IAgentService` / `IEmbedService`) wherever you need it:
 
 ```csharp
 using System.Collections.Generic;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Revi;
 
-public static class Demo
+public sealed class SpecAnalyzer(IInferService infer)
 {
-    public static async Task RunAsync(CancellationToken token = default)
+    public async Task RunAsync(CancellationToken token = default)
     {
         List<Input> inputs =
         [
@@ -152,29 +165,28 @@ public static class Demo
         ];
 
         // Get raw text
-        string? text = await Infer.ToString("search/analyze-specs", inputs, token: token);
+        string? text = await infer.ToString("search/analyze-specs", inputs, token: token);
 
         // Get a list of strings
-        List<string> points = await Infer.ToStringList("search/analyze-specs", inputs, token: token);
+        List<string> points = await infer.ToStringList("search/analyze-specs", inputs, token: token);
 
         // Stream output (concatenate chunks)
-        StringBuilder builder = new StringBuilder();
-        await foreach (string chunk in Infer.CompletionStream("search/analyze-specs", inputs, token: token))
+        StringBuilder builder = new();
+        await foreach (string chunk in infer.CompletionStream("search/analyze-specs", inputs, token: token))
         {
             builder.Append(chunk);
         }
 
         // Strongly-typed object
-        AnalysisResult? result = await Infer.ToObject<AnalysisResult>(
+        AnalysisResult? result = await infer.ToObject<AnalysisResult>(
             "search/analyze-specs",
             inputs,
-            modelName: null,
             token: token);
     }
 
     public sealed class AnalysisResult
     {
-        public List<string> Points { get; set; } = new List<string>();
+        public List<string> Points { get; set; } = [];
     }
 }
 ```
