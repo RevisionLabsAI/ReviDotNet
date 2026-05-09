@@ -15,11 +15,11 @@ namespace Revi;
 /// </summary>
 public class EmbeddingProfile
 {
-    // ================================
+    // ====================================
     //  EmbeddingProfile Object Definition
-    // ================================
+    // ====================================
     
-    #region Core Identity
+    #region Object Definition
     
     /// <summary>
     /// Gets or sets the unique name identifier for this embedding model profile.
@@ -32,10 +32,6 @@ public class EmbeddingProfile
     /// </summary>
     [RConfigProperty("general_enabled")]
     public bool Enabled { get; set; } 
-    
-    #endregion
-    
-    #region Model and Provider
     
     /// <summary>
     /// Gets or sets the model identifier string used by the provider's API.
@@ -56,10 +52,6 @@ public class EmbeddingProfile
     /// </summary>
     public ProviderProfile? Provider { get; set; } 
     
-    #endregion
-    
-    #region Overall Options
-    
     /// <summary>
     /// Gets or sets the tier classification of this embedding model (A, B, or C).
     /// Higher tiers generally indicate better performance or more expensive models.
@@ -78,10 +70,6 @@ public class EmbeddingProfile
     /// </summary>
     [RConfigProperty("settings_max-token-type")]
     public MaxTokenType? MaxTokenType { get; set; }
-    
-    #endregion
-    
-    #region Setting Overrides
     
     /// <summary>
     /// Gets or sets the override for maximum number of tokens to process.
@@ -103,10 +91,6 @@ public class EmbeddingProfile
     /// </summary>
     [RConfigProperty("override-settings_retry-attempts")]
     public int? RetryAttempts { get; set; }
-    
-    #endregion
-    
-    #region Embedding-Specific Settings
     
     /// <summary>
     /// Gets or sets the number of dimensions for the output embedding vector.
