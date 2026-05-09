@@ -48,6 +48,9 @@ public static class ReviServiceCollectionExtensions
         services.AddSingleton<IAgentService, AgentService>();
         services.AddSingleton<IEmbedService, EmbedService>();
 
+        // Lazy wrapper for circular-dependency break: ToolManagerService → Lazy<IAgentService> → AgentService → IToolManager
+        services.AddSingleton<Lazy<IAgentService>>(sp => new Lazy<IAgentService>(sp.GetRequiredService<IAgentService>));
+
         // Startup initializer — hidden behind IHostedService; callers never interact with it directly
         services.AddHostedService(sp =>
             ActivatorUtilities.CreateInstance<RegistryInitService>(sp, resolvedAssembly));
