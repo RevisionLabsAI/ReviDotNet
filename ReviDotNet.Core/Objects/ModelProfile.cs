@@ -217,29 +217,41 @@ public class ModelProfile
     //  Constructors
     // ==============
     
-    // Called by "CallInitIfExists" in the "Read()" function of the RConfigParser class
+    /// <summary>
+    /// Validates required fields after deserialization.
+    /// Called automatically by <see cref="RConfigParser"/> via reflection.
+    /// Provider resolution is deferred to <see cref="ResolveProvider"/>.
+    /// </summary>
+    /// <exception cref="ArgumentNullException">Thrown when <see cref="ProviderName"/> is empty or null.</exception>
     public void Init()
     {
         if (string.IsNullOrEmpty(ProviderName))
         {
             Enabled = false;
-            throw new ArgumentNullException(ProviderName, "ProviderName is empty or null!");
+            throw new ArgumentNullException(nameof(ProviderName), "ProviderName is empty or null!");
         }
+    }
 
-        var foundProvider = ProviderManager.Get(ProviderName);
+    /// <summary>
+    /// Resolves the provider reference using the DI provider registry.
+    /// Called by <see cref="ModelManagerService"/> after deserialization.
+    /// </summary>
+    /// <param name="providers">The provider registry to look up the provider from.</param>
+    public void ResolveProvider(IProviderManager providers)
+    {
+        ProviderProfile? foundProvider = providers.Get(ProviderName);
         if (foundProvider is null)
         {
             Enabled = false;
             Util.Log($"Provider '{ProviderName}' could not be found");
-            //throw new ValidationException($"Provider '{ProviderName}' could not be found");
+            return;
         }
         if (foundProvider.Enabled is false)
         {
             Enabled = false;
             Util.Log($"Provider '{ProviderName}' is not enabled");
-            //throw new ValidationException($"Provider '{ProviderName}' is not enabled");
+            return;
         }
-
         Provider = foundProvider;
     }
 }

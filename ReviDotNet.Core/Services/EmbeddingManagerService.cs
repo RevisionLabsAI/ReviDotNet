@@ -12,11 +12,15 @@ namespace Revi;
 public sealed class EmbeddingManagerService : IEmbeddingManager
 {
     private readonly List<EmbeddingProfile> _models = [];
+    private readonly IProviderManager _providers;
     private readonly IReviLogger<EmbeddingManagerService> _logger;
 
     /// <summary>Initializes a new <see cref="EmbeddingManagerService"/>.</summary>
-    public EmbeddingManagerService(IReviLogger<EmbeddingManagerService> logger)
+    /// <param name="providers">The provider registry used to resolve provider references on each model after deserialization.</param>
+    /// <param name="logger">The logger instance.</param>
+    public EmbeddingManagerService(IProviderManager providers, IReviLogger<EmbeddingManagerService> logger)
     {
+        _providers = providers;
         _logger = logger;
     }
 
@@ -107,6 +111,7 @@ public sealed class EmbeddingManagerService : IEmbeddingManager
             if (model?.Name is null)
                 continue;
 
+            model.ResolveProvider(_providers);
             CheckAdd(model, embedded: false);
         }
     }
@@ -132,6 +137,7 @@ public sealed class EmbeddingManagerService : IEmbeddingManager
                 if (model?.Name is null)
                     continue;
 
+                model.ResolveProvider(_providers);
                 CheckAdd(model, embedded: true);
             }
         }

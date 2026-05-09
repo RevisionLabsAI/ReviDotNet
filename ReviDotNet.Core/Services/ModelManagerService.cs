@@ -12,11 +12,15 @@ namespace Revi;
 public sealed class ModelManagerService : IModelManager
 {
     private readonly List<ModelProfile> _models = [];
+    private readonly IProviderManager _providers;
     private readonly IReviLogger<ModelManagerService> _logger;
 
     /// <summary>Initializes a new <see cref="ModelManagerService"/>.</summary>
-    public ModelManagerService(IReviLogger<ModelManagerService> logger)
+    /// <param name="providers">The provider registry used to resolve provider references on each model after deserialization.</param>
+    /// <param name="logger">The logger instance.</param>
+    public ModelManagerService(IProviderManager providers, IReviLogger<ModelManagerService> logger)
     {
+        _providers = providers;
         _logger = logger;
     }
 
@@ -108,6 +112,7 @@ public sealed class ModelManagerService : IModelManager
             if (model?.Name is null)
                 continue;
 
+            model.ResolveProvider(_providers);
             CheckAdd(model, embedded: false);
         }
     }
@@ -133,6 +138,7 @@ public sealed class ModelManagerService : IModelManager
                 if (model?.Name is null)
                     continue;
 
+                model.ResolveProvider(_providers);
                 CheckAdd(model, embedded: true);
             }
         }

@@ -150,37 +150,40 @@ public class EmbeddingProfile
     // ==============
     
     /// <summary>
-    /// Initializes the embedding profile by resolving and validating the associated provider.
-    /// This method is called automatically by the RConfigParser after the object is constructed.
+    /// Validates required fields after deserialization.
+    /// Called automatically by <see cref="RConfigParser"/> via reflection.
+    /// Provider resolution is deferred to <see cref="ResolveProvider"/>.
     /// </summary>
-    /// <exception cref="ArgumentNullException">Thrown when ProviderName is empty or null.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <see cref="ProviderName"/> is empty or null.</exception>
     public void Init()
     {
-        // Validate that provider name is specified
         if (string.IsNullOrEmpty(ProviderName))
         {
             Enabled = false;
             throw new ArgumentNullException(nameof(ProviderName), "ProviderName is empty or null!");
         }
+    }
 
-        // Attempt to find the provider
-        var foundProvider = ProviderManager.Get(ProviderName);
+    /// <summary>
+    /// Resolves the provider reference using the DI provider registry.
+    /// Called by <see cref="EmbeddingManagerService"/> after deserialization.
+    /// </summary>
+    /// <param name="providers">The provider registry to look up the provider from.</param>
+    public void ResolveProvider(IProviderManager providers)
+    {
+        ProviderProfile? foundProvider = providers.Get(ProviderName);
         if (foundProvider is null)
         {
             Enabled = false;
             Util.Log($"Embedding model '{Name}': Provider '{ProviderName}' could not be found");
             return;
         }
-        
-        // Check if provider is enabled
         if (foundProvider.Enabled is false)
         {
             Enabled = false;
             Util.Log($"Embedding model '{Name}': Provider '{ProviderName}' is not enabled");
             return;
         }
-
-        // Store the provider reference
         Provider = foundProvider;
     }
 }
