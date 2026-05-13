@@ -4,8 +4,6 @@
 //  See LICENSE.txt in the project root for full license information.
 // ===================================================================
 
-using Revi;
-
 namespace Revi;
 
 /// <summary>
