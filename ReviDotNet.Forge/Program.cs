@@ -22,6 +22,12 @@ using ReviDotNet.Forge.Services.Workshop;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
+// Load static web assets manifest in all environments (not just Development) so that
+// RCL assets like MudBlazor's `_content/MudBlazor/*.js|css` resolve when launching the
+// build output directly (e.g. running the .exe), where ASPNETCORE_ENVIRONMENT defaults
+// to Production and the manifest would otherwise be ignored.
+builder.WebHost.UseStaticWebAssets();
+
 builder.Configuration
     .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
     .AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true)

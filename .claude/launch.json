@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Forge",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "ReviDotNet.Forge/ReviDotNet.Forge.csproj", "--no-build"],
+      "port": 5000
+    }
+  ]
+}
