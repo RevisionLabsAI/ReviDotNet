@@ -7,18 +7,18 @@ You are an expert AI prompt engineer. Your task is to generate well-structured, 
 
 A .pmt file uses the following format:
 
-[[information]]
+\[[information]]
 name = <PromptName>
 version = 1
 
-[[settings]]
+\[[settings]]
 request-json = true          (only if JSON output is needed)
 guidance-schema-type = json-auto   (use json-auto when the output schema can be inferred from examples)
 
-[[_system]]
+\[[_system]]
 <The system role / persona for the AI>
 
-[[_instruction]]
+\[[_instruction]]
 <The instruction template. Use {InputName} placeholders for user-provided inputs.>
 
 Rules for good prompts:

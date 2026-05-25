@@ -1,0 +1,76 @@
+@* Reusable side-by-side diff viewer.
+   Renders Left and Right as monospace pre-wrapped panels with synchronized headings.
+   Lines that differ between the two sides are highlighted (cheap line-by-line diff,
+   not a full LCS — good enough for short artifact comparisons). *@
+
+<MudGrid Spacing="2">
+    <MudItem xs="12" md="6">
+        <div class="d-flex align-center mb-1">
+            <MudText Typo="Typo.subtitle2">@LeftLabel</MudText>
+            @if (!string.IsNullOrEmpty(LeftSubLabel))
+            {
+                <MudSpacer />
+                <MudText Typo="Typo.caption" Color="Color.Secondary">@LeftSubLabel</MudText>
+            }
+        </div>
+        <MudPaper Class="pa-3" Outlined="true"
+                  Style="@($"font-family: monospace; font-size: 0.78rem; white-space: pre-wrap; max-height: {MaxHeight}; overflow: auto;")">
+            @foreach (var line in _leftLines)
+            {
+                <div style="@LineStyle(line.Changed)">@(string.IsNullOrEmpty(line.Text) ? " " : line.Text)</div>
+            }
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <div class="d-flex align-center mb-1">
+            <MudText Typo="Typo.subtitle2">@RightLabel</MudText>
+            @if (!string.IsNullOrEmpty(RightSubLabel))
+            {
+                <MudSpacer />
+                <MudText Typo="Typo.caption" Color="Color.Secondary">@RightSubLabel</MudText>
+            }
+        </div>
+        <MudPaper Class="pa-3" Outlined="true"
+                  Style="@($"font-family: monospace; font-size: 0.78rem; white-space: pre-wrap; max-height: {MaxHeight}; overflow: auto;")">
+            @foreach (var line in _rightLines)
+            {
+                <div style="@LineStyle(line.Changed)">@(string.IsNullOrEmpty(line.Text) ? " " : line.Text)</div>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    [Parameter] public string Left { get; set; } = string.Empty;
+    [Parameter] public string Right { get; set; } = string.Empty;
+    [Parameter] public string LeftLabel { get; set; } = "Original";
+    [Parameter] public string RightLabel { get; set; } = "Revised";
+    [Parameter] public string? LeftSubLabel { get; set; }
+    [Parameter] public string? RightSubLabel { get; set; }
+    [Parameter] public string MaxHeight { get; set; } = "500px";
+
+    private record DiffLine(string Text, bool Changed);
+
+    private List<DiffLine> _leftLines = new();
+    private List<DiffLine> _rightLines = new();
+
+    protected override void OnParametersSet()
+    {
+        var leftRaw = (Left ?? string.Empty).Replace("\r\n", "\n").Split('\n');
+        var rightRaw = (Right ?? string.Empty).Replace("\r\n", "\n").Split('\n');
+
+        // Match common lines as a HashSet for O(1) lookup — cheap, ignores order.
+        // For richer diffs, a real LCS algorithm would be needed; this is a thin
+        // visual cue good enough for a few hundred lines of .pmt / .agent files.
+        var leftSet = new HashSet<string>(leftRaw);
+        var rightSet = new HashSet<string>(rightRaw);
+
+        _leftLines = leftRaw.Select(l => new DiffLine(l, !rightSet.Contains(l))).ToList();
+        _rightLines = rightRaw.Select(l => new DiffLine(l, !leftSet.Contains(l))).ToList();
+    }
+
+    private static string LineStyle(bool changed) =>
+        changed
+            ? "background-color: rgba(255, 193, 7, 0.18); border-left: 2px solid var(--mud-palette-warning); padding-left: 4px;"
+            : string.Empty;
+}

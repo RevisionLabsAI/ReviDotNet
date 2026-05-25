@@ -1,0 +1,404 @@
+@page "/prompts/new"
+@inject PromptGeneratorService Generator
+@inject PromptRegistryService Registry
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject IDialogService DialogSvc
+
+<PageTitle>Create New Prompt — ReviDotNet Forge</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/prompts" />
+    <MudText Typo="Typo.h4" Class="ml-2">Create New Prompt</MudText>
+</div>
+
+<MudPaper Class="pa-4" Elevation="1">
+    <MudTabs Elevation="0" Rounded="true" @bind-ActivePanelIndex="_activeTab">
+
+        <!-- =========================================================== -->
+        <!-- Tab 1: Manual Creation                                      -->
+        <!-- =========================================================== -->
+        <MudTabPanel Text="Manual Creation" Icon="@Icons.Material.Filled.Edit">
+            <div class="pa-2">
+                <MudGrid Spacing="3">
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="_manualName"
+                                      Label="Prompt Name"
+                                      HelperText="e.g. MyApp.Classifier — used as the .pmt file name (dots become subdirectories)"
+                                      Variant="Variant.Outlined"
+                                      Required="true"
+                                      FullWidth="true" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="GuidanceSchemaType?"
+                                   @bind-Value="_manualGuidance"
+                                   Label="Guidance schema"
+                                   Variant="Variant.Outlined"
+                                   Clearable="true"
+                                   FullWidth="true">
+                            <MudSelectItem T="GuidanceSchemaType?" Value="@((GuidanceSchemaType?)null)">None</MudSelectItem>
+                            <MudSelectItem T="GuidanceSchemaType?" Value="@((GuidanceSchemaType?)GuidanceSchemaType.JsonAuto)">json-auto</MudSelectItem>
+                            <MudSelectItem T="GuidanceSchemaType?" Value="@((GuidanceSchemaType?)GuidanceSchemaType.JsonManual)">json</MudSelectItem>
+                            <MudSelectItem T="GuidanceSchemaType?" Value="@((GuidanceSchemaType?)GuidanceSchemaType.RegexAuto)">regex-auto</MudSelectItem>
+                            <MudSelectItem T="GuidanceSchemaType?" Value="@((GuidanceSchemaType?)GuidanceSchemaType.RegexManual)">regex</MudSelectItem>
+                            <MudSelectItem T="GuidanceSchemaType?" Value="@((GuidanceSchemaType?)GuidanceSchemaType.GNBFAuto)">gbnf-auto</MudSelectItem>
+                            <MudSelectItem T="GuidanceSchemaType?" Value="@((GuidanceSchemaType?)GuidanceSchemaType.GNBFManual)">gbnf</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="_manualSystem"
+                                      Label="System Message"
+                                      Lines="4"
+                                      Variant="Variant.Outlined"
+                                      FullWidth="true" />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="_manualInstruction"
+                                      Label="Instruction (use {InputName} placeholders)"
+                                      Lines="8"
+                                      Variant="Variant.Outlined"
+                                      FullWidth="true" />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="_manualSchema"
+                                      Label="Schema (optional)"
+                                      Lines="3"
+                                      Variant="Variant.Outlined"
+                                      FullWidth="true" />
+                    </MudItem>
+                    <MudItem xs="6"><MudCheckBox @bind-Value="_manualRequestJson" Label="request-json" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudCheckBox @bind-Value="_manualChainOfThought" Label="chain-of-thought" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="6"><MudNumericField T="float?" @bind-Value="_manualTemperature" Label="temperature" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Step="0.05F" /></MudItem>
+                    <MudItem xs="6"><MudNumericField T="int?" @bind-Value="_manualMaxTokens" Label="max-tokens" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" /></MudItem>
+                </MudGrid>
+                <div class="d-flex gap-3 mt-4">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Success"
+                               StartIcon="@Icons.Material.Filled.Save"
+                               Disabled="@(_saving || string.IsNullOrWhiteSpace(_manualName))"
+                               OnClick="@PromptToSaveManual">
+                        @(_saving ? "Saving…" : "Save")
+                    </MudButton>
+                </div>
+            </div>
+        </MudTabPanel>
+
+        <!-- =========================================================== -->
+        <!-- Tab 2: Generate (AI-driven from description + examples)     -->
+        <!-- =========================================================== -->
+        <MudTabPanel Text="Generate Prompt" Icon="@Icons.Material.Filled.AutoAwesome">
+            <div class="pa-2">
+                <MudGrid Spacing="3">
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="_genName"
+                                      Label="Prompt Name"
+                                      HelperText="e.g. MyApp.Classifier"
+                                      Variant="Variant.Outlined"
+                                      Required="true"
+                                      FullWidth="true" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudSelect @bind-Value="_genSchemaType"
+                                   Label="Guidance Schema"
+                                   Variant="Variant.Outlined"
+                                   FullWidth="true">
+                            <MudSelectItem Value="@string.Empty">None</MudSelectItem>
+                            <MudSelectItem Value="@("json-auto")">json-auto</MudSelectItem>
+                            <MudSelectItem Value="@("json")">json (manual)</MudSelectItem>
+                            <MudSelectItem Value="@("regex")">regex</MudSelectItem>
+                            <MudSelectItem Value="@("gbnf")">gbnf</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="_genPurpose"
+                                      Label="What should this prompt do?"
+                                      Lines="4"
+                                      Variant="Variant.Outlined"
+                                      Required="true"
+                                      FullWidth="true"
+                                      Placeholder="Describe the task, inputs and outputs, tone, constraints..." />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudCheckBox @bind-Value="_genRequestJson" Label="Request JSON output" Color="Color.Primary" />
+                    </MudItem>
+                </MudGrid>
+
+                <div class="d-flex align-center justify-space-between mt-4 mb-2">
+                    <MudText Typo="Typo.subtitle1">Examples</MudText>
+                    <MudButton StartIcon="@Icons.Material.Filled.Add"
+                               Variant="Variant.Outlined"
+                               Size="Size.Small"
+                               OnClick="AddExample">
+                        Add Example
+                    </MudButton>
+                </div>
+
+                @for (int i = 0; i < _genExamples.Count; i++)
+                {
+                    int idx = i;
+                    var ex = _genExamples[idx];
+                    <MudCard Class="mb-3" Elevation="1">
+                        <MudCardContent>
+                            <div class="d-flex align-center justify-space-between mb-2">
+                                <MudText Typo="Typo.subtitle2">Example @(idx + 1)</MudText>
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                               Size="Size.Small"
+                                               Color="Color.Error"
+                                               OnClick="@(() => RemoveExample(idx))"
+                                               Disabled="@(_genExamples.Count <= 1)" />
+                            </div>
+                            @for (int k = 0; k < ex.Inputs.Count; k++)
+                            {
+                                int ki = k;
+                                var key = ex.Inputs.Keys.ElementAt(ki);
+                                <div class="d-flex gap-2 mb-2">
+                                    <MudTextField Value="@key"
+                                                  ValueChanged="@((string v) => RenameKey(ex, key, v))"
+                                                  Label="Key"
+                                                  Variant="Variant.Outlined"
+                                                  Margin="Margin.Dense"
+                                                  Style="max-width: 180px;" />
+                                    <MudTextField @bind-Value="ex.Inputs[key]"
+                                                  Label="Value"
+                                                  Variant="Variant.Outlined"
+                                                  Margin="Margin.Dense"
+                                                  FullWidth="true" />
+                                    <MudIconButton Icon="@Icons.Material.Filled.Remove"
+                                                   Size="Size.Small"
+                                                   OnClick="@(() => RemoveInput(ex, key))"
+                                                   Disabled="@(ex.Inputs.Count <= 1)" />
+                                </div>
+                            }
+                            <MudButton Size="Size.Small"
+                                       StartIcon="@Icons.Material.Filled.Add"
+                                       OnClick="@(() => AddInput(ex))">
+                                Add Input
+                            </MudButton>
+                            <MudTextField @bind-Value="ex.Output"
+                                          Label="Expected Output"
+                                          Lines="3"
+                                          Variant="Variant.Outlined"
+                                          FullWidth="true"
+                                          Class="mt-3" />
+                        </MudCardContent>
+                    </MudCard>
+                }
+
+                <div class="d-flex gap-3 mt-4">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.AutoAwesome"
+                               Disabled="@_generating"
+                               OnClick="@RunGenerate">
+                        @(_generating ? "Generating…" : "Generate")
+                    </MudButton>
+                    @if (!string.IsNullOrWhiteSpace(_generatedContent))
+                    {
+                        <MudButton Variant="Variant.Outlined"
+                                   StartIcon="@Icons.Material.Filled.Refresh"
+                                   Disabled="@_generating"
+                                   OnClick="@RunGenerate">
+                            Regenerate
+                        </MudButton>
+                    }
+                </div>
+
+                @if (_generating || !string.IsNullOrWhiteSpace(_generatedContent))
+                {
+                    <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Generated .pmt content</MudText>
+                    <MudTextField @bind-Value="_generatedContent"
+                                  Variant="Variant.Outlined"
+                                  Lines="18"
+                                  Style="font-family: monospace; font-size: 0.82rem;"
+                                  FullWidth="true" />
+
+                    @if (!_generating && !string.IsNullOrWhiteSpace(_generatedContent))
+                    {
+                        <div class="d-flex gap-3 mt-3">
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Success"
+                                       StartIcon="@Icons.Material.Filled.Save"
+                                       Disabled="@_saving"
+                                       OnClick="@PromptToSaveGenerated">
+                                @(_saving ? "Saving…" : "Save to RConfigs")
+                            </MudButton>
+                        </div>
+                    }
+                }
+            </div>
+        </MudTabPanel>
+
+    </MudTabs>
+</MudPaper>
+
+@code {
+    private int _activeTab;
+    private bool _saving;
+    private CancellationTokenSource? _cts;
+
+    // Manual tab fields
+    private string _manualName = "";
+    private string _manualSystem = "";
+    private string _manualInstruction = "";
+    private string _manualSchema = "";
+    private bool _manualRequestJson;
+    private bool _manualChainOfThought;
+    private GuidanceSchemaType? _manualGuidance;
+    private float? _manualTemperature;
+    private int? _manualMaxTokens;
+
+    // Generate tab fields
+    private string _genName = "";
+    private string _genPurpose = "";
+    private bool _genRequestJson;
+    private string _genSchemaType = "";
+    private List<GeneratorExample> _genExamples = [new GeneratorExample { Inputs = new() { ["Input"] = "" } }];
+    private string _generatedContent = "";
+    private bool _generating;
+
+    // ── manual save ────────────────────────────────────────────────────────────
+    private async Task PromptToSaveManual()
+    {
+        if (string.IsNullOrWhiteSpace(_manualName))
+        {
+            Snackbar.Add("Prompt name is required.", Severity.Warning);
+            return;
+        }
+        if (Registry.GetByName(_manualName) is not null)
+        {
+            Snackbar.Add($"A prompt named '{_manualName}' already exists. Pick a different name.", Severity.Error);
+            return;
+        }
+        var parameters = new DialogParameters
+        {
+            ["Message"] = $"Create new prompt '{_manualName}'?",
+            ["Detail"] = "A new .pmt file will be written under RConfigs/Prompts.",
+            ["ConfirmLabel"] = "Create",
+        };
+        var dialog = await DialogSvc.ShowAsync<ConfirmDialog>("Confirm create", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+
+        await DoSaveManual();
+    }
+
+    private async Task DoSaveManual()
+    {
+        _saving = true;
+        StateHasChanged();
+        try
+        {
+            var prompt = new Prompt
+            {
+                Name = _manualName,
+                Version = 1,
+                System = _manualSystem,
+                Instruction = _manualInstruction,
+                Schema = string.IsNullOrWhiteSpace(_manualSchema) ? null : _manualSchema,
+                RequestJson = _manualRequestJson ? true : null,
+                ChainOfThought = _manualChainOfThought ? true : null,
+                GuidanceSchema = _manualGuidance,
+                Temperature = _manualTemperature,
+                MaxTokens = _manualMaxTokens,
+            };
+            var content = PromptRegistryService.SerializePrompt(prompt);
+            Registry.SaveNew(_manualName, content);
+            Snackbar.Add($"Created {_manualName}", Severity.Success);
+            Nav.NavigateTo($"/prompts/edit?name={Uri.EscapeDataString(_manualName)}");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Save failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    // ── generate tab ──────────────────────────────────────────────────────────
+    private void AddExample() => _genExamples.Add(new GeneratorExample { Inputs = new() { ["Input"] = "" } });
+    private void RemoveExample(int idx) { if (_genExamples.Count > 1) _genExamples.RemoveAt(idx); }
+    private void AddInput(GeneratorExample ex)
+    {
+        string key = $"Input{ex.Inputs.Count + 1}";
+        while (ex.Inputs.ContainsKey(key)) key += "_";
+        ex.Inputs[key] = "";
+    }
+    private void RemoveInput(GeneratorExample ex, string key)
+    {
+        if (ex.Inputs.Count > 1) ex.Inputs.Remove(key);
+    }
+    private void RenameKey(GeneratorExample ex, string oldKey, string newKey)
+    {
+        if (string.IsNullOrWhiteSpace(newKey) || newKey == oldKey || ex.Inputs.ContainsKey(newKey)) return;
+        var updated = new Dictionary<string, string>();
+        foreach (var kv in ex.Inputs)
+            updated[kv.Key == oldKey ? newKey : kv.Key] = kv.Value;
+        ex.Inputs = updated;
+    }
+
+    private async Task RunGenerate()
+    {
+        if (string.IsNullOrWhiteSpace(_genName) || string.IsNullOrWhiteSpace(_genPurpose))
+        {
+            Snackbar.Add("Prompt name and purpose are required.", Severity.Warning);
+            return;
+        }
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        _generatedContent = "";
+        _generating = true;
+        try
+        {
+            await foreach (var token in Generator.GenerateStreamAsync(
+                _genName, _genPurpose, _genExamples, _genRequestJson, _genSchemaType, _cts.Token))
+            {
+                _generatedContent += token;
+                StateHasChanged();
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { Snackbar.Add($"Generation failed: {ex.Message}", Severity.Error); }
+        finally
+        {
+            _generating = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task PromptToSaveGenerated()
+    {
+        if (string.IsNullOrWhiteSpace(_genName) || string.IsNullOrWhiteSpace(_generatedContent)) return;
+        if (Registry.GetByName(_genName) is not null)
+        {
+            Snackbar.Add($"A prompt named '{_genName}' already exists. Edit the name above before saving.", Severity.Error);
+            return;
+        }
+        var parameters = new DialogParameters
+        {
+            ["Message"] = $"Save generated prompt '{_genName}'?",
+            ["Detail"] = "A new .pmt file will be written under RConfigs/Prompts.",
+            ["ConfirmLabel"] = "Save",
+        };
+        var dialog = await DialogSvc.ShowAsync<ConfirmDialog>("Confirm save", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+
+        _saving = true;
+        StateHasChanged();
+        try
+        {
+            Registry.SaveNew(_genName, _generatedContent);
+            Snackbar.Add($"Saved {_genName}", Severity.Success);
+            Nav.NavigateTo($"/prompts/edit?name={Uri.EscapeDataString(_genName)}");
+        }
+        catch (Exception ex) { Snackbar.Add($"Save failed: {ex.Message}", Severity.Error); }
+        finally
+        {
+            _saving = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+}

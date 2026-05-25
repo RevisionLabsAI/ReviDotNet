@@ -1,0 +1,50 @@
+@* Generic single-line text prompt dialog. Returns the typed string on confirm. *@
+
+<MudDialog>
+    <DialogContent>
+        @if (!string.IsNullOrWhiteSpace(Message))
+        {
+            <MudText Typo="Typo.body2" Class="mb-3" Color="Color.Secondary">@Message</MudText>
+        }
+        <MudTextField @bind-Value="_value"
+                      Label="@(Label ?? "Name")"
+                      Variant="Variant.Outlined"
+                      Immediate="true"
+                      Required="true"
+                      OnKeyDown="OnKeyDown"
+                      FullWidth="true" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Confirm" Disabled="@string.IsNullOrWhiteSpace(_value)">
+            @(ConfirmLabel ?? "Save")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? Message { get; set; }
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string? ConfirmLabel { get; set; }
+    [Parameter] public string? InitialValue { get; set; }
+
+    private string _value = string.Empty;
+
+    protected override void OnInitialized() => _value = InitialValue ?? string.Empty;
+
+    private void Confirm()
+    {
+        if (string.IsNullOrWhiteSpace(_value)) return;
+        MudDialog.Close(DialogResult.Ok(_value));
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") Confirm();
+    }
+}

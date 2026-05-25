@@ -1,0 +1,213 @@
+@page "/agents/edit"
+@using ReviDotNet.Forge.Services.Workshop
+@inject IAgentManager AgentMgr
+@inject IAgentWorkshopService WorkshopSvc
+@inject ExportService Export
+@inject IDialogService DialogSvc
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_agent?.Name ?? "Edit agent") — ReviDotNet Forge</PageTitle>
+
+@if (_agent is null)
+{
+    <MudAlert Severity="Severity.Warning">
+        Agent <code>@Name</code> not found.
+        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/agents">Back to Registry</MudButton>
+    </MudAlert>
+}
+else
+{
+    <div class="d-flex align-center mb-4">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/agents" />
+        <div class="ml-2">
+            <MudText Typo="Typo.h4">@_agent.Name</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">v@(_agent.Version) · @(_dirty ? "modified" : "saved")</MudText>
+        </div>
+        <MudSpacer />
+        <MudButton Variant="Variant.Outlined"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.SmartToy"
+                   Href="@($"/workshop?agent={Uri.EscapeDataString(_agent.Name ?? string.Empty)}")">
+            Open in Workshop
+        </MudButton>
+        <MudButton Class="ml-2"
+                   Variant="Variant.Outlined"
+                   StartIcon="@Icons.Material.Filled.FileDownload"
+                   OnClick="@ExportAgent">
+            Export
+        </MudButton>
+        <MudButton Class="ml-2"
+                   Variant="Variant.Filled"
+                   Color="Color.Success"
+                   StartIcon="@Icons.Material.Filled.Save"
+                   Disabled="@(!_dirty || _saving || _readOnly)"
+                   OnClick="@PromptToSave">
+            @(_saving ? "Saving…" : "Save")
+        </MudButton>
+    </div>
+
+    @if (_readOnly)
+    {
+        <MudAlert Severity="Severity.Info" Class="mb-3">
+            This agent's source file isn't on disk (it's an embedded resource), so Save is disabled.
+            You can still Export and use the content as a starting point for a new agent.
+        </MudAlert>
+    }
+
+    <MudPaper Class="pa-4" Elevation="1">
+        <MudTabs Elevation="0" Rounded="true">
+
+            <MudTabPanel Text="Source" Icon="@Icons.Material.Filled.Code">
+                <div class="pa-2">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">
+                        Edit the full .agent file content. See ReviDotNet docs for the [[loop]] / [[state.*]] / [[_loop]] grammar.
+                    </MudText>
+                    <MudTextField @bind-Value="_source"
+                                  Variant="Variant.Outlined"
+                                  Lines="28"
+                                  Style="font-family: monospace; font-size: 0.82rem;"
+                                  FullWidth="true"
+                                  Immediate="true"
+                                  DebounceInterval="300"
+                                  OnDebounceIntervalElapsed="@((string _) => MarkDirty())" />
+                </div>
+            </MudTabPanel>
+
+            <MudTabPanel Text="Parsed view" Icon="@Icons.Material.Filled.Visibility">
+                <div class="pa-2">
+                    <MudGrid Spacing="2" Class="mb-3">
+                        <MudItem xs="4">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Entry state</MudText>
+                            <MudText Typo="Typo.body2">@(_agent.EntryState ?? "—")</MudText>
+                        </MudItem>
+                        <MudItem xs="4">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">States</MudText>
+                            <MudText Typo="Typo.body2">@(_agent.States?.Count ?? 0)</MudText>
+                        </MudItem>
+                        <MudItem xs="4">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Run cost budget (USD)</MudText>
+                            <MudText Typo="Typo.body2">@(_agent.RunCostBudget?.ToString("F2") ?? "—")</MudText>
+                        </MudItem>
+                    </MudGrid>
+
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">States</MudText>
+                    <MudExpansionPanels Dense="true">
+                        @foreach (var state in _agent.States ?? new())
+                        {
+                            <MudExpansionPanel>
+                                <TitleContent>
+                                    <div class="d-flex align-center gap-2">
+                                        <MudChip T="string" Size="Size.Small"
+                                                 Color="@(string.Equals(state.Name, _agent.EntryState, StringComparison.OrdinalIgnoreCase) ? Color.Primary : Color.Default)">
+                                            @state.Name
+                                        </MudChip>
+                                        @if (state.Tools is not null && state.Tools.Count > 0)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@(state.Tools.Count) tool(s)</MudChip>
+                                        }
+                                    </div>
+                                </TitleContent>
+                                <ChildContent>
+                                    @if (!string.IsNullOrWhiteSpace(state.Description))
+                                    {
+                                        <MudText Typo="Typo.body2" Class="mb-2">@state.Description</MudText>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(state.Instruction))
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">Instruction</MudText>
+                                        <MudPaper Class="pa-2 mb-2" Outlined="true"
+                                                  Style="font-family: monospace; font-size: 0.75rem; white-space: pre-wrap;">@state.Instruction</MudPaper>
+                                    }
+                                </ChildContent>
+                            </MudExpansionPanel>
+                        }
+                    </MudExpansionPanels>
+                </div>
+            </MudTabPanel>
+
+        </MudTabs>
+    </MudPaper>
+}
+
+@code {
+    [SupplyParameterFromQuery] public string? Name { get; set; }
+
+    private AgentProfile? _agent;
+    private string _source = "";
+    private bool _dirty;
+    private bool _saving;
+    private bool _readOnly;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Name)) return;
+        _agent = AgentMgr.Get(Name);
+        if (_agent is null) return;
+
+        var src = await WorkshopSvc.ReadAgentSourceAsync(Name, CancellationToken.None);
+        if (src is null)
+        {
+            // Embedded-resource agent: not editable on disk. Still show parsed content.
+            _readOnly = true;
+            _source = "# Source not available on disk — this agent is loaded from an embedded resource.\n";
+        }
+        else
+        {
+            _readOnly = false;
+            _source = src;
+        }
+        _dirty = false;
+    }
+
+    private void MarkDirty()
+    {
+        if (!_dirty) { _dirty = true; StateHasChanged(); }
+    }
+
+    private async Task PromptToSave()
+    {
+        if (_agent is null || _readOnly) return;
+        var parameters = new DialogParameters
+        {
+            ["Message"] = $"Save changes to '{_agent.Name}'?",
+            ["Detail"] = "Saving will overwrite the .agent file on disk and archive the prior version under .history.",
+            ["ConfirmLabel"] = "Save",
+        };
+        var dialog = await DialogSvc.ShowAsync<ConfirmDialog>("Confirm save", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+
+        await DoSave();
+    }
+
+    private async Task DoSave()
+    {
+        if (_agent is null) return;
+        _saving = true;
+        StateHasChanged();
+        try
+        {
+            await WorkshopSvc.SaveAgentRevisionAsync(_agent.Name ?? string.Empty, _source, CancellationToken.None);
+            _dirty = false;
+            Snackbar.Add($"Saved {_agent.Name}", Severity.Success);
+            _agent = AgentMgr.Get(_agent.Name ?? string.Empty);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Save failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ExportAgent()
+    {
+        if (_agent is null) return;
+        var safe = (_agent.Name ?? "agent").Replace('/', '_').Replace('\\', '_');
+        await Export.DownloadTextAsync($"{safe}.agent", _source, "text/plain");
+    }
+}

@@ -1,0 +1,88 @@
+@using ReviDotNet.Forge.Services
+@inject RunningJobsService Jobs
+@implements IDisposable
+
+<MudMenu Icon="@Icons.Material.Filled.WorkOutline"
+         Color="Color.Inherit"
+         AnchorOrigin="Origin.BottomRight"
+         TransformOrigin="Origin.TopRight"
+         Dense="true"
+         Disabled="@(_jobs.Count == 0)">
+    <ActivatorContent>
+        <MudBadge Content="@_jobs.Count"
+                  Color="Color.Secondary"
+                  Overlap="true"
+                  Visible="@(_jobs.Count > 0)">
+            <MudIconButton Icon="@Icons.Material.Filled.WorkOutline"
+                           Color="Color.Inherit" />
+        </MudBadge>
+    </ActivatorContent>
+    <ChildContent>
+        <div class="pa-2" style="min-width: 320px;">
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Running jobs (@_jobs.Count)</MudText>
+            @if (_jobs.Count == 0)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Secondary">No active jobs.</MudText>
+            }
+            else
+            {
+                @foreach (var job in _jobs)
+                {
+                    <MudPaper Class="pa-2 mb-1" Outlined="true">
+                        <div class="d-flex align-center gap-2">
+                            <MudIcon Icon="@IconFor(job.Kind)" Size="Size.Small" Color="Color.Primary" />
+                            <div class="flex-grow-1">
+                                <MudText Typo="Typo.body2">@job.Title</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">@(job.Kind) · @ElapsedText(job.StartedAt)</MudText>
+                            </div>
+                            <MudIconButton Icon="@Icons.Material.Filled.Cancel"
+                                           Size="Size.Small"
+                                           Color="Color.Error"
+                                           OnClick="@(() => Jobs.CancelById(job.Id))" />
+                        </div>
+                    </MudPaper>
+                }
+            }
+        </div>
+    </ChildContent>
+</MudMenu>
+
+@code {
+    private List<JobEntry> _jobs = new();
+
+    protected override void OnInitialized()
+    {
+        _jobs = Jobs.Snapshot().ToList();
+        Jobs.Changed += OnChanged;
+    }
+
+    private void OnChanged()
+    {
+        _jobs = Jobs.Snapshot().ToList();
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Jobs.Changed -= OnChanged;
+    }
+
+    private static string IconFor(JobKind k) => k switch
+    {
+        JobKind.Test => Icons.Material.Filled.PlayArrow,
+        JobKind.Analyze => Icons.Material.Filled.Analytics,
+        JobKind.Generate => Icons.Material.Filled.AutoAwesome,
+        JobKind.AgentRun => Icons.Material.Filled.SmartToy,
+        JobKind.Evaluate => Icons.Material.Filled.Assessment,
+        JobKind.Revise => Icons.Material.Filled.Edit,
+        _ => Icons.Material.Filled.WorkOutline
+    };
+
+    private static string ElapsedText(DateTime startedAt)
+    {
+        var elapsed = DateTime.UtcNow - startedAt;
+        if (elapsed.TotalSeconds < 60) return $"{elapsed.TotalSeconds:0}s";
+        if (elapsed.TotalMinutes < 60) return $"{elapsed.TotalMinutes:0}m";
+        return $"{elapsed.TotalHours:0.0}h";
+    }
+}

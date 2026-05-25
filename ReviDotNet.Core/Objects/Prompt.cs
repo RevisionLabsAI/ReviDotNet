@@ -446,10 +446,7 @@ public class Prompt
             // Call the method on the object if it exists
             methodInfo.Invoke(obj, null);
         }
-        else
-        {
-            Console.WriteLine("Method 'Init' not found.");
-        }
+        // An absent Init() is a valid design choice — most DTOs don't need one. Silent no-op.
     }
     #endregion
     

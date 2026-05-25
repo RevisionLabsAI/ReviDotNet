@@ -139,6 +139,11 @@ else
 builder.Services.AddSingleton<IReviLogLimiter, ReviLogLimiterService>();
 
 // Forge services (prompt engineering tools)
+builder.Services.AddSingleton<ArtifactHistoryService>();
+builder.Services.AddSingleton<WorkbenchStateService>();
+builder.Services.AddSingleton<DependencyAnalyzerService>();
+builder.Services.AddSingleton<RunningJobsService>();
+builder.Services.AddSingleton<SavedSuitesService>();
 builder.Services.AddSingleton<PromptRegistryService>();
 builder.Services.AddSingleton<TestRunnerService>();
 builder.Services.AddSingleton<PromptGeneratorService>();
@@ -146,6 +151,12 @@ builder.Services.AddSingleton<OptimizerService>();
 
 // Agent Workshop
 builder.Services.AddSingleton<IAgentWorkshopService, AgentWorkshopService>();
+builder.Services.AddSingleton<AgentGeneratorService>();
+
+// Registry + export services for the new edit pages
+builder.Services.AddSingleton<ModelRegistryService>();
+builder.Services.AddSingleton<ProviderRegistryService>();
+builder.Services.AddScoped<ExportService>();
 
 // Gateway services
 builder.Services.AddSingleton<IForgeRateLimiterService, ForgeRateLimiterService>();

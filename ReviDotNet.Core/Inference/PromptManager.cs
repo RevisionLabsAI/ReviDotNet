@@ -54,10 +54,17 @@ namespace Revi
                     .EnumerateFiles(path, "*.pmt", SearchOption.AllDirectories)
                     .ToList();
 
-                // Load in the files
+                // Load in the files — per-file try/catch so one bad prompt doesn't abort the rest.
                 foreach (var file in files)
                 {
-                    LoadPromptFromFile(file, path);
+                    try
+                    {
+                        LoadPromptFromFile(file, path);
+                    }
+                    catch (Exception ex)
+                    {
+                        Util.Log($"PromptManager: Failed to load '{file}': {ex.Message}");
+                    }
                 }
             }
             catch (DirectoryNotFoundException e)
@@ -111,23 +118,30 @@ namespace Revi
 
                 foreach (var resourceName in resourceNames)
                 {
-                    //Util.Log($"Found resource: {resourceName}");
-                    using var stream = assembly.GetManifestResourceStream(resourceName);
-                    if (stream == null) 
+                    // Per-resource try/catch so one malformed prompt doesn't abort loading the rest.
+                    try
                     {
-                        Util.Log($"Stream not found for resource: {resourceName}");
-                        continue;
+                        using var stream = assembly.GetManifestResourceStream(resourceName);
+                        if (stream == null)
+                        {
+                            Util.Log($"Stream not found for resource: {resourceName}");
+                            continue;
+                        }
+
+                        using var reader = new StreamReader(stream);
+                        var promptDictionary = RConfigParser.ReadEmbedded(reader.ReadToEnd());
+                        string folder = Util.ExtractEmbeddedDirectories(".Prompts.", resourceName).ToLower();
+                        Prompt? prompt = Prompt.ToObject(promptDictionary, folder);
+
+                        if (prompt?.Name is null)
+                            continue;
+
+                        CheckAdd(prompt, true);
                     }
-
-                    using var reader = new StreamReader(stream);
-                    var promptDictionary = RConfigParser.ReadEmbedded(reader.ReadToEnd());
-                    string folder = Util.ExtractEmbeddedDirectories(".Prompts.", resourceName).ToLower();
-                    Prompt? prompt = Prompt.ToObject(promptDictionary, folder);
-
-                    if (prompt?.Name is null)
-                        continue;
-
-                    CheckAdd(prompt, true);
+                    catch (Exception ex)
+                    {
+                        Util.Log($"PromptManager: Failed to load embedded resource '{resourceName}': {ex.Message}");
+                    }
                 }
             }
             catch (Exception e)

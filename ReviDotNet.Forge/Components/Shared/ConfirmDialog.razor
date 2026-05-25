@@ -1,0 +1,32 @@
+@* Generic yes/no confirmation dialog. Returns true on confirm, false on cancel. *@
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2">@Message</MudText>
+        @if (!string.IsNullOrWhiteSpace(Detail))
+        {
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2 d-block">@Detail</MudText>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">@(CancelLabel ?? "Cancel")</MudButton>
+        <MudButton Variant="Variant.Filled"
+                   Color="@(DestructiveAction ? Color.Error : Color.Primary)"
+                   OnClick="Confirm">
+            @(ConfirmLabel ?? "Confirm")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public string Message { get; set; } = "Are you sure?";
+    [Parameter] public string? Detail { get; set; }
+    [Parameter] public string? ConfirmLabel { get; set; }
+    [Parameter] public string? CancelLabel { get; set; }
+    [Parameter] public bool DestructiveAction { get; set; }
+
+    private void Confirm() => MudDialog.Close(DialogResult.Ok(true));
+    private void Cancel() => MudDialog.Cancel();
+}

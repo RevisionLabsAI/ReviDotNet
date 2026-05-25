@@ -1,0 +1,90 @@
+@page "/models"
+@inject IModelManager ModelMgr
+@inject NavigationManager Nav
+
+<PageTitle>Models — ReviDotNet Forge</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudText Typo="Typo.h4">Models</MudText>
+    <MudSpacer />
+    <MudTextField @bind-Value="_search"
+                  Placeholder="Search models..."
+                  Adornment="Adornment.Start"
+                  AdornmentIcon="@Icons.Material.Filled.Search"
+                  Clearable="true"
+                  Style="max-width: 300px;"
+                  Variant="Variant.Outlined"
+                  Margin="Margin.Dense" />
+    <MudButton Variant="Variant.Filled"
+               Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add"
+               Href="/models/new"
+               Class="ml-3">
+        Add New
+    </MudButton>
+</div>
+
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+    Click a row to view its full configuration and export. Existing models are read-only;
+    use <strong>Add New</strong> to create additional models.
+</MudText>
+
+<MudDataGrid Items="@Filtered"
+             T="ModelProfile"
+             RowClick="@OnRowClick"
+             Dense="true"
+             Hover="true"
+             Striped="true"
+             Elevation="2">
+    <Columns>
+        <PropertyColumn Property="m => m.Name" Title="Name" />
+        <TemplateColumn Title="Provider">
+            <CellTemplate>
+                <MudChip T="string" Size="Size.Small" Color="Color.Info">@(context.Item.ProviderName ?? "?")</MudChip>
+            </CellTemplate>
+        </TemplateColumn>
+        <PropertyColumn Property="m => m.ModelString" Title="Model String" />
+        <TemplateColumn Title="Tier">
+            <CellTemplate>
+                <MudChip T="string" Size="Size.Small">@context.Item.Tier</MudChip>
+            </CellTemplate>
+        </TemplateColumn>
+        <PropertyColumn Property="m => m.TokenLimit" Title="Token Limit" />
+        <TemplateColumn Title="Enabled">
+            <CellTemplate>
+                @if (context.Item.Enabled)
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                }
+                else
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.Cancel" Color="Color.Error" Size="Size.Small" />
+                }
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="" CellStyle="text-align: right; width: 40px;" Sortable="false" Filterable="false">
+            <CellTemplate>
+                <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" Color="Color.Default" />
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+</MudDataGrid>
+
+@code {
+    private string _search = string.Empty;
+
+    private IEnumerable<ModelProfile> Filtered => ModelMgr.GetAll()
+        .Where(m => string.IsNullOrWhiteSpace(_search) ||
+                    (m.Name?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (m.ModelString?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (m.ProviderName?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false))
+        .OrderBy(m => m.ProviderName)
+        .ThenBy(m => m.Name);
+
+    private void OnRowClick(DataGridRowClickEventArgs<ModelProfile> args)
+    {
+        var name = args.Item?.Name;
+        if (string.IsNullOrWhiteSpace(name)) return;
+        Nav.NavigateTo($"/models/edit?name={Uri.EscapeDataString(name)}");
+    }
+}

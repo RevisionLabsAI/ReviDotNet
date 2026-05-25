@@ -2,8 +2,11 @@
 @inject PromptRegistryService Registry
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
+@inject TestRunnerService Runner
+@inject RunningJobsService JobsSvc
+@inject IModelManager Models
 
-<PageTitle>Prompt Registry — ReviDotNet Optimizer</PageTitle>
+<PageTitle>Prompt Registry — ReviDotNet Forge</PageTitle>
 
 <div class="d-flex align-center mb-4">
     <MudText Typo="Typo.h4">Prompt Registry</MudText>
@@ -19,13 +22,73 @@
     <MudButton Variant="Variant.Filled"
                Color="Color.Primary"
                StartIcon="@Icons.Material.Filled.Add"
-               Href="/generate"
+               Href="/prompts/new"
                Class="ml-3">
-        New Prompt
+        Create New
     </MudButton>
 </div>
 
+@if (_selectedPrompts.Count > 0)
+{
+    <MudPaper Class="pa-2 mb-2 d-flex align-center gap-2" Outlined="true">
+        <MudText Typo="Typo.body2">@_selectedPrompts.Count selected</MudText>
+        <MudSpacer />
+        <MudSelect T="string"
+                   @bind-Value="_batchModelName"
+                   Label="Model for batch"
+                   Variant="Variant.Outlined"
+                   Margin="Margin.Dense"
+                   Style="max-width: 240px;">
+            @foreach (var m in Models.GetAll())
+            {
+                <MudSelectItem Value="@(m.Name ?? string.Empty)">@m.Name</MudSelectItem>
+            }
+        </MudSelect>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Analytics"
+                   Disabled="@(_batchRunning || string.IsNullOrWhiteSpace(_batchModelName))"
+                   OnClick="@RunBatchAnalysis">
+            @(_batchRunning ? $"Analyzing… ({_batchProgress}/{_batchTotal})" : "Batch analyze")
+        </MudButton>
+        <MudIconButton Icon="@Icons.Material.Filled.Clear"
+                       Size="Size.Small"
+                       Title="Clear selection"
+                       OnClick="@(() => { _selectedPrompts.Clear(); StateHasChanged(); })" />
+    </MudPaper>
+}
+
+@if (_batchResults.Count > 0)
+{
+    <MudPaper Class="pa-3 mb-3" Outlined="true">
+        <MudText Typo="Typo.subtitle2" Class="mb-2">Last batch results</MudText>
+        <MudTable Items="@_batchResults" Dense="true">
+            <HeaderContent>
+                <MudTh>Prompt</MudTh>
+                <MudTh>Avg quality</MudTh>
+                <MudTh>Fulfilled</MudTh>
+                <MudTh>Runs</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.PromptName</MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="Size.Small"
+                             Color="@(context.AvgQuality >= 8 ? Color.Success : context.AvgQuality >= 5 ? Color.Warning : Color.Error)">
+                        @($"{context.AvgQuality:F1}/10")
+                    </MudChip>
+                </MudTd>
+                <MudTd>@($"{context.FulfilledPercent:F0}%")</MudTd>
+                <MudTd>@context.RunCount</MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+}
+
 <MudDataGrid Items="@FilteredPrompts"
+             T="Prompt"
+             MultiSelection="true"
+             @bind-SelectedItems="_selectedPrompts"
+             RowClick="@OnRowClick"
              Dense="true"
              Hover="true"
              Striped="true"
@@ -57,126 +120,112 @@
                 <MudText Typo="Typo.body2">@(context.Item.Examples?.Count ?? 0)</MudText>
             </CellTemplate>
         </TemplateColumn>
-        <TemplateColumn Title="Actions" CellClass="d-flex gap-1">
+        <TemplateColumn Title="" CellStyle="text-align: right; width: 40px;" Sortable="false" Filterable="false">
             <CellTemplate>
-                <MudIconButton Icon="@Icons.Material.Filled.Visibility"
-                               Size="Size.Small"
-                               OnClick="@(() => ViewPrompt(context.Item))" />
-                <MudIconButton Icon="@Icons.Material.Filled.Edit"
-                               Size="Size.Small"
-                               OnClick="@(() => EditPrompt(context.Item))" />
-                <MudIconButton Icon="@Icons.Material.Filled.PlayArrow"
-                               Size="Size.Small"
-                               Color="Color.Success"
-                               OnClick="@(() => Nav.NavigateTo($"/test?prompt={Uri.EscapeDataString(context.Item.Name ?? string.Empty)}"))" />
-                <MudIconButton Icon="@Icons.Material.Filled.TrendingUp"
-                               Size="Size.Small"
-                               Color="Color.Primary"
-                               OnClick="@(() => Nav.NavigateTo($"/optimize?prompt={Uri.EscapeDataString(context.Item.Name ?? string.Empty)}"))" />
+                <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" Color="Color.Default" />
             </CellTemplate>
         </TemplateColumn>
     </Columns>
 </MudDataGrid>
 
-@if (_viewPrompt is not null)
-{
-    <PromptDetailDrawer Prompt="_viewPrompt"
-                        OnClose="@(() => _viewPrompt = null)" />
-}
-
-<MudDrawer @bind-Open="_editOpen"
-           Anchor="Anchor.Right"
-           Elevation="3"
-           Variant="DrawerVariant.Temporary"
-           Width="640px"
-           ClipMode="DrawerClipMode.Never">
-    <MudDrawerHeader Class="d-flex align-center justify-space-between">
-        <MudText Typo="Typo.h6">Edit — @_editPrompt?.Name</MudText>
-        <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="@(() => _editOpen = false)" />
-    </MudDrawerHeader>
-    @if (_editPrompt is not null)
-    {
-        <div class="pa-4">
-            <MudGrid Spacing="3">
-                <MudItem xs="12">
-                    <MudTextField @bind-Value="_editSystem"
-                                  Label="System Message"
-                                  Lines="6"
-                                  Variant="Variant.Outlined"
-                                  FullWidth="true" />
-                </MudItem>
-                <MudItem xs="12">
-                    <MudTextField @bind-Value="_editInstruction"
-                                  Label="Instruction"
-                                  Lines="8"
-                                  Variant="Variant.Outlined"
-                                  FullWidth="true" />
-                </MudItem>
-                <MudItem xs="12">
-                    <MudTextField @bind-Value="_editSchema"
-                                  Label="Schema (optional)"
-                                  Lines="4"
-                                  Variant="Variant.Outlined"
-                                  FullWidth="true" />
-                </MudItem>
-            </MudGrid>
-            <div class="d-flex gap-3 mt-4">
-                <MudButton OnClick="@(() => _editOpen = false)">Cancel</MudButton>
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@SaveEdit">Save</MudButton>
-            </div>
-        </div>
-    }
-</MudDrawer>
-
 @code {
+    public sealed class BatchResult
+    {
+        public string PromptName { get; set; } = string.Empty;
+        public double AvgQuality { get; set; }
+        public double FulfilledPercent { get; set; }
+        public int RunCount { get; set; }
+    }
+
     private string _search = string.Empty;
-    private Prompt? _viewPrompt;
-    private Prompt? _editPrompt;
-    private bool _editOpen;
-    private string _editSystem = string.Empty;
-    private string _editInstruction = string.Empty;
-    private string _editSchema = string.Empty;
+    private HashSet<Prompt> _selectedPrompts = new();
+    private string _batchModelName = string.Empty;
+    private bool _batchRunning;
+    private int _batchProgress;
+    private int _batchTotal;
+    private List<BatchResult> _batchResults = new();
 
     private IEnumerable<Prompt> FilteredPrompts => Registry.GetAll()
         .Where(p => string.IsNullOrWhiteSpace(_search) ||
                     (p.Name?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false))
         .OrderBy(p => p.Name);
 
-    private void ViewPrompt(Prompt p)
+    protected override void OnInitialized()
     {
-        _viewPrompt = p;
-        _editOpen = false;
+        var first = Models.GetAll().FirstOrDefault();
+        _batchModelName = first?.Name ?? string.Empty;
     }
 
-    private void EditPrompt(Prompt p)
+    private void OnRowClick(DataGridRowClickEventArgs<Prompt> args)
     {
-        _editPrompt = p;
-        _editSystem = p.System ?? string.Empty;
-        _editInstruction = p.Instruction ?? string.Empty;
-        _editSchema = p.Schema ?? string.Empty;
-        _viewPrompt = null;
-        _editOpen = true;
+        var name = args.Item?.Name;
+        if (string.IsNullOrWhiteSpace(name)) return;
+        Nav.NavigateTo($"/prompts/edit?name={Uri.EscapeDataString(name)}");
     }
 
-    private void SaveEdit()
+    private async Task RunBatchAnalysis()
     {
-        if (_editPrompt is null) return;
+        if (_selectedPrompts.Count == 0 || string.IsNullOrWhiteSpace(_batchModelName)) return;
 
-        _editPrompt.System = _editSystem;
-        _editPrompt.Instruction = _editInstruction;
-        _editPrompt.Schema = _editSchema;
+        _batchRunning = true;
+        _batchResults.Clear();
+        _batchProgress = 0;
+        _batchTotal = _selectedPrompts.Count;
+        StateHasChanged();
+
+        var cts = new CancellationTokenSource();
+        string jobId = JobsSvc.Register(JobKind.Analyze, $"Batch analyze {_batchTotal} prompts on {_batchModelName}", () => cts.Cancel());
 
         try
         {
-            Registry.Save(_editPrompt);
-            Snackbar.Add($"Saved {_editPrompt.Name}", Severity.Success);
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Save failed: {ex.Message}", Severity.Error);
-        }
+            foreach (var prompt in _selectedPrompts.ToList())
+            {
+                if (cts.Token.IsCancellationRequested) break;
 
-        _editOpen = false;
-        _editPrompt = null;
+                var name = prompt.Name ?? string.Empty;
+                var scores = new List<int>();
+                int fulfilled = 0;
+
+                try
+                {
+                    var channel = Runner.RunTests(
+                        name,
+                        new[] { _batchModelName },
+                        new List<Input> { new Input("Task", "") },
+                        runsPerModel: 2,
+                        runAnalysis: true,
+                        cts.Token);
+
+                    await foreach (var r in channel.Reader.ReadAllAsync(cts.Token))
+                    {
+                        if (r.Analysis is not null)
+                        {
+                            scores.Add(r.Analysis.QualityScore);
+                            if (r.Analysis.FulfilledRequest) fulfilled++;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Snackbar.Add($"{name}: {ex.Message}", Severity.Warning);
+                }
+
+                _batchResults.Add(new BatchResult
+                {
+                    PromptName = name,
+                    AvgQuality = scores.Count > 0 ? scores.Average() : 0,
+                    FulfilledPercent = scores.Count > 0 ? fulfilled * 100.0 / scores.Count : 0,
+                    RunCount = scores.Count
+                });
+                _batchProgress++;
+                StateHasChanged();
+            }
+        }
+        finally
+        {
+            _batchRunning = false;
+            JobsSvc.Complete(jobId);
+            StateHasChanged();
+        }
     }
 }

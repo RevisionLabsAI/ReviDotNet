@@ -1,0 +1,124 @@
+@page "/models/edit"
+@inject IModelManager ModelMgr
+@inject ModelRegistryService Registry
+@inject ExportService Export
+
+<PageTitle>@(_model?.Name ?? "Model") — ReviDotNet Forge</PageTitle>
+
+@if (_model is null)
+{
+    <MudAlert Severity="Severity.Warning">
+        Model <code>@Name</code> not found.
+        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/models">Back to list</MudButton>
+    </MudAlert>
+}
+else
+{
+    <div class="d-flex align-center mb-4">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/models" />
+        <div class="ml-2">
+            <MudText Typo="Typo.h4">@_model.Name</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">@_model.ProviderName · @_model.Tier · read-only</MudText>
+        </div>
+        <MudSpacer />
+        <MudButton Variant="Variant.Outlined"
+                   StartIcon="@Icons.Material.Filled.FileDownload"
+                   OnClick="@ExportRcfg">
+            Export
+        </MudButton>
+    </div>
+
+    <MudAlert Severity="Severity.Info" Class="mb-3">
+        Existing models are view-only. To make changes, export this configuration,
+        edit the .rcfg file on disk, and restart Forge — or use <strong>Add New</strong>
+        to create a new model.
+    </MudAlert>
+
+    <MudPaper Class="pa-4" Elevation="1">
+        <MudTabs Elevation="0" Rounded="true">
+            <MudTabPanel Text="Fields" Icon="@Icons.Material.Filled.Settings">
+                <div class="pa-2">
+                    <MudGrid Spacing="2">
+                        @foreach (var (label, value) in EnumerateFields())
+                        {
+                            <MudItem xs="6" md="4">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">@label</MudText>
+                                <MudText Typo="Typo.body2">@(string.IsNullOrEmpty(value) ? "—" : value)</MudText>
+                            </MudItem>
+                        }
+                    </MudGrid>
+                </div>
+            </MudTabPanel>
+            <MudTabPanel Text=".rcfg source" Icon="@Icons.Material.Filled.Code">
+                <div class="pa-2">
+                    <MudPaper Class="pa-3" Outlined="true"
+                              Style="font-family: monospace; font-size: 0.8rem; white-space: pre-wrap; max-height: 600px; overflow: auto;">
+                        @_serialized
+                    </MudPaper>
+                </div>
+            </MudTabPanel>
+        </MudTabs>
+    </MudPaper>
+}
+
+@code {
+    [SupplyParameterFromQuery] public string? Name { get; set; }
+
+    private ModelProfile? _model;
+    private string _serialized = "";
+
+    protected override void OnParametersSet()
+    {
+        if (string.IsNullOrWhiteSpace(Name)) return;
+        _model = ModelMgr.Get(Name);
+        if (_model is null) return;
+        _serialized = Registry.Serialize(_model);
+    }
+
+    private IEnumerable<(string Label, string Value)> EnumerateFields()
+    {
+        if (_model is null) yield break;
+        yield return ("Name", _model.Name ?? "");
+        yield return ("Enabled", _model.Enabled ? "true" : "false");
+        yield return ("Provider", _model.ProviderName ?? "");
+        yield return ("Model string", _model.ModelString ?? "");
+        yield return ("Tier", _model.Tier.ToString());
+        yield return ("Token limit", _model.TokenLimit.ToString());
+        yield return ("Stop sequences", _model.StopSequences ?? "");
+        yield return ("Max token type", _model.MaxTokenType?.ToString() ?? "");
+        yield return ("Supports prompt completion", _model.SupportsPromptCompletion?.ToString() ?? "");
+        yield return ("Supports response completion", _model.SupportsResponseCompletion?.ToString() ?? "");
+        yield return ("$ / 1M input tokens", _model.CostPerMillionInputTokens?.ToString("F4") ?? "");
+        yield return ("$ / 1M output tokens", _model.CostPerMillionOutputTokens?.ToString("F4") ?? "");
+        yield return ("Override temperature", _model.Temperature ?? "");
+        yield return ("Override top-k", _model.TopK ?? "");
+        yield return ("Override top-p", _model.TopP ?? "");
+        yield return ("Override min-p", _model.MinP ?? "");
+        yield return ("Override presence-penalty", _model.PresencePenalty ?? "");
+        yield return ("Override frequency-penalty", _model.FrequencyPenalty ?? "");
+        yield return ("Override repetition-penalty", _model.RepetitionPenalty ?? "");
+        yield return ("Override max-tokens", _model.MaxTokens ?? "");
+        yield return ("Override timeout", _model.Timeout ?? "");
+        yield return ("Override request-json", _model.RequestJson ?? "");
+        yield return ("Override guidance-schema-type", _model.GuidanceSchemaType?.ToString() ?? "");
+        yield return ("Override completion-type", _model.CompletionType?.ToString() ?? "");
+        yield return ("Override chain-of-thought", _model.ChainOfThought ?? "");
+        yield return ("Override few-shot-examples", _model.FewShotExamples?.ToString() ?? "");
+        yield return ("Override best-of", _model.BestOf ?? "");
+        yield return ("Override retry-attempts", _model.RetryAttempts?.ToString() ?? "");
+        yield return ("Override min-tier", _model.MinTier?.ToString() ?? "");
+        yield return ("Default system input type", _model.DefaultSystemInputType.ToString());
+        yield return ("Default instruction input type", _model.DefaultInstructionInputType.ToString());
+        yield return ("Chat: system message", _model.SystemMessage ? "true" : "false");
+        yield return ("Chat: prompt-in-system", _model.PromptInSystem ? "true" : "false");
+        yield return ("Chat: system-in-user", _model.SystemInUser ? "true" : "false");
+        yield return ("Chat: prompt-in-user", _model.PromptInUser ? "true" : "false");
+    }
+
+    private async Task ExportRcfg()
+    {
+        if (_model is null) return;
+        var safe = (_model.Name ?? "model").Replace('/', '_');
+        await Export.DownloadTextAsync($"{safe}.rcfg", _serialized, "text/plain");
+    }
+}

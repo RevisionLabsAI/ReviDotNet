@@ -1,0 +1,88 @@
+@page "/providers"
+@inject IProviderManager ProviderMgr
+@inject NavigationManager Nav
+
+<PageTitle>Providers — ReviDotNet Forge</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudText Typo="Typo.h4">Providers</MudText>
+    <MudSpacer />
+    <MudTextField @bind-Value="_search"
+                  Placeholder="Search providers..."
+                  Adornment="Adornment.Start"
+                  AdornmentIcon="@Icons.Material.Filled.Search"
+                  Clearable="true"
+                  Style="max-width: 300px;"
+                  Variant="Variant.Outlined"
+                  Margin="Margin.Dense" />
+    <MudButton Variant="Variant.Filled"
+               Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add"
+               Href="/providers/new"
+               Class="ml-3">
+        Add New
+    </MudButton>
+</div>
+
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+    Click a row to view its full configuration and export. Existing providers are read-only;
+    use <strong>Add New</strong> to create additional providers.
+</MudText>
+
+<MudDataGrid Items="@Filtered"
+             T="ProviderProfile"
+             RowClick="@OnRowClick"
+             Dense="true"
+             Hover="true"
+             Striped="true"
+             Elevation="2">
+    <Columns>
+        <PropertyColumn Property="p => p.Name" Title="Name" />
+        <TemplateColumn Title="Protocol">
+            <CellTemplate>
+                <MudChip T="string" Size="Size.Small" Color="Color.Info">@(context.Item.Protocol?.ToString() ?? "?")</MudChip>
+            </CellTemplate>
+        </TemplateColumn>
+        <PropertyColumn Property="p => p.APIURL" Title="API URL" />
+        <TemplateColumn Title="API Key">
+            <CellTemplate>
+                <MudText Typo="Typo.body2">@(string.IsNullOrEmpty(context.Item.APIKey) ? "—" : "********")</MudText>
+            </CellTemplate>
+        </TemplateColumn>
+        <PropertyColumn Property="p => p.DefaultModel" Title="Default Model" />
+        <TemplateColumn Title="Enabled">
+            <CellTemplate>
+                @if (context.Item.Enabled == true)
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                }
+                else
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.Cancel" Color="Color.Error" Size="Size.Small" />
+                }
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="" CellStyle="text-align: right; width: 40px;" Sortable="false" Filterable="false">
+            <CellTemplate>
+                <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" Color="Color.Default" />
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+</MudDataGrid>
+
+@code {
+    private string _search = string.Empty;
+
+    private IEnumerable<ProviderProfile> Filtered => ProviderMgr.GetAll()
+        .Where(p => string.IsNullOrWhiteSpace(_search) ||
+                    (p.Name?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (p.APIURL?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false))
+        .OrderBy(p => p.Name);
+
+    private void OnRowClick(DataGridRowClickEventArgs<ProviderProfile> args)
+    {
+        var name = args.Item?.Name;
+        if (string.IsNullOrWhiteSpace(name)) return;
+        Nav.NavigateTo($"/providers/edit?name={Uri.EscapeDataString(name)}");
+    }
+}

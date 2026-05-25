@@ -37,6 +37,7 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
     private readonly IModelManager _models;
     private readonly IPromptManager _prompts;
     private readonly IToolManager _tools;
+    private readonly ArtifactHistoryService? _history;
 
     /// <summary>Initialises the workshop service with all required dependencies.</summary>
     public AgentWorkshopService(
@@ -46,7 +47,8 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
         IAgentManager agents,
         IModelManager models,
         IPromptManager prompts,
-        IToolManager tools)
+        IToolManager tools,
+        ArtifactHistoryService? history = null)
     {
         _bus = bus;
         _logs = logs;
@@ -55,6 +57,7 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
         _models = models;
         _prompts = prompts;
         _tools = tools;
+        _history = history;
     }
 
     // =====================================================
@@ -391,6 +394,17 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
             throw new InvalidOperationException(
                 $"Cannot save revision: source .agent file for '{agentName}' not on disk. " +
                 "Embedded-resource agents are read-only.");
+
+        // Snapshot the existing content for version history before overwriting.
+        if (_history is not null)
+        {
+            try
+            {
+                var existing = await File.ReadAllTextAsync(path, ct);
+                _history.Snapshot("agent", agentName, existing);
+            }
+            catch { /* best-effort */ }
+        }
 
         await File.WriteAllTextAsync(path, newContent, ct);
 

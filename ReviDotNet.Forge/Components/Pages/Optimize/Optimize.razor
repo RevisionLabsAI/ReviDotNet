@@ -4,10 +4,81 @@
 @inject TestRunnerService Runner
 @inject ISnackbar Snackbar
 @inject IModelManager Models
+@inject WorkbenchStateService Workbench
+@inject RunningJobsService JobsSvc
 
 <PageTitle>Optimizer — ReviDotNet Optimizer</PageTitle>
 
 <MudText Typo="Typo.h4" Class="mb-4">Optimizer</MudText>
+
+<MudGrid Spacing="3">
+
+    <!-- Left rail: prompt browser -->
+    <MudItem xs="12" md="3">
+        <MudPaper Class="pa-3" Elevation="2" Style="position: sticky; top: 80px;">
+            <div class="d-flex align-center mb-2">
+                <MudText Typo="Typo.subtitle2">Prompts</MudText>
+                <MudSpacer />
+                <MudIconButton Icon="@Icons.Material.Filled.Add"
+                               Size="Size.Small"
+                               Title="New prompt"
+                               OnClick="@GoToNewPrompt" />
+                <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
+                               Size="Size.Small"
+                               Title="Fork current as new version"
+                               Disabled="@string.IsNullOrWhiteSpace(_selectedPromptName)"
+                               OnClick="@ForkCurrentPrompt" />
+            </div>
+            <MudTextField @bind-Value="_promptSearch"
+                          Placeholder="Search..."
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          Clearable="true"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense"
+                          Class="mb-2" />
+            <MudList T="string" Dense="true" Style="max-height: 65vh; overflow-y: auto;">
+                @foreach (var p in FilteredPrompts)
+                {
+                    var name = p.Name ?? string.Empty;
+                    var selected = string.Equals(name, _selectedPromptName, StringComparison.Ordinal);
+                    <MudListItem T="string"
+                                 OnClick="@(() => SelectPrompt(name))"
+                                 Style="@(selected ? "background-color: var(--mud-palette-action-default-hover);" : "")">
+                        <div class="d-flex align-center gap-2">
+                            @if (selected)
+                            {
+                                <MudIcon Icon="@Icons.Material.Filled.RadioButtonChecked"
+                                         Color="Color.Primary"
+                                         Size="Size.Small" />
+                            }
+                            else
+                            {
+                                <MudIcon Icon="@Icons.Material.Filled.RadioButtonUnchecked"
+                                         Size="Size.Small" />
+                            }
+                            <div>
+                                <MudText Typo="Typo.body2">@name</MudText>
+                                @if (p.Version.HasValue)
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">v@(p.Version)</MudText>
+                                }
+                            </div>
+                        </div>
+                    </MudListItem>
+                }
+                @if (!FilteredPrompts.Any())
+                {
+                    <MudListItem T="string" Disabled="true">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">No prompts match.</MudText>
+                    </MudListItem>
+                }
+            </MudList>
+        </MudPaper>
+    </MudItem>
+
+    <!-- Detail: existing 3-tab workflow -->
+    <MudItem xs="12" md="9">
 
 <MudTabs Elevation="2" Rounded="true" Color="Color.Primary" @bind-ActivePanelIndex="_activeTab">
 
@@ -27,14 +98,18 @@
                         }
                     </MudSelect>
 
-                    <MudSelect @bind-Value="_selectedModelName"
-                               Label="Model"
+                    <MudSelect T="string"
+                               SelectedValues="_selectedModelNames"
+                               SelectedValuesChanged="@OnModelsChanged"
+                               MultiSelection="true"
+                               Label="Models (one or more)"
+                               HelperText="Runs analysis once per selected model — quality is broken down per model."
                                Variant="Variant.Outlined"
                                FullWidth="true"
                                Class="mb-3">
                         @foreach (var m in Models.GetAll())
                         {
-                            <MudSelectItem Value="@(m.Name ?? string.Empty)">@m.Name</MudSelectItem>
+                            <MudSelectItem T="string" Value="@(m.Name ?? string.Empty)">@m.Name</MudSelectItem>
                         }
                     </MudSelect>
 
@@ -64,7 +139,7 @@
                     }
                     <MudButton Size="Size.Small"
                                StartIcon="@Icons.Material.Filled.Add"
-                               OnClick="@(() => _analysisInputs.Add(new AnalysisInput()))"
+                               OnClick="@(() => _analysisInputs.Add(new AnalysisInputPair()))"
                                Class="mb-4">
                         Add Input
                     </MudButton>
@@ -108,6 +183,25 @@
                                 </MudPaper>
                             </MudItem>
                         </MudGrid>
+
+                        @if (_analysesByModel.Count > 1)
+                        {
+                            <MudText Typo="Typo.subtitle2" Class="mb-2">Per-model breakdown</MudText>
+                            <MudGrid Spacing="2" Class="mb-4">
+                                @foreach (var (model, list) in _analysesByModel.OrderBy(kv => kv.Key))
+                                {
+                                    <MudItem xs="6" sm="4" md="3">
+                                        <MudPaper Class="pa-3" Outlined="true">
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">@model</MudText>
+                                            <MudText Typo="Typo.body2">@($"{list.Average(a => a.QualityScore):F1}/10")</MudText>
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                @($"{list.Count(a => a.FulfilledRequest) * 100.0 / list.Count:F0}% fulfilled · {list.Count} run(s)")
+                                            </MudText>
+                                        </MudPaper>
+                                    </MudItem>
+                                }
+                            </MudGrid>
+                        }
 
                         <MudExpansionPanels Class="mb-3">
                             @for (int i = 0; i < _analyses.Count; i++)
@@ -212,27 +306,39 @@
             }
             else
             {
-                <MudGrid Spacing="3">
-                    <MudItem xs="12" md="6">
-                        <MudText Typo="Typo.subtitle2" Class="mb-2">Original</MudText>
-                        @if (_originalPrompt is not null)
-                        {
-                            <MudPaper Class="pa-3"
-                                      Style="font-family: monospace; font-size: 0.8rem; white-space: pre-wrap; word-break: break-word; max-height: 500px; overflow-y: auto;"
-                                      Elevation="0">
-                                @PromptRegistryService.SerializePrompt(_originalPrompt)
-                            </MudPaper>
-                        }
-                    </MudItem>
-                    <MudItem xs="12" md="6">
-                        <MudText Typo="Typo.subtitle2" Class="mb-2">Revised</MudText>
-                        <MudPaper Class="pa-3"
-                                  Style="font-family: monospace; font-size: 0.8rem; white-space: pre-wrap; word-break: break-word; max-height: 500px; overflow-y: auto;"
-                                  Elevation="0">
-                            @_revisedContent@(_revising ? "▌" : string.Empty)
-                        </MudPaper>
-                    </MudItem>
-                </MudGrid>
+                @if (_originalPrompt is not null)
+                {
+                    <DiffViewer Left="@PromptRegistryService.SerializePrompt(_originalPrompt)"
+                                Right="@(_revisedContent + (_revising ? "▌" : string.Empty))"
+                                LeftLabel="Original"
+                                RightLabel="Revised"
+                                LeftSubLabel="@($"v{_originalPrompt.Version}")"
+                                RightSubLabel="@(_revising ? "streaming…" : "ready")" />
+                }
+
+                @if (_qualityDelta is not null)
+                {
+                    <MudPaper Class="pa-3 mt-4" Outlined="true">
+                        <div class="d-flex align-center gap-3">
+                            <MudIcon Icon="@Icons.Material.Filled.TrendingUp" Color="@(_qualityDelta.Delta >= 0 ? Color.Success : Color.Error)" />
+                            <div>
+                                <MudText Typo="Typo.subtitle2">Quality delta</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    @($"Baseline {_qualityDelta.Before:F1}/10 → New {_qualityDelta.After:F1}/10 ({(_qualityDelta.Delta >= 0 ? "+" : "")}{_qualityDelta.Delta:F1})")
+                                </MudText>
+                            </div>
+                        </div>
+                    </MudPaper>
+                }
+                else if (_postSaveAnalyzing)
+                {
+                    <MudPaper Class="pa-3 mt-4" Outlined="true">
+                        <div class="d-flex align-center gap-2">
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                            <MudText Typo="Typo.caption">Measuring quality of new version…</MudText>
+                        </div>
+                    </MudPaper>
+                }
 
                 @if (!_revising && !string.IsNullOrWhiteSpace(_revisedContent))
                 {
@@ -262,59 +368,167 @@
 
 </MudTabs>
 
+    </MudItem>
+</MudGrid>
+
 @code {
     [SupplyParameterFromQuery] public string? Prompt { get; set; }
 
-    private record AnalysisInput { public string Label { get; set; } = string.Empty; public string Value { get; set; } = string.Empty; }
+    // Persisted snapshot — survives navigation across the session via WorkbenchStateService.
+    public sealed class OptimizeWorkbench
+    {
+        public int ActiveTab { get; set; }
+        public HashSet<string> ModelNames { get; set; } = new();
+        public int AnalysisRuns { get; set; } = 3;
+        public List<AnalysisInputPair> Inputs { get; set; } = new();
+        public List<TaggedAnalysis> Analyses { get; set; } = new();
+        public List<PromptSuggestion> Suggestions { get; set; } = new();
+        public string RevisedContent { get; set; } = string.Empty;
+        public QualityDelta? Delta { get; set; }
+    }
+    public sealed class AnalysisInputPair { public string Label { get; set; } = ""; public string Value { get; set; } = ""; }
+    public sealed class TaggedAnalysis { public string Model { get; set; } = ""; public AnalysisResult Result { get; set; } = new(); }
+    public sealed class QualityDelta { public double Before { get; set; } public double After { get; set; } public double Delta => After - Before; }
+
+    private const string PageKey = "optimize";
 
     private int _activeTab;
     private string _selectedPromptName = string.Empty;
-    private string _selectedModelName = string.Empty;
+    private HashSet<string> _selectedModelNames = new();
+    private string _promptSearch = string.Empty;
     private int _analysisRuns = 3;
-    private List<AnalysisInput> _analysisInputs = [new AnalysisInput { Label = "Task", Value = string.Empty }];
+    private List<AnalysisInputPair> _analysisInputs = [new AnalysisInputPair { Label = "Task" }];
     private bool _analyzing;
-    private List<AnalysisResult> _analyses = [];
+    private List<AnalysisResult> _analyses = new();
+    private Dictionary<string, List<AnalysisResult>> _analysesByModel = new();
     private bool _generatingSuggestions;
-    private List<PromptSuggestion> _suggestions = [];
+    private List<PromptSuggestion> _suggestions = new();
     private bool _revising;
     private string _revisedContent = string.Empty;
     private Prompt? _originalPrompt;
+    private QualityDelta? _qualityDelta;
+    private bool _postSaveAnalyzing;
     private CancellationTokenSource? _cts;
+
+    private IEnumerable<Prompt> FilteredPrompts => Registry.GetAll()
+        .Where(p => string.IsNullOrWhiteSpace(_promptSearch) ||
+                    (p.Name?.Contains(_promptSearch, StringComparison.OrdinalIgnoreCase) ?? false))
+        .OrderBy(p => p.Name);
+
+    private void OnModelsChanged(IEnumerable<string> values)
+    {
+        _selectedModelNames = new HashSet<string>(values ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+        PersistState();
+    }
+
+    private void SelectPrompt(string name)
+    {
+        if (string.Equals(name, _selectedPromptName, StringComparison.Ordinal)) return;
+        _selectedPromptName = name;
+        RestoreOrResetState();
+        StateHasChanged();
+    }
+
+    private void GoToNewPrompt() => Nav.NavigateTo("/generate");
+
+    private void ForkCurrentPrompt()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedPromptName)) return;
+        Nav.NavigateTo($"/generate?fork={Uri.EscapeDataString(_selectedPromptName)}");
+    }
 
     protected override void OnInitialized()
     {
         var models = Models.GetAll();
-        _selectedModelName = models.FirstOrDefault()?.Name ?? string.Empty;
+        // Default to first available model if user hasn't selected any yet.
+        if (_selectedModelNames.Count == 0 && models.Count > 0)
+            _selectedModelNames = new HashSet<string>(new[] { models[0].Name ?? string.Empty }, StringComparer.OrdinalIgnoreCase);
 
         if (!string.IsNullOrWhiteSpace(Prompt))
             _selectedPromptName = Prompt;
         else
             _selectedPromptName = Registry.GetAll().FirstOrDefault()?.Name ?? string.Empty;
+
+        RestoreOrResetState();
+    }
+
+    private void RestoreOrResetState()
+    {
+        var wb = Workbench.Get<OptimizeWorkbench>(PageKey, _selectedPromptName);
+        if (wb is not null)
+        {
+            _activeTab = wb.ActiveTab;
+            if (wb.ModelNames.Count > 0) _selectedModelNames = new HashSet<string>(wb.ModelNames, StringComparer.OrdinalIgnoreCase);
+            _analysisRuns = wb.AnalysisRuns;
+            _analysisInputs = wb.Inputs.Count > 0 ? wb.Inputs : new() { new AnalysisInputPair { Label = "Task" } };
+            _analyses = wb.Analyses.Select(t => t.Result).ToList();
+            _analysesByModel = wb.Analyses.GroupBy(t => t.Model).ToDictionary(g => g.Key, g => g.Select(x => x.Result).ToList());
+            _suggestions = wb.Suggestions;
+            _revisedContent = wb.RevisedContent;
+            _qualityDelta = wb.Delta;
+            _originalPrompt = Registry.GetByName(_selectedPromptName);
+        }
+        else
+        {
+            _activeTab = 0;
+            _analyses.Clear();
+            _analysesByModel.Clear();
+            _suggestions.Clear();
+            _revisedContent = string.Empty;
+            _originalPrompt = null;
+            _qualityDelta = null;
+        }
+    }
+
+    private void PersistState()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedPromptName)) return;
+        var tagged = new List<TaggedAnalysis>();
+        foreach (var (model, list) in _analysesByModel)
+            foreach (var a in list) tagged.Add(new TaggedAnalysis { Model = model, Result = a });
+
+        Workbench.Set(PageKey, _selectedPromptName, new OptimizeWorkbench
+        {
+            ActiveTab = _activeTab,
+            ModelNames = new HashSet<string>(_selectedModelNames, StringComparer.OrdinalIgnoreCase),
+            AnalysisRuns = _analysisRuns,
+            Inputs = _analysisInputs,
+            Analyses = tagged,
+            Suggestions = _suggestions,
+            RevisedContent = _revisedContent,
+            Delta = _qualityDelta
+        });
     }
 
     private async Task RunAnalysis()
     {
-        if (string.IsNullOrWhiteSpace(_selectedPromptName)) return;
+        if (string.IsNullOrWhiteSpace(_selectedPromptName) || _selectedModelNames.Count == 0)
+        {
+            Snackbar.Add("Pick a prompt and at least one model first.", Severity.Warning);
+            return;
+        }
 
         _analyzing = true;
         _analyses.Clear();
+        _analysesByModel.Clear();
         _suggestions.Clear();
         _revisedContent = string.Empty;
+        _qualityDelta = null;
 
         var inputs = _analysisInputs
             .Where(i => !string.IsNullOrWhiteSpace(i.Label))
             .Select(i => new Input(i.Label, i.Value))
             .ToList();
 
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        string jobId = JobsSvc.Register(JobKind.Analyze, $"Analyze {_selectedPromptName} × {_selectedModelNames.Count} model(s)", () => _cts.Cancel());
+
         try
         {
-            _cts?.Cancel();
-            _cts = new CancellationTokenSource();
-
-            // Run the prompt N times, collecting outputs
             var channel = Runner.RunTests(
                 _selectedPromptName,
-                [_selectedModelName],
+                _selectedModelNames.ToList(),
                 inputs,
                 _analysisRuns,
                 runAnalysis: true,
@@ -323,7 +537,12 @@
             await foreach (var result in channel.Reader.ReadAllAsync(_cts.Token))
             {
                 if (result.Analysis is not null)
+                {
                     _analyses.Add(result.Analysis);
+                    if (!_analysesByModel.TryGetValue(result.ModelName, out var list))
+                        _analysesByModel[result.ModelName] = list = new();
+                    list.Add(result.Analysis);
+                }
                 await InvokeAsync(StateHasChanged);
             }
         }
@@ -335,6 +554,8 @@
         finally
         {
             _analyzing = false;
+            JobsSvc.Complete(jobId);
+            PersistState();
             await InvokeAsync(StateHasChanged);
         }
     }
@@ -351,6 +572,7 @@
         _generatingSuggestions = true;
         StateHasChanged();
 
+        string jobId = JobsSvc.Register(JobKind.Analyze, $"Suggest improvements for {_selectedPromptName}", () => { });
         try
         {
             _suggestions = await Optimizer.GenerateSuggestionsAsync(_originalPrompt, _analyses);
@@ -362,6 +584,8 @@
         finally
         {
             _generatingSuggestions = false;
+            JobsSvc.Complete(jobId);
+            PersistState();
             StateHasChanged();
         }
     }
@@ -377,6 +601,7 @@
 
         _cts?.Cancel();
         _cts = new CancellationTokenSource();
+        string jobId = JobsSvc.Register(JobKind.Revise, $"Revise {_selectedPromptName}", () => _cts.Cancel());
 
         try
         {
@@ -395,28 +620,91 @@
         finally
         {
             _revising = false;
+            JobsSvc.Complete(jobId);
+            PersistState();
             await InvokeAsync(StateHasChanged);
         }
     }
 
-    private void AcceptRevision()
+    private async Task AcceptRevision()
     {
         if (string.IsNullOrWhiteSpace(_revisedContent) || string.IsNullOrWhiteSpace(_selectedPromptName)) return;
 
+        // Capture baseline quality (average over current analyses) before overwriting.
+        double? before = _analyses.Count > 0 ? _analyses.Average(a => (double)a.QualityScore) : null;
+
         try
         {
-            // Increment version
             if (_originalPrompt is not null && _originalPrompt.Version.HasValue)
                 _revisedContent = _revisedContent.Replace(
                     $"version = {_originalPrompt.Version}",
                     $"version = {_originalPrompt.Version + 1}");
 
             Registry.SaveNew(_selectedPromptName, _revisedContent);
-            Snackbar.Add("Revised prompt saved.", Severity.Success);
+            Snackbar.Add("Revised prompt saved. Measuring quality of new version…", Severity.Success);
+
+            // Re-analyze with the same model selection and inputs to compute the delta.
+            if (before is not null && _selectedModelNames.Count > 0)
+            {
+                _ = MeasureQualityDeltaAsync(before.Value);
+            }
         }
         catch (Exception ex)
         {
             Snackbar.Add($"Save failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task MeasureQualityDeltaAsync(double baseline)
+    {
+        _postSaveAnalyzing = true;
+        await InvokeAsync(StateHasChanged);
+
+        var ctsLocal = new CancellationTokenSource();
+        string jobId = JobsSvc.Register(JobKind.Analyze, $"Re-analyze {_selectedPromptName} for quality delta", () => ctsLocal.Cancel());
+
+        try
+        {
+            var inputs = _analysisInputs
+                .Where(i => !string.IsNullOrWhiteSpace(i.Label))
+                .Select(i => new Input(i.Label, i.Value))
+                .ToList();
+
+            // Use 2 quick runs per model — enough to estimate quality without burning budget.
+            var channel = Runner.RunTests(
+                _selectedPromptName,
+                _selectedModelNames.ToList(),
+                inputs,
+                runsPerModel: 2,
+                runAnalysis: true,
+                ctsLocal.Token);
+
+            var newScores = new List<int>();
+            await foreach (var result in channel.Reader.ReadAllAsync(ctsLocal.Token))
+            {
+                if (result.Analysis is not null)
+                    newScores.Add(result.Analysis.QualityScore);
+            }
+
+            if (newScores.Count > 0)
+            {
+                _qualityDelta = new QualityDelta
+                {
+                    Before = baseline,
+                    After = newScores.Average()
+                };
+                PersistState();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Quality re-measurement failed: {ex.Message}", Severity.Warning);
+        }
+        finally
+        {
+            _postSaveAnalyzing = false;
+            JobsSvc.Complete(jobId);
+            await InvokeAsync(StateHasChanged);
         }
     }
 

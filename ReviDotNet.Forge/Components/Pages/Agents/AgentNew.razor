@@ -1,0 +1,314 @@
+@page "/agents/new"
+@inject AgentGeneratorService Generator
+@inject IAgentManager AgentMgr
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject IDialogService DialogSvc
+
+<PageTitle>Create New Agent — ReviDotNet Forge</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/agents" />
+    <MudText Typo="Typo.h4" Class="ml-2">Create New Agent</MudText>
+</div>
+
+<MudPaper Class="pa-4" Elevation="1">
+    <MudTabs Elevation="0" Rounded="true" @bind-ActivePanelIndex="_activeTab">
+
+        <!-- =========================================================== -->
+        <!-- Tab 1: Manual Creation                                      -->
+        <!-- =========================================================== -->
+        <MudTabPanel Text="Manual Creation" Icon="@Icons.Material.Filled.Edit">
+            <div class="pa-2">
+                <MudTextField @bind-Value="_manualName"
+                              Label="Agent Name"
+                              HelperText="e.g. test/router — '/' creates a subfolder under RConfigs/Agents/"
+                              Variant="Variant.Outlined"
+                              Required="true"
+                              FullWidth="true"
+                              Class="mb-3" />
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">
+                    Author the full .agent file. The minimum is [[information]], [[loop]] entry, at least one [[state.X]],
+                    a matching [[_state.X.instruction]], and a [[_loop]] graph.
+                </MudText>
+                <MudTextField @bind-Value="_manualSource"
+                              Variant="Variant.Outlined"
+                              Lines="24"
+                              Style="font-family: monospace; font-size: 0.82rem;"
+                              FullWidth="true" />
+                <div class="d-flex gap-3 mt-4">
+                    <MudButton Variant="Variant.Outlined"
+                               StartIcon="@Icons.Material.Filled.Description"
+                               OnClick="InsertSkeleton">
+                        Insert skeleton
+                    </MudButton>
+                    <MudSpacer />
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Success"
+                               StartIcon="@Icons.Material.Filled.Save"
+                               Disabled="@(_saving || string.IsNullOrWhiteSpace(_manualName) || string.IsNullOrWhiteSpace(_manualSource))"
+                               OnClick="@PromptToSaveManual">
+                        @(_saving ? "Saving…" : "Save")
+                    </MudButton>
+                </div>
+            </div>
+        </MudTabPanel>
+
+        <!-- =========================================================== -->
+        <!-- Tab 2: Generate (AI-driven from description)                -->
+        <!-- =========================================================== -->
+        <MudTabPanel Text="Generate Agent" Icon="@Icons.Material.Filled.AutoAwesome">
+            <div class="pa-2">
+                <MudGrid Spacing="3">
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="_genName"
+                                      Label="Agent Name"
+                                      HelperText="e.g. test/router"
+                                      Variant="Variant.Outlined"
+                                      Required="true"
+                                      FullWidth="true" />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="_genPurpose"
+                                      Label="Purpose"
+                                      Lines="4"
+                                      Variant="Variant.Outlined"
+                                      Required="true"
+                                      FullWidth="true"
+                                      Placeholder="What should this agent do end-to-end? What inputs does it take? What does success look like?" />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="_genIo"
+                                      Label="Expected I/O"
+                                      Lines="3"
+                                      Variant="Variant.Outlined"
+                                      FullWidth="true"
+                                      Placeholder="Inputs the agent will receive and the shape of its final output." />
+                    </MudItem>
+                </MudGrid>
+
+                <MudText Typo="Typo.subtitle2" Class="mt-4 mb-1">Tools available to this agent</MudText>
+                @if (_availableTools.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info">No tools registered.</MudAlert>
+                }
+                else
+                {
+                    <div class="d-flex flex-wrap gap-2 mb-2">
+                        @foreach (var tool in _availableTools)
+                        {
+                            var name = tool;
+                            var isChecked = _selectedTools.Contains(name);
+                            <MudChip T="string"
+                                     Color="@(isChecked ? Color.Primary : Color.Default)"
+                                     Variant="@(isChecked ? Variant.Filled : Variant.Outlined)"
+                                     OnClick="@(() => ToggleTool(name))">
+                                @name
+                            </MudChip>
+                        }
+                    </div>
+                }
+
+                <div class="d-flex gap-3 mt-4">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.AutoAwesome"
+                               Disabled="@_generating"
+                               OnClick="@RunGenerate">
+                        @(_generating ? "Generating…" : "Generate")
+                    </MudButton>
+                </div>
+
+                @if (_generating || !string.IsNullOrWhiteSpace(_generatedContent))
+                {
+                    <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Generated .agent content</MudText>
+                    <MudTextField @bind-Value="_generatedContent"
+                                  Variant="Variant.Outlined"
+                                  Lines="22"
+                                  Style="font-family: monospace; font-size: 0.82rem;"
+                                  FullWidth="true" />
+
+                    @if (!_generating && !string.IsNullOrWhiteSpace(_generatedContent))
+                    {
+                        <div class="d-flex gap-3 mt-3">
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Success"
+                                       StartIcon="@Icons.Material.Filled.Save"
+                                       Disabled="@_saving"
+                                       OnClick="@PromptToSaveGenerated">
+                                @(_saving ? "Saving…" : "Save to RConfigs")
+                            </MudButton>
+                        </div>
+                    }
+                }
+            </div>
+        </MudTabPanel>
+
+    </MudTabs>
+</MudPaper>
+
+@code {
+    private int _activeTab;
+    private bool _saving;
+    private CancellationTokenSource? _cts;
+
+    // Manual tab
+    private string _manualName = "";
+    private string _manualSource = "";
+
+    // Generate tab
+    private string _genName = "";
+    private string _genPurpose = "";
+    private string _genIo = "";
+    private readonly HashSet<string> _selectedTools = new(StringComparer.OrdinalIgnoreCase);
+    private List<string> _availableTools = new();
+    private string _generatedContent = "";
+    private bool _generating;
+
+    protected override void OnInitialized()
+    {
+        _availableTools = Generator.ListAvailableTools();
+    }
+
+    private void InsertSkeleton()
+    {
+        _manualSource =
+@"[[information]]
+name = " + (string.IsNullOrWhiteSpace(_manualName) ? "your/agent-name" : _manualName) + @"
+version = 1
+description = One-line description of what this agent does.
+
+[[_system]]
+You are an agent that …
+
+[[loop]]
+entry = step
+
+[[state.step]]
+description = Do the thing, then signal DONE.
+tools =
+
+[[_state.step.instruction]]
+You will receive a task. Respond with a JSON object containing ""content"", ""signal"" (""DONE""), and ""tool_calls"" ([]).
+
+[[state.step.guardrails]]
+max-steps = 3
+timeout = 30
+
+[[_loop]]
+step
+  -> [end] [when: DONE]
+";
+    }
+
+    private void ToggleTool(string name)
+    {
+        if (!_selectedTools.Add(name)) _selectedTools.Remove(name);
+    }
+
+    // ── manual save ────────────────────────────────────────────────────────────
+    private async Task PromptToSaveManual()
+    {
+        if (string.IsNullOrWhiteSpace(_manualName))
+        {
+            Snackbar.Add("Agent name is required.", Severity.Warning);
+            return;
+        }
+        if (AgentMgr.Get(_manualName) is not null)
+        {
+            Snackbar.Add($"An agent named '{_manualName}' already exists. Pick a different name.", Severity.Error);
+            return;
+        }
+        var parameters = new DialogParameters
+        {
+            ["Message"] = $"Create new agent '{_manualName}'?",
+            ["Detail"] = "A new .agent file will be written under RConfigs/Agents.",
+            ["ConfirmLabel"] = "Create",
+        };
+        var dialog = await DialogSvc.ShowAsync<ConfirmDialog>("Confirm create", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+
+        _saving = true;
+        StateHasChanged();
+        try
+        {
+            await Generator.SaveNewAsync(_manualName, _manualSource, CancellationToken.None);
+            Snackbar.Add($"Created {_manualName}", Severity.Success);
+            Nav.NavigateTo($"/agents/edit?name={Uri.EscapeDataString(_manualName)}");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Save failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    // ── generate ──────────────────────────────────────────────────────────────
+    private async Task RunGenerate()
+    {
+        if (string.IsNullOrWhiteSpace(_genName) || string.IsNullOrWhiteSpace(_genPurpose))
+        {
+            Snackbar.Add("Agent name and purpose are required.", Severity.Warning);
+            return;
+        }
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        _generatedContent = "";
+        _generating = true;
+        try
+        {
+            await foreach (var token in Generator.GenerateStreamAsync(
+                _genName, _genPurpose, _selectedTools.ToList(), _genIo, _cts.Token))
+            {
+                _generatedContent += token;
+                StateHasChanged();
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { Snackbar.Add($"Generation failed: {ex.Message}", Severity.Error); }
+        finally
+        {
+            _generating = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task PromptToSaveGenerated()
+    {
+        if (string.IsNullOrWhiteSpace(_genName) || string.IsNullOrWhiteSpace(_generatedContent)) return;
+        if (AgentMgr.Get(_genName) is not null)
+        {
+            Snackbar.Add($"An agent named '{_genName}' already exists. Edit the name before saving.", Severity.Error);
+            return;
+        }
+        var parameters = new DialogParameters
+        {
+            ["Message"] = $"Save generated agent '{_genName}'?",
+            ["Detail"] = "A new .agent file will be written under RConfigs/Agents.",
+            ["ConfirmLabel"] = "Save",
+        };
+        var dialog = await DialogSvc.ShowAsync<ConfirmDialog>("Confirm save", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+
+        _saving = true;
+        StateHasChanged();
+        try
+        {
+            await Generator.SaveNewAsync(_genName, _generatedContent, CancellationToken.None);
+            Snackbar.Add($"Saved {_genName}", Severity.Success);
+            Nav.NavigateTo($"/agents/edit?name={Uri.EscapeDataString(_genName)}");
+        }
+        catch (Exception ex) { Snackbar.Add($"Save failed: {ex.Message}", Severity.Error); }
+        finally
+        {
+            _saving = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+}

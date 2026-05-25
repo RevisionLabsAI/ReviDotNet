@@ -17,12 +17,14 @@ public class PromptRegistryService
 {
     private readonly string _promptsSourcePath;
     private readonly IPromptManager _prompts;
+    private readonly ArtifactHistoryService? _history;
 
     /// <summary>Initialises the service with configuration and the DI prompt registry.</summary>
-    public PromptRegistryService(IConfiguration configuration, IPromptManager prompts)
+    public PromptRegistryService(IConfiguration configuration, IPromptManager prompts, ArtifactHistoryService? history = null)
     {
         _promptsSourcePath = configuration["Forge:PromptsSourcePath"] ?? "RConfigs/Prompts";
         _prompts = prompts;
+        _history = history;
     }
 
     /// <summary>
@@ -54,6 +56,9 @@ public class PromptRegistryService
         string relativePath = prompt.Name!.Replace('.', Path.DirectorySeparatorChar) + ".pmt";
         string fullPath = Path.Combine(_promptsSourcePath, relativePath);
 
+        // Snapshot the existing content before overwriting, for version history.
+        TrySnapshotExisting(prompt.Name!, fullPath);
+
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
         File.WriteAllText(fullPath, SerializePrompt(prompt), Encoding.UTF8);
 
@@ -69,10 +74,24 @@ public class PromptRegistryService
         string relativePath = promptName.Replace('.', Path.DirectorySeparatorChar) + ".pmt";
         string fullPath = Path.Combine(_promptsSourcePath, relativePath);
 
+        // Snapshot the existing content before overwriting, for version history.
+        TrySnapshotExisting(promptName, fullPath);
+
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
         File.WriteAllText(fullPath, content, Encoding.UTF8);
 
         _prompts.LoadFromFile(fullPath);
+    }
+
+    private void TrySnapshotExisting(string promptName, string fullPath)
+    {
+        if (_history is null || !File.Exists(fullPath)) return;
+        try
+        {
+            string existing = File.ReadAllText(fullPath);
+            _history.Snapshot("prompt", promptName, existing);
+        }
+        catch { /* best-effort */ }
     }
 
     /// <summary>

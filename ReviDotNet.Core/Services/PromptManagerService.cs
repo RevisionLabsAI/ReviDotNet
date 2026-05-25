@@ -32,8 +32,18 @@ public sealed class PromptManagerService : IPromptManager
                 .EnumerateFiles(path, "*.pmt", SearchOption.AllDirectories)
                 .ToList();
 
+            // Per-file try/catch so one malformed prompt doesn't abort loading the rest.
             foreach (string file in files)
-                LoadPromptFromFile(file, path);
+            {
+                try
+                {
+                    LoadPromptFromFile(file, path);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning($"Failed to load prompt '{file}': {ex.Message}");
+                }
+            }
         }
         catch (DirectoryNotFoundException)
         {
@@ -88,18 +98,26 @@ public sealed class PromptManagerService : IPromptManager
 
             foreach (string resourceName in resourceNames)
             {
-                using Stream? stream = assembly.GetManifestResourceStream(resourceName);
-                if (stream == null) continue;
+                // Per-resource try/catch so one malformed prompt doesn't abort loading the rest.
+                try
+                {
+                    using Stream? stream = assembly.GetManifestResourceStream(resourceName);
+                    if (stream == null) continue;
 
-                using StreamReader reader = new(stream);
-                Dictionary<string, string> dict = RConfigParser.ReadEmbedded(reader.ReadToEnd());
-                string folder = Util.ExtractEmbeddedDirectories(".Prompts.", resourceName).ToLower();
-                Prompt? prompt = Prompt.ToObject(dict, folder);
+                    using StreamReader reader = new(stream);
+                    Dictionary<string, string> dict = RConfigParser.ReadEmbedded(reader.ReadToEnd());
+                    string folder = Util.ExtractEmbeddedDirectories(".Prompts.", resourceName).ToLower();
+                    Prompt? prompt = Prompt.ToObject(dict, folder);
 
-                if (prompt?.Name is null)
-                    continue;
+                    if (prompt?.Name is null)
+                        continue;
 
-                CheckAdd(prompt, embedded: true);
+                    CheckAdd(prompt, embedded: true);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning($"Failed to load embedded prompt '{resourceName}': {ex.Message}");
+                }
             }
         }
         catch (Exception e)

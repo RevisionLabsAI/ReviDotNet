@@ -68,14 +68,32 @@ public static class RConfigParser
         // Handle enums separately
         if (type.IsEnum)
         {
+            // .rcfg / .pmt files use kebab-case ("json-auto") while enum members are PascalCase ("JsonAuto").
+            // Try direct parse first, then a normalized form with hyphens stripped, then known aliases.
             if (Enum.TryParse(type, value, true, out var enumResult) && enumResult != null)
-            {
                 return enumResult;
-            }
-            else
+
+            string normalized = value.Replace("-", string.Empty).Replace("_", string.Empty);
+            if (Enum.TryParse(type, normalized, true, out enumResult) && enumResult != null)
+                return enumResult;
+
+            // Type-specific aliases. Bare 'json' / 'regex' / 'gbnf' historically mean the *Manual* variant
+            // (see PromptRegistryService.ToGuidanceSchemaString for the reverse mapping).
+            if (type == typeof(GuidanceSchemaType))
             {
-                throw new FormatException($"Unable to convert '{value}' to enum type {type.Name}.");
+                string alias = value.Trim().ToLowerInvariant() switch
+                {
+                    "json" => nameof(GuidanceSchemaType.JsonManual),
+                    "regex" => nameof(GuidanceSchemaType.RegexManual),
+                    "gbnf" => nameof(GuidanceSchemaType.GNBFManual),
+                    _ => string.Empty
+                };
+                if (!string.IsNullOrEmpty(alias) &&
+                    Enum.TryParse(type, alias, true, out enumResult) && enumResult != null)
+                    return enumResult;
             }
+
+            throw new FormatException($"Unable to convert '{value}' to enum type {type.Name}.");
         }
         
         // Handle custom converters
@@ -167,10 +185,7 @@ public static class RConfigParser
             // Call the method on the object if it exists
             methodInfo.Invoke(obj, null);
         }
-        else
-        {
-            Console.WriteLine("Method 'Init' not found.");
-        }
+        // An absent Init() is a valid design choice — most DTOs don't need one. Silent no-op.
     }
 
     
@@ -262,6 +277,14 @@ public static class RConfigParser
     {
         if (currentSection.StartsWith("_"))
         {
+            // In raw sections, a leading backslash escapes a literal [[...]] line so it can
+            // appear in docstrings without ending the raw block. The backslash is stripped.
+            if (line.StartsWith(@"\[[") && line.EndsWith("]]"))
+            {
+                sectionContent.AppendLine(line.Substring(1));
+                return;
+            }
+
             // In raw sections, we only check for section headers
             if (line.StartsWith("[[") && line.EndsWith("]]"))
             {

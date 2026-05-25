@@ -1,0 +1,175 @@
+@page "/models/new"
+@inject ModelRegistryService Registry
+@inject IProviderManager ProviderMgr
+@inject IModelManager ModelMgr
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject IDialogService DialogSvc
+
+<PageTitle>Add Model — ReviDotNet Forge</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/models" />
+    <MudText Typo="Typo.h4" Class="ml-2">Add Model</MudText>
+</div>
+
+<MudPaper Class="pa-4" Elevation="1">
+    <MudTabs Elevation="0" Rounded="true">
+
+        <MudTabPanel Text="General" Icon="@Icons.Material.Filled.Info">
+            <div class="pa-2">
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="_model.Name" Label="name" Required="true" Variant="Variant.Outlined" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="string" @bind-Value="_model.ProviderName" Label="provider-name" Required="true" Variant="Variant.Outlined">
+                            @foreach (var p in ProviderMgr.GetAll())
+                            {
+                                <MudSelectItem Value="@(p.Name ?? string.Empty)">@p.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="_model.ModelString" Label="model-string" Required="true" Variant="Variant.Outlined" />
+                    </MudItem>
+                    <MudItem xs="6" md="3">
+                        <MudCheckBox @bind-Value="_model.Enabled" Label="enabled" Color="Color.Primary" />
+                    </MudItem>
+                </MudGrid>
+            </div>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Settings" Icon="@Icons.Material.Filled.Settings">
+            <div class="pa-2">
+                <MudGrid Spacing="2">
+                    <MudItem xs="6"><MudSelect T="ModelTier" @bind-Value="_model.Tier" Label="tier" Variant="Variant.Outlined">
+                        @foreach (var t in Enum.GetValues<ModelTier>()) { <MudSelectItem T="ModelTier" Value="@t">@t</MudSelectItem> }
+                    </MudSelect></MudItem>
+                    <MudItem xs="6"><MudNumericField T="int" @bind-Value="_model.TokenLimit" Label="token-limit" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6"><MudTextField @bind-Value="_model.StopSequences" Label="stop-sequences" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6"><MudSelect T="MaxTokenType?" @bind-Value="_model.MaxTokenType" Label="max-token-type" Clearable="true" Variant="Variant.Outlined">
+                        @foreach (var t in Enum.GetValues<MaxTokenType>()) { <MudSelectItem T="MaxTokenType?" Value="@t">@t</MudSelectItem> }
+                    </MudSelect></MudItem>
+                    <MudItem xs="6"><MudCheckBox T="bool?" @bind-Value="_model.SupportsPromptCompletion" Label="supports-prompt-completion" Color="Color.Primary" TriState="true" /></MudItem>
+                    <MudItem xs="6"><MudCheckBox T="bool?" @bind-Value="_model.SupportsResponseCompletion" Label="supports-response-completion" Color="Color.Primary" TriState="true" /></MudItem>
+                    <MudItem xs="6"><MudNumericField T="decimal?" @bind-Value="_model.CostPerMillionInputTokens" Label="cost / 1M input tokens (USD)" Variant="Variant.Outlined" Clearable="true" Step=".01M" /></MudItem>
+                    <MudItem xs="6"><MudNumericField T="decimal?" @bind-Value="_model.CostPerMillionOutputTokens" Label="cost / 1M output tokens (USD)" Variant="Variant.Outlined" Clearable="true" Step=".01M" /></MudItem>
+                </MudGrid>
+            </div>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Overrides — settings" Icon="@Icons.Material.Filled.Layers">
+            <div class="pa-2">
+                <MudGrid Spacing="2">
+                    <MudItem xs="6"><MudTextField @bind-Value="_model.Filter" Label="filter" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6"><MudTextField @bind-Value="_model.ChainOfThought" Label="chain-of-thought" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6"><MudTextField @bind-Value="_model.RequestJson" Label="request-json" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6"><MudSelect T="GuidanceSchemaType?" @bind-Value="_model.GuidanceSchemaType" Label="guidance-schema-type" Clearable="true" Variant="Variant.Outlined">
+                        @foreach (var t in Enum.GetValues<GuidanceSchemaType>()) { <MudSelectItem T="GuidanceSchemaType?" Value="@t">@t</MudSelectItem> }
+                    </MudSelect></MudItem>
+                    <MudItem xs="6"><MudCheckBox T="bool?" @bind-Value="_model.RequireValidOutput" Label="require-valid-output" Color="Color.Primary" TriState="true" /></MudItem>
+                    <MudItem xs="6"><MudNumericField T="int?" @bind-Value="_model.RetryAttempts" Label="retry-attempts" Variant="Variant.Outlined" Clearable="true" /></MudItem>
+                    <MudItem xs="6"><MudTextField @bind-Value="_model.RetryPrompt" Label="retry-prompt" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6"><MudNumericField T="int?" @bind-Value="_model.FewShotExamples" Label="few-shot-examples" Variant="Variant.Outlined" Clearable="true" /></MudItem>
+                    <MudItem xs="6"><MudTextField @bind-Value="_model.BestOf" Label="best-of" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6"><MudTextField @bind-Value="_model.MaxTokens" Label="max-tokens" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6"><MudTextField @bind-Value="_model.Timeout" Label="timeout" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6"><MudTextField @bind-Value="_model.UseSearchGrounding" Label="use-search-grounding" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6"><MudSelect T="ModelTier?" @bind-Value="_model.MinTier" Label="min-tier" Clearable="true" Variant="Variant.Outlined">
+                        @foreach (var t in Enum.GetValues<ModelTier>()) { <MudSelectItem T="ModelTier?" Value="@t">@t</MudSelectItem> }
+                    </MudSelect></MudItem>
+                    <MudItem xs="6"><MudSelect T="CompletionType?" @bind-Value="_model.CompletionType" Label="completion-type" Clearable="true" Variant="Variant.Outlined">
+                        @foreach (var t in Enum.GetValues<CompletionType>()) { <MudSelectItem T="CompletionType?" Value="@t">@t</MudSelectItem> }
+                    </MudSelect></MudItem>
+                </MudGrid>
+            </div>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Overrides — tuning" Icon="@Icons.Material.Filled.Tune">
+            <div class="pa-2">
+                <MudGrid Spacing="2">
+                    <MudItem xs="6"><MudTextField @bind-Value="_model.Temperature" Label="temperature" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6"><MudTextField @bind-Value="_model.TopP" Label="top-p" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6"><MudTextField @bind-Value="_model.TopK" Label="top-k" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6"><MudTextField @bind-Value="_model.MinP" Label="min-p" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6"><MudTextField @bind-Value="_model.PresencePenalty" Label="presence-penalty" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6"><MudTextField @bind-Value="_model.FrequencyPenalty" Label="frequency-penalty" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6"><MudTextField @bind-Value="_model.RepetitionPenalty" Label="repetition-penalty" Variant="Variant.Outlined" /></MudItem>
+                </MudGrid>
+            </div>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Chat / completion shape" Icon="@Icons.Material.Filled.Chat">
+            <div class="pa-2">
+                <MudGrid Spacing="2">
+                    <MudItem xs="6"><MudSelect T="Revi.InputType" @bind-Value="_model.DefaultSystemInputType" Label="default-system-input-type" Variant="Variant.Outlined">
+                        @foreach (var t in Enum.GetValues<Revi.InputType>()) { <MudSelectItem T="Revi.InputType" Value="@t">@t</MudSelectItem> }
+                    </MudSelect></MudItem>
+                    <MudItem xs="6"><MudSelect T="Revi.InputType" @bind-Value="_model.DefaultInstructionInputType" Label="default-instruction-input-type" Variant="Variant.Outlined">
+                        @foreach (var t in Enum.GetValues<Revi.InputType>()) { <MudSelectItem T="Revi.InputType" Value="@t">@t</MudSelectItem> }
+                    </MudSelect></MudItem>
+                    <MudItem xs="6"><MudTextField @bind-Value="_model.InputItem" Label="single-item template" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6"><MudTextField @bind-Value="_model.InputItemMulti" Label="multi-item template" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="3"><MudCheckBox @bind-Value="_model.SystemMessage" Label="system-message" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="3"><MudCheckBox @bind-Value="_model.PromptInSystem" Label="prompt-in-system" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="3"><MudCheckBox @bind-Value="_model.SystemInUser" Label="system-in-user" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="3"><MudCheckBox @bind-Value="_model.PromptInUser" Label="prompt-in-user" Color="Color.Primary" /></MudItem>
+                </MudGrid>
+            </div>
+        </MudTabPanel>
+
+    </MudTabs>
+
+    <div class="d-flex gap-3 mt-4">
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Success"
+                   StartIcon="@Icons.Material.Filled.Save"
+                   Disabled="@(_saving || string.IsNullOrWhiteSpace(_model.Name) || string.IsNullOrWhiteSpace(_model.ProviderName))"
+                   OnClick="@PromptToSave">
+            @(_saving ? "Saving…" : "Save")
+        </MudButton>
+    </div>
+</MudPaper>
+
+@code {
+    private ModelProfile _model = new() { Enabled = true, Tier = ModelTier.A, SystemMessage = true, SystemInUser = true, PromptInUser = true };
+    private bool _saving;
+
+    private async Task PromptToSave()
+    {
+        if (string.IsNullOrWhiteSpace(_model.Name)) return;
+        if (ModelMgr.Get(_model.Name!) is not null)
+        {
+            Snackbar.Add($"A model named '{_model.Name}' already exists.", Severity.Error);
+            return;
+        }
+        var parameters = new DialogParameters
+        {
+            ["Message"] = $"Create new model '{_model.Name}'?",
+            ["Detail"] = "A new .rcfg file will be written under RConfigs/Models.",
+            ["ConfirmLabel"] = "Create",
+        };
+        var dialog = await DialogSvc.ShowAsync<ConfirmDialog>("Confirm create", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+
+        _saving = true;
+        StateHasChanged();
+        try
+        {
+            await Registry.SaveNewAsync(_model, CancellationToken.None);
+            Snackbar.Add($"Created {_model.Name}", Severity.Success);
+            Nav.NavigateTo($"/models/edit?name={Uri.EscapeDataString(_model.Name!)}");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Save failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+}

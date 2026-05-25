@@ -1,0 +1,105 @@
+@page "/providers/edit"
+@inject IProviderManager ProviderMgr
+@inject ProviderRegistryService Registry
+@inject ExportService Export
+
+<PageTitle>@(_provider?.Name ?? "Provider") — ReviDotNet Forge</PageTitle>
+
+@if (_provider is null)
+{
+    <MudAlert Severity="Severity.Warning">
+        Provider <code>@Name</code> not found.
+        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/providers">Back to list</MudButton>
+    </MudAlert>
+}
+else
+{
+    <div class="d-flex align-center mb-4">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/providers" />
+        <div class="ml-2">
+            <MudText Typo="Typo.h4">@_provider.Name</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">@_provider.Protocol · read-only</MudText>
+        </div>
+        <MudSpacer />
+        <MudButton Variant="Variant.Outlined"
+                   StartIcon="@Icons.Material.Filled.FileDownload"
+                   OnClick="@ExportRcfg">
+            Export
+        </MudButton>
+    </div>
+
+    <MudAlert Severity="Severity.Info" Class="mb-3">
+        Existing providers are view-only. To make changes, export this configuration,
+        edit the .rcfg file on disk, and restart Forge — or use <strong>Add New</strong>
+        to create a new provider.
+    </MudAlert>
+
+    <MudPaper Class="pa-4" Elevation="1">
+        <MudTabs Elevation="0" Rounded="true">
+            <MudTabPanel Text="Fields" Icon="@Icons.Material.Filled.Settings">
+                <div class="pa-2">
+                    <MudGrid Spacing="2">
+                        @foreach (var (label, value) in EnumerateFields())
+                        {
+                            <MudItem xs="6" md="4">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">@label</MudText>
+                                <MudText Typo="Typo.body2">@(string.IsNullOrEmpty(value) ? "—" : value)</MudText>
+                            </MudItem>
+                        }
+                    </MudGrid>
+                </div>
+            </MudTabPanel>
+            <MudTabPanel Text=".rcfg source" Icon="@Icons.Material.Filled.Code">
+                <div class="pa-2">
+                    <MudPaper Class="pa-3" Outlined="true"
+                              Style="font-family: monospace; font-size: 0.8rem; white-space: pre-wrap; max-height: 600px; overflow: auto;">
+                        @_serialized
+                    </MudPaper>
+                </div>
+            </MudTabPanel>
+        </MudTabs>
+    </MudPaper>
+}
+
+@code {
+    [SupplyParameterFromQuery] public string? Name { get; set; }
+
+    private ProviderProfile? _provider;
+    private string _serialized = "";
+
+    protected override void OnParametersSet()
+    {
+        if (string.IsNullOrWhiteSpace(Name)) return;
+        _provider = ProviderMgr.Get(Name);
+        if (_provider is null) return;
+        _serialized = Registry.Serialize(_provider);
+    }
+
+    private IEnumerable<(string Label, string Value)> EnumerateFields()
+    {
+        if (_provider is null) yield break;
+        yield return ("Name", _provider.Name ?? "");
+        yield return ("Enabled", _provider.Enabled?.ToString() ?? "");
+        yield return ("Protocol", _provider.Protocol?.ToString() ?? "");
+        yield return ("API URL", _provider.APIURL ?? "");
+        yield return ("API key", string.IsNullOrEmpty(_provider.APIKey) ? "" : "(set)");
+        yield return ("Default model", _provider.DefaultModel ?? "");
+        yield return ("Supports prompt completion", _provider.SupportsCompletion?.ToString() ?? "");
+        yield return ("Supports response completion", _provider.SupportsResponseCompletion?.ToString() ?? "");
+        yield return ("Supports guidance", _provider.SupportsGuidance?.ToString() ?? "");
+        yield return ("Default guidance type", _provider.DefaultGuidanceType?.ToString() ?? "");
+        yield return ("Default guidance string", _provider.DefaultGuidanceString ?? "");
+        yield return ("Timeout (seconds)", _provider.TimeoutSeconds?.ToString() ?? "");
+        yield return ("Delay between requests (ms)", _provider.DelayBetweenRequestsMs?.ToString() ?? "");
+        yield return ("Retry attempt limit", _provider.RetryAttemptLimit?.ToString() ?? "");
+        yield return ("Retry initial delay (seconds)", _provider.RetryInitialDelaySeconds?.ToString() ?? "");
+        yield return ("Simultaneous requests", _provider.SimultaneousRequests?.ToString() ?? "");
+    }
+
+    private async Task ExportRcfg()
+    {
+        if (_provider is null) return;
+        var safe = (_provider.Name ?? "provider").Replace('/', '_');
+        await Export.DownloadTextAsync($"{safe}.rcfg", _serialized, "text/plain");
+    }
+}

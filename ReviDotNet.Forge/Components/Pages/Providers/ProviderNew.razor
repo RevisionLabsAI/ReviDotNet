@@ -1,0 +1,138 @@
+@page "/providers/new"
+@inject ProviderRegistryService Registry
+@inject IProviderManager ProviderMgr
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject IDialogService DialogSvc
+
+<PageTitle>Add Provider — ReviDotNet Forge</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/providers" />
+    <MudText Typo="Typo.h4" Class="ml-2">Add Provider</MudText>
+</div>
+
+<MudPaper Class="pa-4" Elevation="1">
+    <MudTabs Elevation="0" Rounded="true">
+
+        <MudTabPanel Text="General" Icon="@Icons.Material.Filled.Info">
+            <div class="pa-2">
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="_provider.Name" Label="name" Required="true" Variant="Variant.Outlined" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="Protocol?" @bind-Value="_provider.Protocol" Label="protocol" Required="true" Variant="Variant.Outlined">
+                            @foreach (var p in Enum.GetValues<Protocol>())
+                            {
+                                <MudSelectItem T="Protocol?" Value="@p">@p</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="_provider.APIURL" Label="api-url" Required="true" Variant="Variant.Outlined" />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="_provider.APIKey"
+                                      Label="api-key"
+                                      HelperText="Use 'environment' to read PROVAPIKEY__<NAME>, or paste a key (less secure)."
+                                      Variant="Variant.Outlined" />
+                    </MudItem>
+                    <MudItem xs="6">
+                        <MudTextField @bind-Value="_provider.DefaultModel" Label="default-model" Variant="Variant.Outlined" />
+                    </MudItem>
+                    <MudItem xs="6">
+                        <MudCheckBox T="bool?" @bind-Value="_provider.Enabled" Label="enabled" Color="Color.Primary" TriState="true" />
+                    </MudItem>
+                    <MudItem xs="6"><MudCheckBox T="bool?" @bind-Value="_provider.SupportsCompletion" Label="supports-prompt-completion" Color="Color.Primary" TriState="true" /></MudItem>
+                    <MudItem xs="6"><MudCheckBox T="bool?" @bind-Value="_provider.SupportsResponseCompletion" Label="supports-response-completion" Color="Color.Primary" TriState="true" /></MudItem>
+                </MudGrid>
+            </div>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Guidance" Icon="@Icons.Material.Filled.AccountTree">
+            <div class="pa-2">
+                <MudGrid Spacing="2">
+                    <MudItem xs="6"><MudCheckBox T="bool?" @bind-Value="_provider.SupportsGuidance" Label="supports-guidance" Color="Color.Primary" TriState="true" /></MudItem>
+                    <MudItem xs="6"><MudSelect T="GuidanceType?" @bind-Value="_provider.DefaultGuidanceType" Label="default-guidance-type" Clearable="true" Variant="Variant.Outlined">
+                        @foreach (var t in Enum.GetValues<GuidanceType>()) { <MudSelectItem T="GuidanceType?" Value="@t">@t</MudSelectItem> }
+                    </MudSelect></MudItem>
+                    <MudItem xs="12"><MudTextField @bind-Value="_provider.DefaultGuidanceString" Label="default-guidance-string" Variant="Variant.Outlined" /></MudItem>
+                </MudGrid>
+            </div>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Rate limiting" Icon="@Icons.Material.Filled.Speed">
+            <div class="pa-2">
+                <MudGrid Spacing="2">
+                    <MudItem xs="6"><MudNumericField T="int?" @bind-Value="_provider.TimeoutSeconds" Label="timeout-seconds" Variant="Variant.Outlined" Clearable="true" /></MudItem>
+                    <MudItem xs="6"><MudNumericField T="int?" @bind-Value="_provider.DelayBetweenRequestsMs" Label="delay-between-requests-ms" Variant="Variant.Outlined" Clearable="true" /></MudItem>
+                    <MudItem xs="6"><MudNumericField T="int?" @bind-Value="_provider.RetryAttemptLimit" Label="retry-attempt-limit" Variant="Variant.Outlined" Clearable="true" /></MudItem>
+                    <MudItem xs="6"><MudNumericField T="int?" @bind-Value="_provider.RetryInitialDelaySeconds" Label="retry-initial-delay-seconds" Variant="Variant.Outlined" Clearable="true" /></MudItem>
+                    <MudItem xs="6"><MudNumericField T="int?" @bind-Value="_provider.SimultaneousRequests" Label="simultaneous-requests" Variant="Variant.Outlined" Clearable="true" /></MudItem>
+                </MudGrid>
+            </div>
+        </MudTabPanel>
+
+    </MudTabs>
+
+    <div class="d-flex gap-3 mt-4">
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Success"
+                   StartIcon="@Icons.Material.Filled.Save"
+                   Disabled="@(_saving || string.IsNullOrWhiteSpace(_provider.Name) || string.IsNullOrWhiteSpace(_provider.APIURL) || _provider.Protocol is null)"
+                   OnClick="@PromptToSave">
+            @(_saving ? "Saving…" : "Save")
+        </MudButton>
+    </div>
+</MudPaper>
+
+@code {
+    private ProviderProfile _provider = new()
+    {
+        Enabled = true,
+        TimeoutSeconds = 100,
+        DelayBetweenRequestsMs = 0,
+        RetryAttemptLimit = 5,
+        RetryInitialDelaySeconds = 5,
+        SimultaneousRequests = 10,
+    };
+    private bool _saving;
+
+    private async Task PromptToSave()
+    {
+        if (string.IsNullOrWhiteSpace(_provider.Name)) return;
+        if (ProviderMgr.Get(_provider.Name!) is not null)
+        {
+            Snackbar.Add($"A provider named '{_provider.Name}' already exists.", Severity.Error);
+            return;
+        }
+        var parameters = new DialogParameters
+        {
+            ["Message"] = $"Create new provider '{_provider.Name}'?",
+            ["Detail"] = "A new .rcfg file will be written under RConfigs/Providers.",
+            ["ConfirmLabel"] = "Create",
+        };
+        var dialog = await DialogSvc.ShowAsync<ConfirmDialog>("Confirm create", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+
+        _saving = true;
+        StateHasChanged();
+        try
+        {
+            await Registry.SaveNewAsync(_provider, CancellationToken.None);
+            Snackbar.Add($"Created {_provider.Name}", Severity.Success);
+            Nav.NavigateTo($"/providers/edit?name={Uri.EscapeDataString(_provider.Name!)}");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Save failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+}

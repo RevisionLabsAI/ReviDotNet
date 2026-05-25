@@ -3,6 +3,9 @@
 @inject TestRunnerService Runner
 @inject ISnackbar Snackbar
 @inject IModelManager Models
+@inject SavedSuitesService Suites
+@inject RunningJobsService JobsSvc
+@inject IDialogService DialogSvc
 
 <PageTitle>Test Runner — ReviDotNet Optimizer</PageTitle>
 
@@ -13,6 +16,34 @@
     <MudItem xs="12" md="4">
         <MudPaper Class="pa-4" Elevation="2">
             <MudText Typo="Typo.subtitle1" Class="mb-3">Configuration</MudText>
+
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">Saved suite</MudText>
+            <div class="d-flex gap-1 mb-3">
+                <MudSelect T="string"
+                           Value="_selectedSuiteName"
+                           ValueChanged="OnSuiteSelected"
+                           Variant="Variant.Outlined"
+                           Margin="Margin.Dense"
+                           Clearable="true"
+                           FullWidth="true">
+                    <MudSelectItem Value="@string.Empty">— none —</MudSelectItem>
+                    @foreach (var s in _savedSuites)
+                    {
+                        <MudSelectItem Value="@s.Name">@s.Name</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudIconButton Icon="@Icons.Material.Filled.Save"
+                               Color="Color.Primary"
+                               Size="Size.Small"
+                               Title="Save current as new suite"
+                               OnClick="@PromptSaveSuite" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                               Color="Color.Error"
+                               Size="Size.Small"
+                               Title="Delete selected suite"
+                               Disabled="@string.IsNullOrWhiteSpace(_selectedSuiteName)"
+                               OnClick="@DeleteSelectedSuite" />
+            </div>
 
             <MudSelect @bind-Value="_selectedPrompt"
                        Label="Prompt"
@@ -270,6 +301,9 @@
     private List<TestRunResult> _results = [];
     private TestRunResult? _expandedResult;
 
+    private List<SavedSuite> _savedSuites = new();
+    private string _selectedSuiteName = string.Empty;
+
     protected override void OnInitialized()
     {
         AllModels = Models.GetAll()
@@ -280,6 +314,89 @@
             _selectedPrompt = Prompt;
         else
             _selectedPrompt = Registry.GetAll().FirstOrDefault()?.Name ?? string.Empty;
+
+        _savedSuites = Suites.ListAll();
+    }
+
+    private void OnSuiteSelected(string? newValue)
+    {
+        _selectedSuiteName = newValue ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(_selectedSuiteName)) return;
+
+        var suite = _savedSuites.FirstOrDefault(s => s.Name == _selectedSuiteName);
+        if (suite is null) return;
+
+        _selectedPrompt = suite.PromptName;
+        _runsPerModel = suite.RunsPerModel;
+        _runAnalysis = suite.RunAnalysis;
+
+        var selected = new HashSet<string>(suite.ModelNames, StringComparer.OrdinalIgnoreCase);
+        foreach (var m in AllModels) m.Selected = selected.Contains(m.Name);
+
+        _inputs = suite.Inputs.Count > 0
+            ? suite.Inputs.Select(i => new InputEntry { Label = i.Key, Value = i.Value }).ToList()
+            : new() { new InputEntry { Label = "Task", Value = string.Empty } };
+
+        Snackbar.Add($"Loaded suite '{suite.Name}'", Severity.Info);
+        StateHasChanged();
+    }
+
+    private async Task PromptSaveSuite()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedPrompt))
+        {
+            Snackbar.Add("Pick a prompt first.", Severity.Warning);
+            return;
+        }
+        var parameters = new DialogParameters
+        {
+            ["Title"] = "Save Test Suite",
+            ["Message"] = "Name this test suite — it will be available next time you visit the Test Runner.",
+            ["InitialValue"] = _selectedSuiteName
+        };
+        var dialog = await DialogSvc.ShowAsync<NamePromptDialog>("Save", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+        var name = result.Data as string;
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        var suite = new SavedSuite
+        {
+            Name = name,
+            PromptName = _selectedPrompt,
+            ModelNames = AllModels.Where(m => m.Selected).Select(m => m.Name).ToList(),
+            RunsPerModel = _runsPerModel,
+            RunAnalysis = _runAnalysis,
+            Inputs = _inputs.Select(i => new SavedSuiteInput { Key = i.Label, Value = i.Value }).ToList()
+        };
+
+        try
+        {
+            Suites.Save(suite);
+            _savedSuites = Suites.ListAll();
+            _selectedSuiteName = name;
+            Snackbar.Add($"Saved suite '{name}'", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Save failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void DeleteSelectedSuite()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedSuiteName)) return;
+        try
+        {
+            Suites.Delete(_selectedSuiteName);
+            _savedSuites = Suites.ListAll();
+            Snackbar.Add($"Deleted '{_selectedSuiteName}'", Severity.Info);
+            _selectedSuiteName = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Delete failed: {ex.Message}", Severity.Error);
+        }
     }
 
     private async Task StartTests()
@@ -297,7 +414,9 @@
             .Select(i => new Input(i.Label, i.Value))
             .ToList();
 
-        var selectedModels = AllModels.Where(m => m.Selected).Select(m => m.Name);
+        var selectedModels = AllModels.Where(m => m.Selected).Select(m => m.Name).ToList();
+        string jobId = JobsSvc.Register(JobKind.Test, $"Test {_selectedPrompt} × {selectedModels.Count} model(s) × {_runsPerModel} run(s)", () => _cts.Cancel());
+
         var channel = Runner.RunTests(_selectedPrompt, selectedModels, inputs, _runsPerModel, _runAnalysis, _cts.Token);
 
         try
@@ -316,6 +435,7 @@
         finally
         {
             _running = false;
+            JobsSvc.Complete(jobId);
             await InvokeAsync(StateHasChanged);
         }
     }

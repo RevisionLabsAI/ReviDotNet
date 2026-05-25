@@ -1,0 +1,76 @@
+@page "/agents"
+@inject IAgentManager AgentMgr
+@inject NavigationManager Nav
+
+<PageTitle>Agent Registry — ReviDotNet Forge</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudText Typo="Typo.h4">Agent Registry</MudText>
+    <MudSpacer />
+    <MudTextField @bind-Value="_search"
+                  Placeholder="Search agents..."
+                  Adornment="Adornment.Start"
+                  AdornmentIcon="@Icons.Material.Filled.Search"
+                  Clearable="true"
+                  Style="max-width: 300px;"
+                  Variant="Variant.Outlined"
+                  Margin="Margin.Dense" />
+    <MudButton Variant="Variant.Filled"
+               Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add"
+               Href="/agents/new"
+               Class="ml-3">
+        Create New
+    </MudButton>
+</div>
+
+<MudDataGrid Items="@FilteredAgents"
+             T="AgentProfile"
+             RowClick="@OnRowClick"
+             Dense="true"
+             Hover="true"
+             Striped="true"
+             Elevation="2">
+    <Columns>
+        <PropertyColumn Property="a => a.Name" Title="Name" />
+        <PropertyColumn Property="a => a.Version" Title="Ver" />
+        <TemplateColumn Title="Entry">
+            <CellTemplate>
+                <MudChip T="string" Size="Size.Small" Color="Color.Primary">@(context.Item.EntryState ?? "?")</MudChip>
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="States">
+            <CellTemplate>
+                <MudText Typo="Typo.body2">@(context.Item.States?.Count ?? 0)</MudText>
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Description">
+            <CellTemplate>
+                <MudText Typo="Typo.body2" Style="max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    @(context.Item.Description ?? "")
+                </MudText>
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="" CellStyle="text-align: right; width: 40px;" Sortable="false" Filterable="false">
+            <CellTemplate>
+                <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" Color="Color.Default" />
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+</MudDataGrid>
+
+@code {
+    private string _search = string.Empty;
+
+    private IEnumerable<AgentProfile> FilteredAgents => AgentMgr.GetAll()
+        .Where(a => string.IsNullOrWhiteSpace(_search) ||
+                    (a.Name?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false))
+        .OrderBy(a => a.Name);
+
+    private void OnRowClick(DataGridRowClickEventArgs<AgentProfile> args)
+    {
+        var name = args.Item?.Name;
+        if (string.IsNullOrWhiteSpace(name)) return;
+        Nav.NavigateTo($"/agents/edit?name={Uri.EscapeDataString(name)}");
+    }
+}

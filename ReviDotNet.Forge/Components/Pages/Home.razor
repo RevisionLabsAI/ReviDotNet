@@ -1,105 +1,199 @@
 @page "/"
 @inject PromptRegistryService Registry
 @inject IModelManager Models
+@inject IAgentManager AgentMgr
+@inject IProviderManager ProviderMgr
+@inject ArtifactHistoryService History
+@inject RunningJobsService JobsSvc
+@implements IDisposable
 
-<PageTitle>Dashboard — ReviDotNet Optimizer</PageTitle>
+<PageTitle>Dashboard — ReviDotNet Forge</PageTitle>
 
-<MudText Typo="Typo.h4" Class="mb-6">Dashboard</MudText>
+<MudText Typo="Typo.h4" Class="mb-2">Dashboard</MudText>
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
+    Snapshot of registries, recent activity, and live jobs.
+</MudText>
 
 <MudGrid Spacing="4">
+
+    <!-- Counts -->
     <MudItem xs="12" sm="6" md="3">
-        <MudPaper Class="pa-4 d-flex flex-column align-center" Elevation="2">
+        <MudPaper Class="pa-4 d-flex flex-column align-center" Elevation="2" Style="cursor:pointer;" Href="/prompts">
             <MudIcon Icon="@Icons.Material.Filled.ListAlt" Color="Color.Primary" Size="Size.Large" />
             <MudText Typo="Typo.h4" Class="mt-2 mb-1">@_promptCount</MudText>
-            <MudText Typo="Typo.body2" Color="Color.Secondary">Loaded Prompts</MudText>
-            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/prompts" Class="mt-2">View Registry</MudButton>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Prompts</MudText>
+            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/prompts" Class="mt-2">Open</MudButton>
         </MudPaper>
     </MudItem>
-
     <MudItem xs="12" sm="6" md="3">
         <MudPaper Class="pa-4 d-flex flex-column align-center" Elevation="2">
-            <MudIcon Icon="@Icons.Material.Filled.Storage" Color="Color.Secondary" Size="Size.Large" />
+            <MudIcon Icon="@Icons.Material.Filled.Hub" Color="Color.Secondary" Size="Size.Large" />
+            <MudText Typo="Typo.h4" Class="mt-2 mb-1">@_agentCount</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Agents</MudText>
+            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/agents" Class="mt-2">Open</MudButton>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4 d-flex flex-column align-center" Elevation="2">
+            <MudIcon Icon="@Icons.Material.Filled.Memory" Color="Color.Tertiary" Size="Size.Large" />
             <MudText Typo="Typo.h4" Class="mt-2 mb-1">@_modelCount</MudText>
-            <MudText Typo="Typo.body2" Color="Color.Secondary">Loaded Models</MudText>
-            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/test" Class="mt-2">Run Tests</MudButton>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Models</MudText>
+            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/models" Class="mt-2">Open</MudButton>
         </MudPaper>
     </MudItem>
-
     <MudItem xs="12" sm="6" md="3">
         <MudPaper Class="pa-4 d-flex flex-column align-center" Elevation="2">
-            <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Tertiary" Size="Size.Large" />
-            <MudText Typo="Typo.h4" Class="mt-2 mb-1 opacity-60">—</MudText>
-            <MudText Typo="Typo.body2" Color="Color.Secondary">Generate Prompt</MudText>
-            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/generate" Class="mt-2">Start</MudButton>
+            <MudIcon Icon="@Icons.Material.Filled.Cloud" Color="Color.Info" Size="Size.Large" />
+            <MudText Typo="Typo.h4" Class="mt-2 mb-1">@_providerCount</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Providers</MudText>
+            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/providers" Class="mt-2">Open</MudButton>
         </MudPaper>
     </MudItem>
 
-    <MudItem xs="12" sm="6" md="3">
-        <MudPaper Class="pa-4 d-flex flex-column align-center" Elevation="2">
-            <MudIcon Icon="@Icons.Material.Filled.TrendingUp" Color="Color.Success" Size="Size.Large" />
-            <MudText Typo="Typo.h4" Class="mt-2 mb-1 opacity-60">—</MudText>
-            <MudText Typo="Typo.body2" Color="Color.Secondary">Optimizer</MudText>
-            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/optimize" Class="mt-2">Optimize</MudButton>
+    <!-- Live jobs -->
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Elevation="2" Style="min-height: 220px;">
+            <div class="d-flex align-center mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.WorkOutline" Color="Color.Primary" />
+                <MudText Typo="Typo.subtitle1" Class="ml-2">Live jobs (@_jobs.Count)</MudText>
+            </div>
+            @if (_jobs.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">No jobs running.</MudText>
+            }
+            else
+            {
+                @foreach (var job in _jobs)
+                {
+                    <MudPaper Class="pa-2 mb-2" Outlined="true">
+                        <div class="d-flex align-center gap-2">
+                            <MudChip T="string" Size="Size.Small" Color="Color.Primary">@job.Kind</MudChip>
+                            <MudText Typo="Typo.body2">@job.Title</MudText>
+                            <MudSpacer />
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@($"{(DateTime.UtcNow - job.StartedAt).TotalSeconds:0}s")</MudText>
+                            <MudIconButton Icon="@Icons.Material.Filled.Cancel"
+                                           Size="Size.Small"
+                                           Color="Color.Error"
+                                           OnClick="@(() => JobsSvc.CancelById(job.Id))" />
+                        </div>
+                    </MudPaper>
+                }
+            }
         </MudPaper>
     </MudItem>
-</MudGrid>
 
-<MudDivider Class="my-6" />
+    <!-- Recent activity -->
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Elevation="2" Style="min-height: 220px;">
+            <div class="d-flex align-center mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.History" Color="Color.Secondary" />
+                <MudText Typo="Typo.subtitle1" Class="ml-2">Recent activity</MudText>
+            </div>
+            @if (_recent.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    No edits yet — save a prompt or agent to see history here.
+                </MudText>
+            }
+            else
+            {
+                @foreach (var item in _recent)
+                {
+                    <div class="d-flex align-center gap-2 mb-1">
+                        <MudIcon Icon="@(item.Kind == "prompt" ? Icons.Material.Filled.ListAlt : Icons.Material.Filled.Hub)"
+                                 Size="Size.Small"
+                                 Color="@(item.Kind == "prompt" ? Color.Primary : Color.Secondary)" />
+                        <MudText Typo="Typo.body2" Class="flex-grow-1">@item.Name</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@item.WhenLocalText</MudText>
+                    </div>
+                }
+            }
+        </MudPaper>
+    </MudItem>
 
-<MudText Typo="Typo.h6" Class="mb-3">Quick Start</MudText>
-<MudGrid Spacing="3">
-    <MudItem xs="12" md="4">
-        <MudCard Elevation="1">
-            <MudCardContent>
-                <MudText Typo="Typo.subtitle1"><b>1. Browse the Registry</b></MudText>
-                <MudText Typo="Typo.body2" Class="mt-1">
-                    View and edit all loaded prompts. Each prompt shows its system message,
-                    instruction template, and configuration.
-                </MudText>
-            </MudCardContent>
-            <MudCardActions>
-                <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/prompts">Go to Registry</MudButton>
-            </MudCardActions>
-        </MudCard>
+    <!-- Provider health -->
+    <MudItem xs="12">
+        <MudPaper Class="pa-4" Elevation="2">
+            <div class="d-flex align-center mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.HealthAndSafety" Color="Color.Success" />
+                <MudText Typo="Typo.subtitle1" Class="ml-2">Provider health</MudText>
+            </div>
+            @if (_providers.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">No providers loaded.</MudText>
+            }
+            else
+            {
+                <MudGrid Spacing="2">
+                    @foreach (var p in _providers)
+                    {
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudPaper Class="pa-2 d-flex align-center gap-2" Outlined="true">
+                                <MudIcon Icon="@(p.Enabled == true ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Cancel)"
+                                         Color="@(p.Enabled == true ? Color.Success : Color.Error)"
+                                         Size="Size.Small" />
+                                <div>
+                                    <MudText Typo="Typo.body2">@p.Name</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@(p.Protocol?.ToString() ?? "—")</MudText>
+                                </div>
+                            </MudPaper>
+                        </MudItem>
+                    }
+                </MudGrid>
+            }
+        </MudPaper>
     </MudItem>
-    <MudItem xs="12" md="4">
-        <MudCard Elevation="1">
-            <MudCardContent>
-                <MudText Typo="Typo.subtitle1"><b>2. Generate a New Prompt</b></MudText>
-                <MudText Typo="Typo.body2" Class="mt-1">
-                    Describe what your prompt should do and provide input/output examples.
-                    AI generates a .pmt file you can save and test immediately.
-                </MudText>
-            </MudCardContent>
-            <MudCardActions>
-                <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/generate">Generate</MudButton>
-            </MudCardActions>
-        </MudCard>
-    </MudItem>
-    <MudItem xs="12" md="4">
-        <MudCard Elevation="1">
-            <MudCardContent>
-                <MudText Typo="Typo.subtitle1"><b>3. Test &amp; Optimize</b></MudText>
-                <MudText Typo="Typo.body2" Class="mt-1">
-                    Run a prompt against one or more models. AI scores quality and suggests
-                    improvements. Apply revisions and iterate.
-                </MudText>
-            </MudCardContent>
-            <MudCardActions>
-                <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/test">Test Runner</MudButton>
-                <MudButton Variant="Variant.Text" Color="Color.Secondary" Href="/optimize">Optimizer</MudButton>
-            </MudCardActions>
-        </MudCard>
-    </MudItem>
+
 </MudGrid>
 
 @code {
     private int _promptCount;
+    private int _agentCount;
     private int _modelCount;
+    private int _providerCount;
+
+    private IReadOnlyList<JobEntry> _jobs = new List<JobEntry>();
+    private List<ActivityItem> _recent = new();
+    private List<ProviderProfile> _providers = new();
+
+    private sealed record ActivityItem(string Kind, string Name, DateTime WhenUtc)
+    {
+        public string WhenLocalText => WhenUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+    }
 
     protected override void OnInitialized()
     {
         _promptCount = Registry.GetAll().Count;
+        _agentCount = AgentMgr.GetAll().Count;
         _modelCount = Models.GetAll().Count;
+        _providers = ProviderMgr.GetAll();
+        _providerCount = _providers.Count;
+
+        RefreshJobs();
+        JobsSvc.Changed += OnJobsChanged;
+
+        // Recent activity: combine prompt + agent history snapshots, pick 10 newest.
+        var items = new List<ActivityItem>();
+        foreach (var p in Registry.GetAll())
+        {
+            foreach (var v in History.ListVersions("prompt", p.Name ?? string.Empty).Take(3))
+                items.Add(new ActivityItem("prompt", p.Name ?? "?", v.SavedAt));
+        }
+        foreach (var a in AgentMgr.GetAll())
+        {
+            foreach (var v in History.ListVersions("agent", a.Name ?? string.Empty).Take(3))
+                items.Add(new ActivityItem("agent", a.Name ?? "?", v.SavedAt));
+        }
+        _recent = items.OrderByDescending(i => i.WhenUtc).Take(10).ToList();
     }
+
+    private void OnJobsChanged()
+    {
+        RefreshJobs();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void RefreshJobs() => _jobs = JobsSvc.Snapshot();
+
+    public void Dispose() => JobsSvc.Changed -= OnJobsChanged;
 }
