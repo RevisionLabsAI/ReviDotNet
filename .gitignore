@@ -36,3 +36,13 @@ msbuild.wrn
 
 # Visual Studio 2015
 .vs/
+
+# JetBrains Rider
+.idea/
+
+# Test results
+TestResults/
+
+# NuGet packages
+*.nupkg
+*.snupkg
