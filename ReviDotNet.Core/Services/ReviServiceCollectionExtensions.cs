@@ -51,6 +51,16 @@ public static class ReviServiceCollectionExtensions
         // Lazy wrapper for circular-dependency break: ToolManagerService → Lazy<IAgentService> → AgentService → IToolManager
         services.AddSingleton<Lazy<IAgentService>>(sp => new Lazy<IAgentService>(sp.GetRequiredService<IAgentService>));
 
+        // Web content pipeline (URL → clean, metadata-tagged Markdown). TryAdd so any single stage can
+        // be substituted (e.g. a higher-recall extractor) without touching the rest. The default fetcher
+        // is the cheap HTTP one; registering ReviDotNet.Scraping swaps in a tiered HTTP→browser fetcher.
+        services.TryAddSingleton<IContentExtractor, ReadabilityContentExtractor>();
+        services.TryAddSingleton<IMarkdownConverter, ReverseMarkdownConverter>();
+        services.TryAddSingleton<IMetadataExtractor, StructuredDataMetadataExtractor>();
+        services.TryAddSingleton<IContentChunker, HeadingTokenChunker>();
+        services.TryAddSingleton<IWebFetcher, HttpWebFetcher>();
+        services.TryAddSingleton<IWebContentService, WebContentService>();
+
         // Startup initializer — hidden behind IHostedService; callers never interact with it directly
         services.AddHostedService(sp =>
             ActivatorUtilities.CreateInstance<RegistryInitService>(sp, resolvedAssembly));

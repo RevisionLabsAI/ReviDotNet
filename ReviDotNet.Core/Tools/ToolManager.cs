@@ -31,6 +31,7 @@ internal static class ToolManager
     {
         Register(new WebSearchTool());
         Register(new WebScrapeTool());
+        Register(new WebExtractTool());
         // InvokeAgentTool requires Lazy<IAgentService> — registered by ToolManagerService in the DI path.
     }
 

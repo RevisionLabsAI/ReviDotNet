@@ -4,38 +4,40 @@
 //  See LICENSE.txt in the project root for full license information.
 // ===================================================================
 
-using System.Net.Http;
-using System.Text.RegularExpressions;
-
 namespace Revi;
 
 /// <summary>
-/// Built-in web scrape tool. Fetches a URL and strips HTML to return readable plain text.
+/// Built-in web scrape tool. Fetches a URL and returns its main content as clean, metadata-tagged
+/// Markdown — boilerplate (nav/ads/footers) removed — via <see cref="IWebContentService"/>. This
+/// replaces the old regex tag-strip, giving agents readable, structured content instead of soup.
 ///
-/// The input should be a URL. The tool performs an HTTP GET and converts the HTML body
-/// to plain text by removing tags and decoding entities.
+/// The input is a URL.
 /// </summary>
 public class WebScrapeTool : IBuiltInTool
 {
+    private readonly IWebContentService _web;
+
+    /// <summary>Creates the tool with a fully-default pipeline (used by the legacy static registry / non-DI callers).</summary>
+    public WebScrapeTool() : this(WebContentService.CreateDefault()) { }
+
+    /// <summary>Creates the tool over an injected <see cref="IWebContentService"/> (the DI path).</summary>
+    public WebScrapeTool(IWebContentService web) => _web = web;
+
+    /// <inheritdoc/>
     public string Name => "web-scrape";
-    public string Description => "Fetches the content of a URL and returns it as plain text.";
 
-    private static readonly HttpClient _http = new()
-    {
-        Timeout = TimeSpan.FromSeconds(30),
-        DefaultRequestHeaders = { { "User-Agent", "ReviDotNet/1.0 (agent-scraper)" } }
-    };
+    /// <inheritdoc/>
+    public string Description => "Fetches a URL and returns its main content as clean, metadata-tagged Markdown (boilerplate removed). Input is a URL.";
 
-    // Strips all HTML tags
-    private static readonly Regex TagRegex = new(@"<[^>]+>", RegexOptions.Compiled);
-    // Collapses whitespace
-    private static readonly Regex WhitespaceRegex = new(@"\s{3,}", RegexOptions.Compiled);
+    /// <summary>Hard cap on returned characters so a huge page cannot blow the agent's context window.</summary>
+    private const int MaxChars = 50_000;
 
+    /// <inheritdoc/>
     public async Task<ToolCallResult> ExecuteAsync(string input, CancellationToken token)
     {
-        string url = input.Trim();
+        string url = (input ?? string.Empty).Trim();
 
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        if (!Uri.TryCreate(url, UriKind.Absolute, out _))
         {
             return new ToolCallResult
             {
@@ -47,33 +49,27 @@ public class WebScrapeTool : IBuiltInTool
 
         try
         {
-            using var response = await _http.GetAsync(uri, token);
-            string body = await response.Content.ReadAsStringAsync(token);
+            WebDocument doc = await _web.FetchAsync(url, options: null, cancellationToken: token);
 
-            if (!response.IsSuccessStatusCode)
+            if (string.IsNullOrWhiteSpace(doc.Markdown) && doc.FetchInfo.Blocked)
             {
                 return new ToolCallResult
                 {
                     ToolName = Name,
                     Failed = true,
-                    ErrorMessage = $"HTTP {(int)response.StatusCode} from {url}"
+                    ErrorMessage = $"Fetch blocked or challenged (status {doc.FetchInfo.StatusCode}) for {url}. " +
+                                   "A browser-tier fetcher (ReviDotNet.Scraping) may be required."
                 };
             }
 
-            // Strip HTML tags and normalize whitespace
-            string text = TagRegex.Replace(body, " ");
-            text = System.Net.WebUtility.HtmlDecode(text);
-            text = WhitespaceRegex.Replace(text, "\n\n");
-
-            // Truncate to a reasonable size
-            const int maxChars = 20_000;
-            if (text.Length > maxChars)
-                text = text[..maxChars] + "\n[...truncated]";
+            string output = doc.ToFrontmatterMarkdown();
+            if (output.Length > MaxChars)
+                output = output[..MaxChars] + "\n\n[...truncated]";
 
             return new ToolCallResult
             {
                 ToolName = Name,
-                Output = text.Trim()
+                Output = output.Trim()
             };
         }
         catch (Exception ex)

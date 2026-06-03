@@ -20,12 +20,13 @@ public sealed class ToolManagerService : IToolManager
     private readonly IReviLogger<ToolManagerService> _logger;
 
     /// <summary>Initializes a new <see cref="ToolManagerService"/> and registers the default built-in tools.</summary>
-    public ToolManagerService(Lazy<IAgentService> agentService, IReviLogger<ToolManagerService> logger)
+    public ToolManagerService(Lazy<IAgentService> agentService, IWebContentService webContent, IReviLogger<ToolManagerService> logger)
     {
         _logger = logger;
 
         Register(new WebSearchTool());
-        Register(new WebScrapeTool());
+        Register(new WebScrapeTool(webContent));
+        Register(new WebExtractTool(webContent));
         Register(new InvokeAgentTool(agentService));
     }
 
