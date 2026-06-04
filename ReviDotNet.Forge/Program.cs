@@ -4,6 +4,8 @@
 //  See LICENSE.txt in the project root for full license information.
 // ===================================================================
 
+using DotNetEnv;
+using DotNetEnv.Configuration;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -31,6 +33,7 @@ builder.WebHost.UseStaticWebAssets();
 builder.Configuration
     .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
     .AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true)
+    .AddDotNetEnv("forge.env", LoadOptions.TraversePath())
     .AddEnvironmentVariables();
 
 bool useAuthentication = builder.Configuration.GetValue<bool>("Forge:UseAuthentication");

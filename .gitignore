@@ -46,3 +46,8 @@ TestResults/
 # NuGet packages
 *.nupkg
 *.snupkg
+
+# Environment files
+.env
+.env.*
+*.env
