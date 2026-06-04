@@ -1,0 +1,331 @@
+@page "/clients"
+@using ReviDotNet.Forge.Models
+@using ReviDotNet.Forge.Services.ApiKeys
+@using ReviDotNet.Forge.Services.Gateway
+@inject IForgeApiKeyService KeyService
+@inject UsageDashboardService DashboardSvc
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Clients — ReviDotNet Forge</PageTitle>
+
+<div class="d-flex align-center flex-wrap gap-3 mb-2">
+    <MudText Typo="Typo.h4">Clients</MudText>
+    <MudSpacer />
+    <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+        <MudButton Color="@(_windowDays == 7 ? Color.Primary : Color.Default)" OnClick="@(() => SetWindow(7))">7d</MudButton>
+        <MudButton Color="@(_windowDays == 30 ? Color.Primary : Color.Default)" OnClick="@(() => SetWindow(30))">30d</MudButton>
+        <MudButton Color="@(_windowDays == 90 ? Color.Primary : Color.Default)" OnClick="@(() => SetWindow(90))">90d</MudButton>
+    </MudButtonGroup>
+    <MudButton Variant="Variant.Filled"
+               Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.VpnKey"
+               OnClick="OpenGenerateDialog">
+        Generate API Key
+    </MudButton>
+</div>
+
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
+    Clients sending requests through the Forge gateway. Expand a client to manage the API keys it
+    authenticates with. Traffic figures cover the last @_windowDays days across inference and embeddings.
+</MudText>
+
+@if (_newRawKey is not null)
+{
+    <MudPaper Class="pa-4 mb-6" Elevation="0" Outlined="true" Style="border-color: var(--mud-palette-success);">
+        <div class="d-flex align-center mb-2">
+            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Class="mr-2" />
+            <MudText Typo="Typo.subtitle2">New API key for &ldquo;@_newKeyClient&rdquo;</MudText>
+            <MudSpacer />
+            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="DismissNewKey" />
+        </div>
+        <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+            Copy this key now — it will not be shown again.
+        </MudAlert>
+        <MudTextField T="string" Value="@_newRawKey" ReadOnly="true" Label="API Key" FullWidth="true"
+                      Variant="Variant.Outlined" Class="forge-mono"
+                      Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.ContentCopy"
+                      AdornmentAriaLabel="Copy API key" OnAdornmentClick="CopyNewKey" />
+    </MudPaper>
+}
+
+<MudGrid Class="mb-6">
+    <MudItem xs="12" sm="4">
+        <MudPaper Class="pa-4" Elevation="2" Style="height: 100%;">
+            <MudText Typo="Typo.overline" Color="Color.Secondary">Clients</MudText>
+            <MudText Typo="Typo.h4">@_clients.Count.ToString("N0")</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="4">
+        <MudPaper Class="pa-4" Elevation="2" Style="height: 100%;">
+            <MudText Typo="Typo.overline" Color="Color.Secondary">Active API Keys</MudText>
+            <MudText Typo="Typo.h4">@TotalActiveKeys.ToString("N0")</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="4">
+        <MudPaper Class="pa-4" Elevation="2" Style="height: 100%;">
+            <MudText Typo="Typo.overline" Color="Color.Secondary">Requests (@_windowDays d)</MudText>
+            <MudText Typo="Typo.h4">@TotalRequests.ToString("N0")</MudText>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<MudDataGrid T="ClientRow" Items="@_clients" Dense="true" Hover="true" Elevation="2" Loading="@_loading">
+    <Columns>
+        <HierarchyColumn T="ClientRow" />
+        <PropertyColumn Property="c => c.ClientId" Title="Client ID" />
+        <TemplateColumn Title="API Keys" Sortable="false">
+            <CellTemplate>
+                @if (context.Item.KeyCount == 0)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text">No keys</MudChip>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2">@context.Item.ActiveKeyCount active / @context.Item.KeyCount total</MudText>
+                }
+            </CellTemplate>
+        </TemplateColumn>
+        <PropertyColumn Property="c => c.Requests" Title="@($"Requests ({_windowDays}d)")" />
+        <TemplateColumn Title="Success" Sortable="false">
+            <CellTemplate>
+                @if (context.Item.Requests == 0)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Color="@RateColor(context.Item.SuccessRate)">@context.Item.SuccessRate.ToString("F1")%</MudText>
+                }
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Last Activity">
+            <CellTemplate>
+                @(context.Item.LastActivity is null
+                    ? "Never"
+                    : context.Item.LastActivity.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <ChildRowContent>
+        @{
+            var clientId = context.Item.ClientId;
+            var keys = KeysFor(clientId);
+        }
+        <div class="pa-4" style="background-color: var(--mud-palette-background-gray);">
+            <div class="d-flex align-center mb-2">
+                <MudText Typo="Typo.subtitle2">API keys for &ldquo;@clientId&rdquo;</MudText>
+                <MudSpacer />
+                <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="@(() => GenerateKeyForAsync(clientId))">
+                    Add key
+                </MudButton>
+            </div>
+            @if (keys.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">No API keys for this client.</MudText>
+            }
+            else
+            {
+                <MudSimpleTable Dense="true" Hover="true" Elevation="0" Style="background-color: transparent;">
+                    <thead>
+                        <tr>
+                            <th>Key Prefix</th>
+                            <th>Enabled</th>
+                            <th>Created</th>
+                            <th>Last Used</th>
+                            <th style="text-align:right;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var k in keys)
+                        {
+                            <tr>
+                                <td class="forge-mono">@k.KeyPrefix…</td>
+                                <td>
+                                    <MudSwitch T="bool" Value="@k.Enabled" Color="Color.Primary"
+                                               ValueChanged="@(async v => await ToggleEnabled(k, v))" />
+                                </td>
+                                <td>@k.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                                <td>@(k.LastUsedAt.HasValue ? k.LastUsedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "Never")</td>
+                                <td style="text-align:right;">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
+                                                   OnClick="@(() => ConfirmDeleteKey(k))" />
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+        </div>
+    </ChildRowContent>
+    <NoRecordsContent>
+        <MudText Class="pa-4" Color="Color.Secondary">
+            No clients yet. Generate an API key to onboard a client.
+        </MudText>
+    </NoRecordsContent>
+</MudDataGrid>
+
+@code {
+    private sealed record ClientRow(
+        string ClientId,
+        int KeyCount,
+        int ActiveKeyCount,
+        int Requests,
+        int SuccessCount,
+        long InputTokens,
+        long OutputTokens,
+        DateTime? LastActivity)
+    {
+        public double SuccessRate => Requests == 0 ? 0 : (double)SuccessCount / Requests * 100;
+    }
+
+    private List<ClientRow> _clients = new();
+    private Dictionary<string, List<ForgeApiKey>> _keysByClient = new();
+    private int _windowDays = 30;
+    private bool _loading;
+
+    private string? _newRawKey;
+    private string? _newKeyClient;
+
+    private int TotalActiveKeys => _keysByClient.Values.Sum(list => list.Count(k => k.Enabled));
+    private int TotalRequests => _clients.Sum(c => c.Requests);
+
+    private List<ForgeApiKey> KeysFor(string clientId) =>
+        _keysByClient.TryGetValue(clientId, out var list) ? list : new();
+
+    private static Color RateColor(double rate) =>
+        rate >= 99 ? Color.Success : rate >= 90 ? Color.Warning : Color.Error;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task SetWindow(int days)
+    {
+        if (_windowDays == days) return;
+        _windowDays = days;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            var keys = await KeyService.GetAllAsync();
+            var usage = await DashboardSvc.GetByClientAsync(DateTime.UtcNow.AddDays(-_windowDays));
+
+            _keysByClient = keys
+                .Where(k => !string.IsNullOrWhiteSpace(k.ClientId))
+                .GroupBy(k => k.ClientId)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(k => k.CreatedAt).ToList());
+
+            var usageByClient = usage
+                .Where(u => !string.IsNullOrWhiteSpace(u.ClientId))
+                .ToDictionary(u => u.ClientId);
+
+            _clients = _keysByClient.Keys
+                .Concat(usageByClient.Keys)
+                .Distinct()
+                .Select(id =>
+                {
+                    var clientKeys = KeysFor(id);
+                    usageByClient.TryGetValue(id, out var u);
+
+                    DateTime? lastKeyUse = clientKeys.Select(k => k.LastUsedAt).Max();
+                    DateTime? lastReq = u?.LastRequestAt;
+                    DateTime? lastActivity = lastKeyUse is null ? lastReq
+                        : lastReq is null ? lastKeyUse
+                        : (lastKeyUse > lastReq ? lastKeyUse : lastReq);
+
+                    return new ClientRow(
+                        ClientId: id,
+                        KeyCount: clientKeys.Count,
+                        ActiveKeyCount: clientKeys.Count(k => k.Enabled),
+                        Requests: u?.TotalRequests ?? 0,
+                        SuccessCount: u?.SuccessCount ?? 0,
+                        InputTokens: u?.TotalInputTokens ?? 0,
+                        OutputTokens: u?.TotalOutputTokens ?? 0,
+                        LastActivity: lastActivity);
+                })
+                .OrderByDescending(c => c.Requests)
+                .ThenBy(c => c.ClientId)
+                .ToList();
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OpenGenerateDialog()
+    {
+        var parameters = new DialogParameters
+        {
+            ["Title"] = "Generate API Key",
+            ["Message"] = "Enter a client ID. Requests authenticate with the generated key and report under this ID.",
+            ["Label"] = "Client ID",
+            ["ConfirmLabel"] = "Generate",
+        };
+        var dialog = await Dialogs.ShowAsync<NamePromptDialog>("Generate API Key", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+        if (result.Data is not string clientId || string.IsNullOrWhiteSpace(clientId)) return;
+        await GenerateKeyForAsync(clientId.Trim());
+    }
+
+    private async Task GenerateKeyForAsync(string clientId)
+    {
+        var (_, raw) = await KeyService.CreateAsync(clientId);
+        _newRawKey = raw;
+        _newKeyClient = clientId;
+        Snackbar.Add($"Generated API key for '{clientId}'.", Severity.Success);
+        await LoadAsync();
+    }
+
+    private async Task ToggleEnabled(ForgeApiKey key, bool enabled)
+    {
+        await KeyService.SetEnabledAsync(key.Id!, enabled);
+        await LoadAsync();
+    }
+
+    private async Task ConfirmDeleteKey(ForgeApiKey key)
+    {
+        var parameters = new DialogParameters
+        {
+            ["Message"] = $"Delete key '{key.KeyPrefix}…' for client '{key.ClientId}'?",
+            ["Detail"] = "This cannot be undone. Clients using this key will be rejected.",
+            ["ConfirmLabel"] = "Delete",
+            ["DestructiveAction"] = true,
+        };
+        var dialog = await Dialogs.ShowAsync<ConfirmDialog>("Delete API key", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+        await KeyService.DeleteAsync(key.Id!);
+        Snackbar.Add("API key deleted.", Severity.Info);
+        await LoadAsync();
+    }
+
+    private async Task CopyNewKey()
+    {
+        if (string.IsNullOrEmpty(_newRawKey)) return;
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", _newRawKey);
+            Snackbar.Add("API key copied to clipboard.", Severity.Success);
+        }
+        catch
+        {
+            Snackbar.Add("Couldn't copy automatically — select and copy the key manually.", Severity.Warning);
+        }
+    }
+
+    private void DismissNewKey()
+    {
+        _newRawKey = null;
+        _newKeyClient = null;
+    }
+}

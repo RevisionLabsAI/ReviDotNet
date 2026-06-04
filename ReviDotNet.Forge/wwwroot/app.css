@@ -1,25 +1,369 @@
+/* ===================================================================
+   ReviDotNet Forge — global style polish.
+
+   The colour system, typography and corner radius live in the MudBlazor
+   theme (see Theme/ForgeTheme.cs). This sheet layers on the finishing
+   touches the theme object can't express: brand lockup, navigation,
+   surface treatment, scrollbars and a handful of refined component
+   details. Everything is driven off MudBlazor's --mud-palette-* custom
+   properties, so it adapts to light and dark automatically.
+   =================================================================== */
+
+/* ----------------------------------------------------------------- Base */
 html, body {
     height: 100%;
     margin: 0;
     padding: 0;
 }
 
-/* Blazor error UI */
+body {
+    background-color: var(--mud-palette-background);
+    font-family: var(--mud-typography-default-family, "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+}
+
+::selection {
+    background: rgba(var(--mud-palette-primary-rgb), 0.28);
+}
+
+code, kbd, samp, pre, .forge-mono {
+    font-family: "JetBrains Mono", "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    font-feature-settings: "liga" 0;
+}
+
+/* ----------------------------------------------------------- Scrollbars */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(136, 146, 168, 0.45) transparent;
+}
+
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: rgba(136, 146, 168, 0.40);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(136, 146, 168, 0.65);
+}
+
+/* --------------------------------------------------- Focus visibility */
+.mud-button-root:focus-visible,
+.mud-icon-button:focus-visible,
+.mud-nav-link:focus-visible {
+    outline: 2px solid rgba(var(--mud-palette-primary-rgb), 0.65);
+    outline-offset: 2px;
+}
+
+/* -------------------------------------------------------- Brand lockup */
+.forge-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.forge-brand__mark {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    border-radius: 9px;
+    color: #fff;
+    background: linear-gradient(135deg, var(--mud-palette-primary), var(--mud-palette-tertiary));
+    box-shadow: 0 2px 8px rgba(var(--mud-palette-primary-rgb), 0.40);
+}
+
+.forge-brand__mark .mud-icon-root {
+    font-size: 1.25rem;
+}
+
+.forge-brand__text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1;
+    min-width: 0;
+}
+
+.forge-brand__eyebrow {
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    color: var(--mud-palette-text-secondary);
+}
+
+.forge-brand__name {
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--mud-palette-text-primary);
+    margin-top: 2px;
+}
+
+/* ------------------------------------------------------------- App bar */
+.forge-appbar.mud-appbar {
+    border-bottom: 1px solid var(--mud-palette-lines-default);
+    backdrop-filter: saturate(1.1);
+}
+
+/* -------------------------------------------------------------- Drawer */
+.forge-drawer.mud-drawer {
+    border-right: 1px solid var(--mud-palette-lines-default);
+}
+
+.forge-drawer__header.mud-drawer-header {
+    min-height: 52px;
+    align-items: center;
+    padding-top: 8px;
+    padding-bottom: 4px;
+}
+
+/* ---------------------------------------------------------- Navigation */
+/* Inset the pills via the container's padding rather than per-link horizontal
+   margin. MudBlazor gives nav-group toggle buttons width:100%, so a horizontal
+   margin on them overflows the drawer and triggers a scrollbar; padding here
+   insets every item (links and group headers alike) without changing widths. */
+.mud-navmenu {
+    padding: 6px 8px;
+}
+
+.mud-navmenu .mud-nav-link {
+    border-radius: 9px;
+    margin: 2px 0;
+    padding-top: 9px;
+    padding-bottom: 9px;
+    font-weight: 500;
+    transition: background-color 0.14s ease, color 0.14s ease;
+}
+
+.mud-navmenu .mud-nav-link:hover {
+    background-color: var(--mud-palette-action-default-hover);
+}
+
+/* Override MudBlazor's stock active state (which uses a neutral hover tint and a
+   font-weight !important) with a clean indigo pill. !important is needed to win
+   against the framework's hover/focus/active variants on the same element. */
+.mud-navmenu .mud-nav-link.active {
+    background-color: rgba(var(--mud-palette-primary-rgb), 0.14) !important;
+    color: var(--mud-palette-primary);
+    font-weight: 600 !important;
+}
+
+.mud-navmenu .mud-nav-link.active .mud-nav-link-icon {
+    color: var(--mud-palette-primary);
+}
+
+/* Nested links inside a group sit slightly tighter under their header. */
+.mud-nav-group .mud-nav-link {
+    margin-top: 1px;
+    margin-bottom: 1px;
+}
+
+/* ----------------------------------------------------- Surfaces / cards */
+.mud-paper {
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Hairline definition on raised cards — reads well in both themes and keeps
+   dark-mode surfaces from melting into the background. */
+.mud-paper:not(.mud-paper-outlined):not(.mud-elevation-0) {
+    border: 1px solid var(--mud-palette-lines-default);
+}
+
+/* Softer, more layered shadows than the stock Material elevations for the
+   card depths the app actually uses (popovers/dialogs are styled separately). */
+.mud-paper.mud-elevation-1 {
+    box-shadow: 0 1px 2px rgba(15, 18, 26, 0.06), 0 1px 3px rgba(15, 18, 26, 0.05);
+}
+
+.mud-paper.mud-elevation-2 {
+    box-shadow: 0 2px 4px rgba(15, 18, 26, 0.06), 0 4px 12px rgba(15, 18, 26, 0.08);
+}
+
+.mud-paper.mud-elevation-3,
+.mud-paper.mud-elevation-4 {
+    box-shadow: 0 4px 8px rgba(15, 18, 26, 0.07), 0 8px 24px rgba(15, 18, 26, 0.10);
+}
+
+/* ----------------------------------------------- Dashboard stat cards */
+/* Each card is a real anchor link (whole surface is the click target) and
+   carries its own accent colour via the --stat-accent custom properties,
+   set by the modifier classes below. Horizontal layout: accent icon chip on
+   the left, the value and label stacked to its right, and a navigate arrow
+   that reveals on hover at the far edge. */
+.forge-stat-card {
+    --stat-accent: var(--mud-palette-primary);
+    --stat-accent-rgb: var(--mud-palette-primary-rgb);
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
+    height: 100%;
+    padding: 20px;
+    border-radius: var(--mud-default-borderradius);
+    background-color: var(--mud-palette-surface);
+    border: 1px solid var(--mud-palette-lines-default);
+    color: var(--mud-palette-text-primary);
+    text-decoration: none;
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.forge-stat-card:hover {
+    border-color: rgba(var(--stat-accent-rgb), 0.55);
+    box-shadow: 0 6px 22px rgba(15, 18, 26, 0.12);
+    transform: translateY(-2px);
+}
+
+.forge-stat-card:focus-visible {
+    outline: 2px solid rgba(var(--stat-accent-rgb), 0.65);
+    outline-offset: 2px;
+}
+
+.forge-stat-card--primary   { --stat-accent: var(--mud-palette-primary);   --stat-accent-rgb: var(--mud-palette-primary-rgb); }
+.forge-stat-card--secondary { --stat-accent: var(--mud-palette-secondary); --stat-accent-rgb: var(--mud-palette-secondary-rgb); }
+.forge-stat-card--tertiary  { --stat-accent: var(--mud-palette-tertiary);  --stat-accent-rgb: var(--mud-palette-tertiary-rgb); }
+.forge-stat-card--info      { --stat-accent: var(--mud-palette-info);      --stat-accent-rgb: var(--mud-palette-info-rgb); }
+
+.forge-stat-card__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    color: var(--stat-accent);
+    background-color: rgba(var(--stat-accent-rgb), 0.14);
+}
+
+.forge-stat-card__icon .mud-icon-root {
+    font-size: 1.6rem;
+}
+
+.forge-stat-card__body {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.forge-stat-card__value {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.022em;
+}
+
+.forge-stat-card__label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--mud-palette-text-secondary);
+}
+
+.forge-stat-card__arrow {
+    margin-left: auto;
+    align-self: center;
+    color: var(--mud-palette-text-disabled);
+    opacity: 0;
+    transition: color 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
+}
+
+.forge-stat-card:hover .forge-stat-card__arrow {
+    color: var(--stat-accent);
+    opacity: 1;
+    transform: translateX(3px);
+}
+
+/* ------------------------------------------------------------ Buttons */
+.mud-button-root {
+    text-transform: none;
+    transition: background-color 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease, transform 0.06s ease;
+}
+
+.mud-button-root:active {
+    transform: translateY(0.5px);
+}
+
+/* Flat, modern filled buttons — lift only on hover. */
+.mud-button-filled {
+    box-shadow: none;
+}
+
+.mud-button-filled:hover {
+    box-shadow: 0 2px 8px rgba(var(--mud-palette-primary-rgb), 0.28);
+}
+
+/* --------------------------------------------------------------- Chips */
+.mud-chip {
+    border-radius: 8px;
+    font-weight: 500;
+}
+
+/* -------------------------------------------------------------- Tables */
+.mud-table-head .mud-table-cell {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--mud-palette-text-secondary);
+}
+
+/* ----------------------------------------------- Menus, dialogs, etc. */
+.mud-popover {
+    border-radius: 12px;
+    border: 1px solid var(--mud-palette-lines-default);
+    box-shadow: 0 8px 28px var(--mud-palette-overlay-dark);
+}
+
+.mud-dialog {
+    border-radius: 16px;
+    border: 1px solid var(--mud-palette-lines-default);
+}
+
+.mud-tooltip {
+    border-radius: 8px;
+    font-size: 0.75rem;
+    padding: 6px 10px;
+}
+
+.mud-snackbar {
+    border-radius: 12px;
+}
+
+/* ------------------------------------------------------- Blazor errors */
 #blazor-error-ui {
-    background: lightyellow;
+    background: var(--mud-palette-surface);
+    color: var(--mud-palette-text-primary);
+    border-top: 2px solid var(--mud-palette-error);
+    box-shadow: 0 -4px 20px var(--mud-palette-overlay-dark);
     bottom: 0;
-    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
     display: none;
-    left: 0;
-    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    padding: 0.7rem 1.25rem;
     position: fixed;
     width: 100%;
     z-index: 1000;
+    font-size: 0.875rem;
 }
 
 #blazor-error-ui .dismiss {
     cursor: pointer;
     position: absolute;
-    right: 0.75rem;
-    top: 0.5rem;
+    right: 0.9rem;
+    top: 0.6rem;
 }

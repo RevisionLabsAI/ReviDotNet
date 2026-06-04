@@ -16,38 +16,54 @@
 
 <MudGrid Spacing="4">
 
-    <!-- Counts -->
+    <!-- Counts — each whole card is a clickable link to its registry -->
     <MudItem xs="12" sm="6" md="3">
-        <MudPaper Class="pa-4 d-flex flex-column align-center" Elevation="2" Style="cursor:pointer;" Href="/prompts">
-            <MudIcon Icon="@Icons.Material.Filled.ListAlt" Color="Color.Primary" Size="Size.Large" />
-            <MudText Typo="Typo.h4" Class="mt-2 mb-1">@_promptCount</MudText>
-            <MudText Typo="Typo.body2" Color="Color.Secondary">Prompts</MudText>
-            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/prompts" Class="mt-2">Open</MudButton>
-        </MudPaper>
+        <a href="/prompts" class="forge-stat-card forge-stat-card--primary" aria-label="@($"Prompts: {_promptCount}. Open registry.")">
+            <span class="forge-stat-card__icon">
+                <MudIcon Icon="@Icons.Material.Filled.ListAlt" Color="Color.Inherit" />
+            </span>
+            <div class="forge-stat-card__body">
+                <span class="forge-stat-card__value">@_promptCount</span>
+                <span class="forge-stat-card__label">Prompts</span>
+            </div>
+            <MudIcon Icon="@Icons.Material.Filled.ArrowForward" Color="Color.Inherit" Size="Size.Small" Class="forge-stat-card__arrow" />
+        </a>
     </MudItem>
     <MudItem xs="12" sm="6" md="3">
-        <MudPaper Class="pa-4 d-flex flex-column align-center" Elevation="2">
-            <MudIcon Icon="@Icons.Material.Filled.Hub" Color="Color.Secondary" Size="Size.Large" />
-            <MudText Typo="Typo.h4" Class="mt-2 mb-1">@_agentCount</MudText>
-            <MudText Typo="Typo.body2" Color="Color.Secondary">Agents</MudText>
-            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/agents" Class="mt-2">Open</MudButton>
-        </MudPaper>
+        <a href="/agents" class="forge-stat-card forge-stat-card--secondary" aria-label="@($"Agents: {_agentCount}. Open registry.")">
+            <span class="forge-stat-card__icon">
+                <MudIcon Icon="@Icons.Material.Filled.Hub" Color="Color.Inherit" />
+            </span>
+            <div class="forge-stat-card__body">
+                <span class="forge-stat-card__value">@_agentCount</span>
+                <span class="forge-stat-card__label">Agents</span>
+            </div>
+            <MudIcon Icon="@Icons.Material.Filled.ArrowForward" Color="Color.Inherit" Size="Size.Small" Class="forge-stat-card__arrow" />
+        </a>
     </MudItem>
     <MudItem xs="12" sm="6" md="3">
-        <MudPaper Class="pa-4 d-flex flex-column align-center" Elevation="2">
-            <MudIcon Icon="@Icons.Material.Filled.Memory" Color="Color.Tertiary" Size="Size.Large" />
-            <MudText Typo="Typo.h4" Class="mt-2 mb-1">@_modelCount</MudText>
-            <MudText Typo="Typo.body2" Color="Color.Secondary">Models</MudText>
-            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/models" Class="mt-2">Open</MudButton>
-        </MudPaper>
+        <a href="/models" class="forge-stat-card forge-stat-card--tertiary" aria-label="@($"Models: {_modelCount}. Open registry.")">
+            <span class="forge-stat-card__icon">
+                <MudIcon Icon="@Icons.Material.Filled.Memory" Color="Color.Inherit" />
+            </span>
+            <div class="forge-stat-card__body">
+                <span class="forge-stat-card__value">@_modelCount</span>
+                <span class="forge-stat-card__label">Models</span>
+            </div>
+            <MudIcon Icon="@Icons.Material.Filled.ArrowForward" Color="Color.Inherit" Size="Size.Small" Class="forge-stat-card__arrow" />
+        </a>
     </MudItem>
     <MudItem xs="12" sm="6" md="3">
-        <MudPaper Class="pa-4 d-flex flex-column align-center" Elevation="2">
-            <MudIcon Icon="@Icons.Material.Filled.Cloud" Color="Color.Info" Size="Size.Large" />
-            <MudText Typo="Typo.h4" Class="mt-2 mb-1">@_providerCount</MudText>
-            <MudText Typo="Typo.body2" Color="Color.Secondary">Providers</MudText>
-            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/providers" Class="mt-2">Open</MudButton>
-        </MudPaper>
+        <a href="/providers" class="forge-stat-card forge-stat-card--info" aria-label="@($"Providers: {_providerCount}. Open registry.")">
+            <span class="forge-stat-card__icon">
+                <MudIcon Icon="@Icons.Material.Filled.Cloud" Color="Color.Inherit" />
+            </span>
+            <div class="forge-stat-card__body">
+                <span class="forge-stat-card__value">@_providerCount</span>
+                <span class="forge-stat-card__label">Providers</span>
+            </div>
+            <MudIcon Icon="@Icons.Material.Filled.ArrowForward" Color="Color.Inherit" Size="Size.Small" Class="forge-stat-card__arrow" />
+        </a>
     </MudItem>
 
     <!-- Live jobs -->

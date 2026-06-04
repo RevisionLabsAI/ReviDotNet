@@ -1,33 +1,48 @@
 @inherits LayoutComponentBase
 
-<MudThemeProvider @bind-IsDarkMode="_isDarkMode" />
+<MudThemeProvider Theme="ForgeTheme.Instance" @bind-IsDarkMode="_isDarkMode" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />
 
 <MudLayout>
-    <MudAppBar Elevation="1" Color="Color.Primary">
+    <MudAppBar Elevation="0" Color="Color.Default" Class="forge-appbar">
         <MudIconButton Icon="@Icons.Material.Filled.Menu"
                        Color="Color.Inherit"
                        Edge="Edge.Start"
                        OnClick="@ToggleDrawer" />
-        <MudText Typo="Typo.h6" Class="ml-2">ReviDotNet Forge</MudText>
+        <div class="forge-brand ml-2">
+            <div class="forge-brand__mark">
+                <MudIcon Icon="@Icons.Material.Filled.LocalFireDepartment" Size="Size.Small" />
+            </div>
+            <div class="forge-brand__text">
+                <span class="forge-brand__eyebrow">ReviDotNet</span>
+                <span class="forge-brand__name">Forge</span>
+            </div>
+        </div>
         <MudSpacer />
         <JobIndicator />
-        <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
-                       Color="Color.Inherit"
-                       OnClick="@ToggleDarkMode" />
+        <MudTooltip Text="@(_isDarkMode ? "Switch to light mode" : "Switch to dark mode")">
+            <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
+                           Color="Color.Inherit"
+                           OnClick="@ToggleDarkMode" />
+        </MudTooltip>
     </MudAppBar>
 
-    <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="2">
-        <MudDrawerHeader>
-            <MudText Typo="Typo.subtitle2" Class="mt-1" Style="opacity: 0.7">Navigation</MudText>
+    <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="0" Class="forge-drawer">
+        <MudDrawerHeader Class="forge-drawer__header">
+            <MudText Typo="Typo.overline" Color="Color.Secondary">Workspace</MudText>
         </MudDrawerHeader>
         <MudNavMenu>
             <MudNavLink Href="/"
                         Match="NavLinkMatch.All"
                         Icon="@Icons.Material.Filled.Dashboard">
                 Dashboard
+            </MudNavLink>
+
+            <MudNavLink Href="/observer"
+                        Icon="@Icons.Material.Filled.ManageSearch">
+                Observer
             </MudNavLink>
 
             <MudNavGroup Title="Prompts" Icon="@Icons.Material.Filled.ListAlt" Expanded="true">
@@ -54,30 +69,28 @@
                 </MudNavLink>
             </MudNavGroup>
 
-            <MudNavLink Href="/models"
-                        Match="NavLinkMatch.All"
-                        Icon="@Icons.Material.Filled.Memory">
-                Models
-            </MudNavLink>
-
-            <MudNavLink Href="/providers"
-                        Match="NavLinkMatch.All"
-                        Icon="@Icons.Material.Filled.Cloud">
-                Providers
-            </MudNavLink>
+            <MudNavGroup Title="Routing" Icon="@Icons.Material.Filled.Route" Expanded="true">
+                <MudNavLink Href="/clients" Icon="@Icons.Material.Filled.Groups">
+                    Clients
+                </MudNavLink>
+                <MudNavLink Href="/models" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Memory">
+                    Models
+                </MudNavLink>
+                <MudNavLink Href="/providers" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Cloud">
+                    Providers
+                </MudNavLink>
+                <MudNavLink Href="/inference" Icon="@Icons.Material.Filled.ReceiptLong">
+                    Inference
+                </MudNavLink>
+                <MudNavLink Href="/embeddings" Icon="@Icons.Material.Filled.ScatterPlot">
+                    Embeddings
+                </MudNavLink>
+            </MudNavGroup>
 
             <MudDivider Class="my-2" />
-            <MudNavLink Href="/observer"
-                        Icon="@Icons.Material.Filled.ManageSearch">
-                Observer
-            </MudNavLink>
             <MudNavLink Href="/usage"
                         Icon="@Icons.Material.Filled.BarChart">
                 Usage
-            </MudNavLink>
-            <MudNavLink Href="/apikeys"
-                        Icon="@Icons.Material.Filled.Key">
-                API Keys
             </MudNavLink>
         </MudNavMenu>
     </MudDrawer>

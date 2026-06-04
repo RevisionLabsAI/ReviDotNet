@@ -164,6 +164,7 @@ builder.Services.AddScoped<ExportService>();
 // Gateway services
 builder.Services.AddSingleton<IForgeRateLimiterService, ForgeRateLimiterService>();
 builder.Services.AddSingleton<GatewayRouterService>();
+builder.Services.AddSingleton<EmbeddingGatewayRouterService>();
 builder.Services.AddSingleton<UsageDashboardService>();
 
 // API key services

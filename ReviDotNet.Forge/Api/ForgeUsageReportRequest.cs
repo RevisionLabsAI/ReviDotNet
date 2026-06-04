@@ -4,6 +4,9 @@
 //  See LICENSE.txt in the project root for full license information.
 // ===================================================================
 
+using System.Text.Json.Serialization;
+using ReviDotNet.Forge.Models;
+
 namespace ReviDotNet.Forge.Api;
 
 /// <summary>
@@ -41,4 +44,10 @@ public record ForgeUsageReportRequest
 
     /// <summary>Whether the request used streaming.</summary>
     public bool WasStreaming { get; init; }
+
+    /// <summary>Whether this records an inference or an embedding operation.
+    /// Accepts "Inference"/"Embedding" (case-insensitive) or the numeric value;
+    /// defaults to inference when omitted.</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public UsageType Type { get; init; } = UsageType.Inference;
 }

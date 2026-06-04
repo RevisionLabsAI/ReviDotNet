@@ -1,0 +1,196 @@
+@page "/inference"
+@using ReviDotNet.Forge.Models
+@using ReviDotNet.Forge.Services.Gateway
+@inject UsageDashboardService DashboardSvc
+
+<PageTitle>Inference — ReviDotNet Forge</PageTitle>
+
+<div class="d-flex align-center mb-2">
+    <MudText Typo="Typo.h4">Inference</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Outlined"
+               Size="Size.Small"
+               StartIcon="@Icons.Material.Filled.Refresh"
+               OnClick="LoadAsync"
+               Disabled="@_loading">
+        Refresh
+    </MudButton>
+</div>
+
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
+    Live view of inference (completion) requests flowing through the Forge gateway, with status and
+    volume across recent time windows.
+</MudText>
+
+<!-- Period summary dashboard -->
+<MudGrid Class="mb-6">
+    @if (_periodSummary is null)
+    {
+        @for (var i = 0; i < 3; i++)
+        {
+            <MudItem xs="12" sm="4">
+                <MudSkeleton Height="148px" Width="100%" SkeletonType="SkeletonType.Rectangle" />
+            </MudItem>
+        }
+    }
+    else
+    {
+        @foreach (var p in _periodSummary.Periods)
+        {
+            <MudItem xs="12" sm="4">
+                <MudPaper Class="pa-4" Elevation="2" Style="height: 100%;">
+                    <MudText Typo="Typo.overline" Color="Color.Secondary">@p.Label</MudText>
+                    <div class="d-flex align-end gap-2 mt-1">
+                        <MudText Typo="Typo.h3" Style="line-height: 1;">@p.TotalRequests.ToString("N0")</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-1">requests</MudText>
+                    </div>
+                    <div class="d-flex align-center gap-3 mt-3">
+                        <span class="d-flex align-center gap-1">
+                            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                            <MudText Typo="Typo.body2">@p.SuccessCount.ToString("N0")</MudText>
+                        </span>
+                        <span class="d-flex align-center gap-1">
+                            <MudIcon Icon="@Icons.Material.Filled.Cancel" Color="@(p.FailureCount > 0 ? Color.Error : Color.Default)" Size="Size.Small" />
+                            <MudText Typo="Typo.body2">@p.FailureCount.ToString("N0")</MudText>
+                        </span>
+                        <MudSpacer />
+                        <MudText Typo="Typo.subtitle2" Color="@RateColor(p)">
+                            @(p.TotalRequests == 0 ? "—" : $"{p.SuccessRate:F1}%")
+                        </MudText>
+                    </div>
+                    <MudProgressLinear Value="@p.SuccessRate" Min="0" Max="100"
+                                       Color="@RateColor(p)" Rounded="true" Class="mt-2" />
+                </MudPaper>
+            </MudItem>
+        }
+    }
+</MudGrid>
+
+<!-- Request log -->
+<div class="d-flex align-center flex-wrap gap-3 mb-4">
+    <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+        <MudButton Color="@(_range == 1 ? Color.Primary : Color.Default)" OnClick="@(() => SetRange(1))">24h</MudButton>
+        <MudButton Color="@(_range == 7 ? Color.Primary : Color.Default)" OnClick="@(() => SetRange(7))">7d</MudButton>
+        <MudButton Color="@(_range == 30 ? Color.Primary : Color.Default)" OnClick="@(() => SetRange(30))">30d</MudButton>
+    </MudButtonGroup>
+
+    <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+        <MudButton Color="@(_statusFilter == StatusFilter.All ? Color.Primary : Color.Default)" OnClick="@(() => SetStatus(StatusFilter.All))">All</MudButton>
+        <MudButton Color="@(_statusFilter == StatusFilter.Success ? Color.Success : Color.Default)" OnClick="@(() => SetStatus(StatusFilter.Success))">Success</MudButton>
+        <MudButton Color="@(_statusFilter == StatusFilter.Failed ? Color.Error : Color.Default)" OnClick="@(() => SetStatus(StatusFilter.Failed))">Failed</MudButton>
+    </MudButtonGroup>
+
+    <MudSpacer />
+
+    <MudTextField @bind-Value="_search"
+                  Placeholder="Search client, prompt, model…"
+                  Adornment="Adornment.Start"
+                  AdornmentIcon="@Icons.Material.Filled.Search"
+                  Clearable="true"
+                  Immediate="true"
+                  Style="max-width: 320px;"
+                  Variant="Variant.Outlined"
+                  Margin="Margin.Dense" />
+</div>
+
+<MudTable T="ForgeUsageRecord" Items="@Filtered" Dense="true" Hover="true" Striped="true"
+          Loading="@_loading" Elevation="2" FixedHeader="true" Height="calc(100vh - 540px)"
+          RowsPerPage="50" Breakpoint="Breakpoint.Sm">
+    <HeaderContent>
+        <MudTh>Time</MudTh>
+        <MudTh>Client</MudTh>
+        <MudTh>Prompt</MudTh>
+        <MudTh>Model</MudTh>
+        <MudTh>Provider</MudTh>
+        <MudTh Style="text-align:right;">Tokens (in → out)</MudTh>
+        <MudTh Style="text-align:right;">Latency</MudTh>
+        <MudTh>Status</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Time">@context.Timestamp.ToLocalTime().ToString("MM/dd HH:mm:ss")</MudTd>
+        <MudTd DataLabel="Client">@context.ClientId</MudTd>
+        <MudTd DataLabel="Prompt">@(string.IsNullOrEmpty(context.PromptName) ? "—" : context.PromptName)</MudTd>
+        <MudTd DataLabel="Model">@(string.IsNullOrEmpty(context.ModelName) ? "—" : context.ModelName)</MudTd>
+        <MudTd DataLabel="Provider">@(string.IsNullOrEmpty(context.ProviderName) ? "—" : context.ProviderName)</MudTd>
+        <MudTd DataLabel="Tokens" Style="text-align:right;" Class="forge-mono">
+            @(context.InputTokens == 0 && context.OutputTokens == 0 ? "—" : $"{context.InputTokens:N0} → {context.OutputTokens:N0}")
+        </MudTd>
+        <MudTd DataLabel="Latency" Style="text-align:right;" Class="forge-mono">@context.LatencyMs ms</MudTd>
+        <MudTd DataLabel="Status">
+            @if (context.Success)
+            {
+                <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Text">OK</MudChip>
+            }
+            else
+            {
+                <MudTooltip Text="@(string.IsNullOrWhiteSpace(context.FailureReason) ? "Failed" : context.FailureReason)">
+                    <MudChip T="string" Color="Color.Error" Size="Size.Small" Variant="Variant.Text">Fail</MudChip>
+                </MudTooltip>
+            }
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText Class="pa-4" Color="Color.Secondary">No inference requests match the current filters for this period.</MudText>
+    </NoRecordsContent>
+    <PagerContent>
+        <MudTablePager PageSizeOptions="new[] { 50, 100, 250 }" />
+    </PagerContent>
+</MudTable>
+
+@code {
+    private enum StatusFilter { All, Success, Failed }
+
+    private RequestPeriodSummary? _periodSummary;
+    private List<ForgeUsageRecord> _records = new();
+    private int _range = 1;
+    private StatusFilter _statusFilter = StatusFilter.All;
+    private string _search = string.Empty;
+    private bool _loading;
+
+    private IEnumerable<ForgeUsageRecord> Filtered => _records
+        .Where(r => _statusFilter switch
+        {
+            StatusFilter.Success => r.Success,
+            StatusFilter.Failed => !r.Success,
+            _ => true
+        })
+        .Where(r => string.IsNullOrWhiteSpace(_search) ||
+                    Contains(r.ClientId) || Contains(r.PromptName) ||
+                    Contains(r.ModelName) || Contains(r.ProviderName));
+
+    private bool Contains(string? value) =>
+        value?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false;
+
+    private static Color RateColor(PeriodStat p) =>
+        p.TotalRequests == 0 ? Color.Default
+        : p.SuccessRate >= 99 ? Color.Success
+        : p.SuccessRate >= 90 ? Color.Warning
+        : Color.Error;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task SetRange(int days)
+    {
+        if (_range == days) return;
+        _range = days;
+        await LoadAsync();
+    }
+
+    private void SetStatus(StatusFilter filter) => _statusFilter = filter;
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            _periodSummary = await DashboardSvc.GetPeriodSummaryAsync(UsageType.Inference);
+            _records = await DashboardSvc.GetRecentAsync(DateTime.UtcNow.AddDays(-_range), 500, UsageType.Inference);
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+}

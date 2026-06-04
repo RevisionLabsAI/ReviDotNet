@@ -27,4 +27,16 @@ public class ForgeUsageRecord
     public long LatencyMs { get; set; }
     public long TtftMs { get; set; }
     public bool WasStreaming { get; set; }
+
+    /// <summary>Which gateway operation this record describes. Defaults to
+    /// <see cref="UsageType.Inference"/> so records written before this field
+    /// existed classify as inference.</summary>
+    public UsageType Type { get; set; } = UsageType.Inference;
+}
+
+/// <summary>The type of gateway operation a <see cref="ForgeUsageRecord"/> describes.</summary>
+public enum UsageType
+{
+    Inference,
+    Embedding
 }

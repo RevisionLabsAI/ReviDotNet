@@ -22,10 +22,12 @@ public static class ForgeApiEndpoints
         api.MapGet("/health", () => Results.Ok(new { status = "ok", timestamp = DateTime.UtcNow }));
 
         api.MapPost("/infer", HandleInferAsync);
+        api.MapPost("/embed", HandleEmbedAsync);
         api.MapPost("/usage/report", HandleUsageReportAsync);
         api.MapGet("/prompts", HandleListPromptsAsync);
         api.MapGet("/prompts/{name}", HandleGetPromptAsync);
         api.MapGet("/models", HandleListModelsAsync);
+        api.MapGet("/embeddings", HandleListEmbeddingsAsync);
     }
 
     private static async Task HandleInferAsync(
@@ -89,6 +91,52 @@ public static class ForgeApiEndpoints
         }
     }
 
+    private static async Task HandleEmbedAsync(
+        HttpContext context,
+        IForgeApiKeyService keyService,
+        EmbeddingGatewayRouterService router)
+    {
+        if (!await ApiKeyAuth.ValidateAsync(context, keyService)) return;
+
+        string apiKeyPrefix = GetApiKeyPrefix(context);
+
+        ForgeEmbedRequest? request;
+        try
+        {
+            request = await context.Request.ReadFromJsonAsync<ForgeEmbedRequest>();
+        }
+        catch
+        {
+            context.Response.StatusCode = 400;
+            await context.Response.WriteAsJsonAsync(new { error = "Invalid request body" });
+            return;
+        }
+
+        if (request is null || string.IsNullOrWhiteSpace(request.ClientId))
+        {
+            context.Response.StatusCode = 400;
+            await context.Response.WriteAsJsonAsync(new { error = "ClientId is required" });
+            return;
+        }
+
+        var (success, vectors, modelName, providerName, error, inputTokens, dimensions) =
+            await router.RouteAsync(request, context.RequestAborted, apiKeyPrefix);
+
+        var response = new ForgeEmbedResponse
+        {
+            Success = success,
+            Embeddings = success ? vectors : null,
+            ModelUsed = modelName,
+            ProviderUsed = providerName,
+            Dimensions = dimensions > 0 ? dimensions : null,
+            InputTokens = inputTokens > 0 ? inputTokens : null,
+            ErrorMessage = error
+        };
+
+        if (!success) context.Response.StatusCode = 502;
+        await context.Response.WriteAsJsonAsync(response);
+    }
+
     private static async Task HandleUsageReportAsync(
         HttpContext context,
         IForgeApiKeyService keyService,
@@ -130,7 +178,8 @@ public static class ForgeApiEndpoints
             OutputTokens = report.OutputTokens,
             LatencyMs = report.LatencyMs,
             TtftMs = 0,
-            WasStreaming = report.WasStreaming
+            WasStreaming = report.WasStreaming,
+            Type = report.Type
         });
 
         await context.Response.WriteAsJsonAsync(new { recorded = true });
@@ -192,6 +241,28 @@ public static class ForgeApiEndpoints
                 tier = m.Tier.ToString(),
                 provider = m.Provider?.Name,
                 modelString = m.ModelString
+            })
+            .OrderBy(m => m.tier).ThenBy(m => m.name)
+            .ToList();
+
+        await context.Response.WriteAsJsonAsync(models);
+    }
+
+    private static async Task HandleListEmbeddingsAsync(
+        HttpContext context,
+        IForgeApiKeyService keyService,
+        IEmbeddingManager embeddingManager)
+    {
+        if (!await ApiKeyAuth.ValidateAsync(context, keyService)) return;
+
+        var models = embeddingManager.GetAllEnabled()
+            .Select(m => new
+            {
+                name = m.Name,
+                tier = m.Tier.ToString(),
+                provider = m.Provider?.Name,
+                modelString = m.ModelString,
+                dimensions = m.Dimensions
             })
             .OrderBy(m => m.tier).ThenBy(m => m.name)
             .ToList();
