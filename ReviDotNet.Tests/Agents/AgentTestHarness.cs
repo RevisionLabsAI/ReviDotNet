@@ -68,7 +68,7 @@ internal sealed class AgentTestHarness : IDisposable
             defaultModel: ModelName,
             supportsCompletion: false,
             supportsGuidance: true,
-            defaultGuidanceType: GuidanceType.Json);
+            defaultGuidanceType: GuidanceSchemaType.JsonManual);
 
         HttpClient httpClient = Server.CreateClient();
         httpClient.BaseAddress = BaseAddress;

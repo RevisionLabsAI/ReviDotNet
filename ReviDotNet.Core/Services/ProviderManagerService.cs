@@ -61,16 +61,24 @@ public sealed class ProviderManagerService : IProviderManager
             .EnumerateFiles(path, "*.rcfg", SearchOption.AllDirectories)
             .ToList();
 
+        // Per-file try/catch so one malformed provider doesn't abort loading the rest.
         foreach (string file in files)
         {
-            Dictionary<string, string> dict = RConfigParser.Read(file);
-            string folder = Util.ExtractSubDirectories(path, file).ToLower();
-            ProviderProfile? provider = RConfigParser.ToObject<ProviderProfile>(dict, folder);
+            try
+            {
+                Dictionary<string, string> dict = RConfigParser.Read(file);
+                string folder = Util.ExtractSubDirectories(path, file).ToLower();
+                ProviderProfile? provider = RConfigParser.ToObject<ProviderProfile>(dict, folder);
 
-            if (provider?.Name is null)
-                continue;
+                if (provider?.Name is null)
+                    continue;
 
-            CheckAdd(provider, embedded: false);
+                CheckAdd(provider, embedded: false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"ProviderManager: Failed to load '{file}': {ex.Message}");
+            }
         }
     }
 
@@ -82,20 +90,28 @@ public sealed class ProviderManagerService : IProviderManager
                 .Where(n => n.Contains(".Providers.") &&
                             n.EndsWith(".rcfg", StringComparison.InvariantCultureIgnoreCase));
 
+            // Per-resource try/catch so one malformed provider doesn't abort loading the rest.
             foreach (string resourceName in resourceNames)
             {
-                using Stream? stream = assembly.GetManifestResourceStream(resourceName);
-                if (stream == null) continue;
+                try
+                {
+                    using Stream? stream = assembly.GetManifestResourceStream(resourceName);
+                    if (stream == null) continue;
 
-                using StreamReader reader = new(stream);
-                Dictionary<string, string> dict = RConfigParser.ReadEmbedded(reader.ReadToEnd());
-                string folder = Util.ExtractEmbeddedDirectories(".Providers.", resourceName).ToLower();
-                ProviderProfile? provider = RConfigParser.ToObject<ProviderProfile>(dict, folder);
+                    using StreamReader reader = new(stream);
+                    Dictionary<string, string> dict = RConfigParser.ReadEmbedded(reader.ReadToEnd());
+                    string folder = Util.ExtractEmbeddedDirectories(".Providers.", resourceName).ToLower();
+                    ProviderProfile? provider = RConfigParser.ToObject<ProviderProfile>(dict, folder);
 
-                if (provider?.Name is null)
-                    continue;
+                    if (provider?.Name is null)
+                        continue;
 
-                CheckAdd(provider, embedded: true);
+                    CheckAdd(provider, embedded: true);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError($"ProviderManager: Failed to load embedded resource '{resourceName}': {ex.Message}");
+                }
             }
         }
         catch (Exception e)

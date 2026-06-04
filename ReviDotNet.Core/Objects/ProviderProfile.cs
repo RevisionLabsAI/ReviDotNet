@@ -56,8 +56,10 @@ public class ProviderProfile
     [RConfigProperty(("guidance_supports-guidance"))]
     public bool? SupportsGuidance { get; set; }
     
+    // The provider's default schema strategy used when a prompt defers (GuidanceSchema = Default).
+    // This is GuidanceSchemaType (not GuidanceType) so it can express auto vs manual JSON/regex.
     [RConfigProperty(("guidance_default-guidance-type"))]
-    public GuidanceType? DefaultGuidanceType { get; set; }
+    public GuidanceSchemaType? DefaultGuidanceType { get; set; }
     
     [RConfigProperty(("_default-guidance-string"))]
     public string? DefaultGuidanceString { get; set; }
@@ -157,7 +159,8 @@ public class ProviderProfile
             supportsCompletion: SupportsCompletion ?? false,
             supportsResponseCompletion: SupportsResponseCompletion ?? false,
             supportsGuidance: SupportsGuidance ?? false,
-            defaultGuidanceType: DefaultGuidanceType ?? null,
+            // Reduce the schema strategy to the low-level decode mode for the client-level fallback.
+            defaultGuidanceType: GuidanceResolver.ReduceToGuidanceType(DefaultGuidanceType),
             defaultGuidanceString: DefaultGuidanceString ?? "");
         
         // Initialize EmbedClient for embeddings
@@ -192,7 +195,7 @@ public class ProviderProfile
         bool supportsCompletion = false,
         bool supportsResponseCompletion = false,
         bool supportsGuidance = false,
-        GuidanceType? defaultGuidanceType = null,
+        GuidanceSchemaType? defaultGuidanceType = null,
         string? defaultGuidanceString = null)
     {
         Name = name;

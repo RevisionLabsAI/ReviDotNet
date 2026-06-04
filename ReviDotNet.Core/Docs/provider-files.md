@@ -32,7 +32,7 @@ Settings for constrained output/guidance.
 | Option | Type | Description |
 | :--- | :--- | :--- |
 | `supports-guidance` | boolean | Whether the provider supports structured output guidance (e.g., JSON Schema, GBNF). |
-| `default-guidance-type`| enum | The default guidance type if none is specified in the prompt. |
+| `default-guidance-type`| enum | Default schema strategy used when a prompt defers (`guidance-schema = default`). One of `disabled`, `json-auto`, `json-manual`, `regex-auto`, `regex-manual`, `gnbf-auto`, `gnbf-manual`. *Auto* generates a schema from the requested output type; *manual* uses `_default-guidance-string`. |
 | `_default-guidance-string`| string | (Raw) The default guidance string/schema. |
 
 ### `[[limiting]]` (Optional)

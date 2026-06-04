@@ -54,8 +54,8 @@
             <div class="pa-2">
                 <MudGrid Spacing="2">
                     <MudItem xs="6"><MudCheckBox T="bool?" @bind-Value="_provider.SupportsGuidance" Label="supports-guidance" Color="Color.Primary" TriState="true" /></MudItem>
-                    <MudItem xs="6"><MudSelect T="GuidanceType?" @bind-Value="_provider.DefaultGuidanceType" Label="default-guidance-type" Clearable="true" Variant="Variant.Outlined">
-                        @foreach (var t in Enum.GetValues<GuidanceType>()) { <MudSelectItem T="GuidanceType?" Value="@t">@t</MudSelectItem> }
+                    <MudItem xs="6"><MudSelect T="GuidanceSchemaType?" @bind-Value="_provider.DefaultGuidanceType" Label="default-guidance-type" Clearable="true" Variant="Variant.Outlined">
+                        @foreach (var t in Enum.GetValues<GuidanceSchemaType>()) { <MudSelectItem T="GuidanceSchemaType?" Value="@t">@t</MudSelectItem> }
                     </MudSelect></MudItem>
                     <MudItem xs="12"><MudTextField @bind-Value="_provider.DefaultGuidanceString" Label="default-guidance-string" Variant="Variant.Outlined" /></MudItem>
                 </MudGrid>

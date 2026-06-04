@@ -1662,9 +1662,19 @@ internal class Infer
 					break;
 
 				case GuidanceSchemaType.Default:
-					guidanceType = model.Provider.DefaultGuidanceType;
-					guidanceString = model.Provider.DefaultGuidanceString;
+				{
+					// Defer to the provider's default schema strategy (which may itself be auto or manual).
+					GuidanceSchemaType? providerDefault = model.Provider.DefaultGuidanceType;
+					if (providerDefault is not null and not GuidanceSchemaType.Default)
+						GuidanceResolver.Resolve(
+							providerDefault.Value,
+							model.Provider.DefaultGuidanceString,
+							outputType,
+							prompt.ChainOfThought ?? false,
+							out guidanceType,
+							out guidanceString);
 					break;
+				}
 
 				case GuidanceSchemaType.JsonManual:
 					guidanceType = GuidanceType.Json;

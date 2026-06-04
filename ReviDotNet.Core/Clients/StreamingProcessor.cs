@@ -32,50 +32,6 @@ internal class StreamingProcessor
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
     }
 
-    /// <summary>
-    /// Redacts sensitive query parameters (e.g., API keys) in a URL string.
-    /// </summary>
-    /// <param name="url">The URL which may contain sensitive parameters.</param>
-    /// <returns>A redacted URL safe for logging.</returns>
-    private static string RedactUrl(string url)
-    {
-        if (string.IsNullOrEmpty(url))
-        {
-            return url;
-        }
-
-        try
-        {
-            Uri uri;
-            bool parsed = Uri.TryCreate(url, UriKind.Absolute, out uri);
-            if (!parsed)
-            {
-                // Try relative to ensure we can still scrub query
-                parsed = Uri.TryCreate("http://localhost" + (url.StartsWith("/") ? string.Empty : "/") + url, UriKind.Absolute, out uri);
-            }
-
-            if (!parsed || uri == null)
-            {
-                return url;
-            }
-
-            string query = uri.Query;
-            if (string.IsNullOrEmpty(query))
-            {
-                return url;
-            }
-
-            // Very small scrubber: replace key=VALUE with key=****
-            string redacted = query.Replace("key=", "key=****");
-            string result = url.Replace(query, redacted);
-            return result;
-        }
-        catch
-        {
-            return url;
-        }
-    }
-
     public void Dispose()
     {
         // Don't dispose _rateLimiter - it's owned by the main client
@@ -286,11 +242,8 @@ internal class StreamingProcessor
             if (_config.Protocol == Protocol.Gemini)
             {
                 payload = _payloadTransformer.TransformToGeminiPayload(payload);
-                // Add API key to endpoint for Gemini
-                if (_config.UseApiKey && !endpoint.Contains("key="))
-                {
-                    endpoint += (endpoint.Contains("?") ? "&" : "?") + $"key={_config.ApiKey}";
-                }
+                // The Gemini API key travels in the x-goog-api-key header (configured on the
+                // shared HttpClient in the InferClient ctor), never in the request URL.
             }
             else if (_config.Protocol == Protocol.Claude)
             {
@@ -383,7 +336,9 @@ internal class StreamingProcessor
                     if (cancellationToken.IsCancellationRequested)
                         throw new OperationCanceledException(cancellationToken);
                     sendCts.Cancel();
-                    string uri = (_httpClient.BaseAddress?.ToString() ?? string.Empty) + endpoint;
+                    // Redact defensively before logging: the Gemini key now travels in a header rather
+                    // than the URL, but any secret-bearing query parameter must never reach a log sink.
+                    string uri = Util.RedactSecrets((_httpClient.BaseAddress?.ToString() ?? string.Empty) + endpoint);
                     throw new TimeoutException($"[{retryAttempt + 1}/{_config.RetryAttemptLimit}] Did not receive streaming response headers from '{uri}' within {inactivity.TotalSeconds}s.");
                 }
                 response = await sendTask;
@@ -469,7 +424,7 @@ internal class StreamingProcessor
                     if (cancellationToken.IsCancellationRequested)
                         yield break;
                     string uri = response.RequestMessage?.RequestUri?.ToString() ?? "(unknown)";
-                    throw new TimeoutException($"No streaming data received from '{RedactUrl(uri)}' for {inactivity.TotalSeconds} seconds.");
+                    throw new TimeoutException($"No streaming data received from '{Util.RedactSecrets(uri)}' for {inactivity.TotalSeconds} seconds.");
                 }
 
                 line = await readTask;

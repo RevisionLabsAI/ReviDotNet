@@ -2,7 +2,7 @@
 name = gemini
 enabled = true
 protocol = Gemini
-api-url = https://generativelanguage.googleapis.com/v1beta/
+api-url = https://generativelanguage.googleapis.com/
 api-key = environment
 default-model = gemini-1.5-flash
 

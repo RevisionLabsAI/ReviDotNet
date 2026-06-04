@@ -138,6 +138,8 @@ namespace ReviDotNet.Analyzers
                 if (TryGet(doc, "guidance", "default-guidance-type", out RcfgValue gtype))
                 {
                     string raw = gtype.Raw.Trim().ToLowerInvariant();
+                    // Matches the GuidanceSchemaType vocabulary: ProviderProfile.DefaultGuidanceType is the
+                    // provider's default schema strategy, so it supports the same auto/manual variants a prompt does.
                     string[] allowed = {
                         "disabled", "default",
                         "regex-manual", "regex-auto",

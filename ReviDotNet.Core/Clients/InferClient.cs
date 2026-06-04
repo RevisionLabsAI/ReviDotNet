@@ -117,8 +117,11 @@ public class InferClient : IDisposable
         {
             if (_config.Protocol == Protocol.Gemini)
             {
-                // Gemini uses query parameter for API key instead of Bearer token
-                // API key will be added to the URL in the request
+                // Gemini (Google Generative Language API) authenticates via the x-goog-api-key
+                // header. Sending the key in a header keeps it out of the request URL, where it
+                // could otherwise leak through proxy logs, server access logs, and browser history.
+                if (!_httpClient.DefaultRequestHeaders.Contains("x-goog-api-key"))
+                    _httpClient.DefaultRequestHeaders.Add("x-goog-api-key", _config.ApiKey);
             }
             else if (_config.Protocol == Protocol.Claude)
             {
@@ -269,7 +272,7 @@ public class InferClient : IDisposable
         catch (Exception e)
         {
             string errorMessage = $"### ReviDotNet.GenerateAsync() Error Generating Completion\n" +
-                                 $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                                 $"# URL\n{Util.RedactSecrets(_httpClient.BaseAddress + endpoint)}\n\n" +
                                  $"# Payload\n{payloadDebug}\n\n" +
                                  $"# Exception\n{e.Message}\n\n";
             Util.Log(errorMessage);
@@ -280,7 +283,7 @@ public class InferClient : IDisposable
         // Dump successful logging if successful
         string responseDebug = $"'''\n{JsonConvert.SerializeObject(result, Formatting.Indented)}\n'''";
         string dumpMessage = $"### ReviDotNet.GenerateAsync() Prompt Completion\n" +
-                             $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                             $"# URL\n{Util.RedactSecrets(_httpClient.BaseAddress + endpoint)}\n\n" +
                              $"# Payload\n{payloadDebug}\n\n" +
                              $"# Response\n{responseDebug}\n\n";
         await Util.DumpLog(dumpMessage, "ic-generate-prompt");
@@ -403,7 +406,7 @@ public class InferClient : IDisposable
         catch (Exception e)
         {
             string errorMessage = $"### ReviDotNet.GenerateAsync() Error Generating Chat Completion\n" +
-                                  $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                                  $"# URL\n{Util.RedactSecrets(_httpClient.BaseAddress + endpoint)}\n\n" +
                                   $"# Payload\n{payloadDebug}\n\n" +
                                   $"# Exception\n{e.Message}\n\n";
             Util.Log(errorMessage);
@@ -414,7 +417,7 @@ public class InferClient : IDisposable
         // Dump successful logging if successful
         string responseDebug = $"'''\n{JsonConvert.SerializeObject(result, Formatting.Indented)}\n'''";
         string dumpMessage = $"### ReviDotNet.GenerateAsync() Chat Completion\n" +
-                             $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                             $"# URL\n{Util.RedactSecrets(_httpClient.BaseAddress + endpoint)}\n\n" +
                              $"# Payload\n{payloadDebug}\n\n" +
                              $"# Response\n{responseDebug}\n\n";
         await Util.DumpLog(dumpMessage, "ic-generate-chat");
@@ -522,7 +525,7 @@ public class InferClient : IDisposable
         catch (Exception e)
         {
             string errorMessage = $"### ReviDotNet.GenerateAsync() Error Generating Responses Completion\n" +
-                                  $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                                  $"# URL\n{Util.RedactSecrets(_httpClient.BaseAddress + endpoint)}\n\n" +
                                   $"# Payload\n{payloadDebug}\n\n" +
                                   $"# Exception\n{e.Message}\n\n";
             Util.Log(errorMessage);
@@ -532,7 +535,7 @@ public class InferClient : IDisposable
 
         string responseDebug = $"'''\n{JsonConvert.SerializeObject(result, Formatting.Indented)}\n'''";
         string dumpMessage = $"### ReviDotNet.GenerateAsync() Responses Completion\n" +
-                             $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                             $"# URL\n{Util.RedactSecrets(_httpClient.BaseAddress + endpoint)}\n\n" +
                              $"# Payload\n{payloadDebug}\n\n" +
                              $"# Response\n{responseDebug}\n\n";
         await Util.DumpLog(dumpMessage, "ic-generate-responses");
@@ -644,7 +647,7 @@ public class InferClient : IDisposable
         
         // Log the start of streaming request
         /*string startMessage = $"### ReviDotNet.GenerateStreamAsync() Prompt Streaming - Started\n" +
-                             $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                             $"# URL\n{Util.RedactSecrets(_httpClient.BaseAddress + endpoint)}\n\n" +
                              $"# Payload\n{payloadDebug}\n\n";
         Task.Run(async () => await Util.DumpLog(startMessage, "ic-stream-prompt-start"));*/
         
@@ -655,7 +658,7 @@ public class InferClient : IDisposable
                 async (completion, fullResponse) => {
                     // This callback will be called when streaming completes with the full response
                     string completionMessage = $"### ReviDotNet.GenerateStreamAsync() Prompt Streaming - Completed\n" +
-                                             $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                                             $"# URL\n{Util.RedactSecrets(_httpClient.BaseAddress + endpoint)}\n\n" +
                                              $"# Payload\n{payloadDebug}\n\n" +
                                              $"# Response\n'''\n{fullResponse}\n'''\n\n" +
                                              $"# Completion Info\n{JsonConvert.SerializeObject(completion, Formatting.Indented)}\n\n";
@@ -664,7 +667,7 @@ public class InferClient : IDisposable
                 async (ex) => {
                     // This callback will be called if streaming fails
                     string errorMessage = $"### ReviDotNet.GenerateStreamAsync() Prompt Streaming - Error\n" +
-                                         $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                                         $"# URL\n{Util.RedactSecrets(_httpClient.BaseAddress + endpoint)}\n\n" +
                                          $"# Payload\n{payloadDebug}\n\n" +
                                          $"# Exception\n{ex.Message}\n\n";
                     await Util.DumpLog(errorMessage, "ic-stream-prompt-error");
@@ -673,7 +676,7 @@ public class InferClient : IDisposable
         catch (Exception e)
         {
             string errorMessage = $"### ReviDotNet.GenerateStreamAsync() Prompt Streaming - Setup Error\n" +
-                                 $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                                 $"# URL\n{Util.RedactSecrets(_httpClient.BaseAddress + endpoint)}\n\n" +
                                  $"# Payload\n{payloadDebug}\n\n" +
                                  $"# Exception\n{e.Message}\n\n";
             Util.Log(errorMessage);
@@ -761,7 +764,7 @@ public class InferClient : IDisposable
         
         // Log the start of streaming request
         /*string startMessage = $"### ReviDotNet.GenerateStreamAsync() Chat Streaming - Started\n" +
-                             $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                             $"# URL\n{Util.RedactSecrets(_httpClient.BaseAddress + endpoint)}\n\n" +
                              $"# Payload\n{payloadDebug}\n\n";
         Task.Run(async () => await Util.DumpLog(startMessage, "ic-stream-chat-start"));*/
 
@@ -772,7 +775,7 @@ public class InferClient : IDisposable
                 async (completion, fullResponse) => {
                     // This callback will be called when streaming completes with the full response
                     string completionMessage = $"### ReviDotNet.GenerateStreamAsync() Chat Streaming - Completed\n" +
-                                             $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                                             $"# URL\n{Util.RedactSecrets(_httpClient.BaseAddress + endpoint)}\n\n" +
                                              $"# Payload\n{payloadDebug}\n\n" +
                                              $"# Response\n'''\n{fullResponse}\n'''\n\n" +
                                              $"# Completion Info\n{JsonConvert.SerializeObject(completion, Formatting.Indented)}\n\n";
@@ -781,7 +784,7 @@ public class InferClient : IDisposable
                 async (ex) => {
                     // This callback will be called if streaming fails
                     string errorMessage = $"### ReviDotNet.GenerateStreamAsync() Chat Streaming - Error\n" +
-                                         $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                                         $"# URL\n{Util.RedactSecrets(_httpClient.BaseAddress + endpoint)}\n\n" +
                                          $"# Payload\n{payloadDebug}\n\n" +
                                          $"# Exception\n{ex.Message}\n\n";
                     await Util.DumpLog(errorMessage, "ic-stream-chat-error");
@@ -790,7 +793,7 @@ public class InferClient : IDisposable
         catch (Exception ex)
         {
             string errorMessage = $"### ReviDotNet.GenerateStreamAsync() Chat Streaming - Setup Error\n" +
-                                 $"# URL\n{_httpClient.BaseAddress + endpoint}\n\n" +
+                                 $"# URL\n{Util.RedactSecrets(_httpClient.BaseAddress + endpoint)}\n\n" +
                                  $"# Payload\n{payloadDebug}\n\n" +
                                  $"# Exception\n{ex.Message}\n\n";
             Util.Log(errorMessage);

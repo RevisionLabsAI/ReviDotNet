@@ -102,17 +102,25 @@ public sealed class EmbeddingManagerService : IEmbeddingManager
             .EnumerateFiles(path, "*.rcfg", SearchOption.AllDirectories)
             .ToList();
 
+        // Per-file try/catch so one malformed embedding model doesn't abort loading the rest.
         foreach (string file in files)
         {
-            Dictionary<string, string> dict = RConfigParser.Read(file);
-            string folder = Util.ExtractSubDirectories(path, file).ToLower();
-            EmbeddingProfile? model = RConfigParser.ToObject<EmbeddingProfile>(dict, folder);
+            try
+            {
+                Dictionary<string, string> dict = RConfigParser.Read(file);
+                string folder = Util.ExtractSubDirectories(path, file).ToLower();
+                EmbeddingProfile? model = RConfigParser.ToObject<EmbeddingProfile>(dict, folder);
 
-            if (model?.Name is null)
-                continue;
+                if (model?.Name is null)
+                    continue;
 
-            model.ResolveProvider(_providers);
-            CheckAdd(model, embedded: false);
+                model.ResolveProvider(_providers);
+                CheckAdd(model, embedded: false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"EmbeddingManager: Failed to load '{file}': {ex.Message}");
+            }
         }
     }
 
@@ -124,21 +132,29 @@ public sealed class EmbeddingManagerService : IEmbeddingManager
                 .Where(n => n.Contains(".Models.Embedding.") &&
                             n.EndsWith(".rcfg", StringComparison.InvariantCultureIgnoreCase));
 
+            // Per-resource try/catch so one malformed embedding model doesn't abort loading the rest.
             foreach (string resourceName in resourceNames)
             {
-                using Stream? stream = assembly.GetManifestResourceStream(resourceName);
-                if (stream == null) continue;
+                try
+                {
+                    using Stream? stream = assembly.GetManifestResourceStream(resourceName);
+                    if (stream == null) continue;
 
-                using StreamReader reader = new(stream);
-                Dictionary<string, string> dict = RConfigParser.ReadEmbedded(reader.ReadToEnd());
-                string folder = Util.ExtractEmbeddedDirectories(".Models.Embedding.", resourceName).ToLower();
-                EmbeddingProfile? model = RConfigParser.ToObject<EmbeddingProfile>(dict, folder);
+                    using StreamReader reader = new(stream);
+                    Dictionary<string, string> dict = RConfigParser.ReadEmbedded(reader.ReadToEnd());
+                    string folder = Util.ExtractEmbeddedDirectories(".Models.Embedding.", resourceName).ToLower();
+                    EmbeddingProfile? model = RConfigParser.ToObject<EmbeddingProfile>(dict, folder);
 
-                if (model?.Name is null)
-                    continue;
+                    if (model?.Name is null)
+                        continue;
 
-                model.ResolveProvider(_providers);
-                CheckAdd(model, embedded: true);
+                    model.ResolveProvider(_providers);
+                    CheckAdd(model, embedded: true);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError($"EmbeddingManager: Failed to load embedded resource '{resourceName}': {ex.Message}");
+                }
             }
         }
         catch (Exception e)

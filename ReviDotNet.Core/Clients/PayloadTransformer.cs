@@ -50,11 +50,34 @@ public class PayloadTransformer
         }
     }
 
-    // Gemini requires enums to be only on string types. This sanitizer ensures that.
+    // Gemini's responseSchema is an OpenAPI-subset proto, not full JSON Schema. This sanitizer makes a
+    // JSON-Schema document acceptable to it:
+    //   * strips JSON-Schema-only keywords Gemini rejects ($schema, $id, additionalProperties);
+    //   * collapses an array-valued "type" (e.g. ["string","null"]) to a single type + nullable flag;
+    //   * keeps enums on string types only.
     private static void SanitizeSchemaForGemini(Dictionary<string, object> schema)
     {
         void FixNode(Dictionary<string, object> node)
         {
+            // Gemini rejects these JSON-Schema-only keywords ("Unknown name ... Cannot find field").
+            node.Remove("$schema");
+            node.Remove("$id");
+            node.Remove("additionalProperties");
+
+            // Gemini's "type" is a single enum value, not a list. Collapse a JSON-Schema nullable union
+            // such as ["string","null"] to its primary type plus nullable=true (Gemini's null encoding).
+            if (node.TryGetValue("type", out var rawType) && rawType is IList<object> typeList)
+            {
+                bool nullable = typeList.Any(x => string.Equals(x?.ToString(), "null", StringComparison.OrdinalIgnoreCase));
+                string? primary = typeList
+                    .Select(x => x?.ToString())
+                    .FirstOrDefault(s => !string.IsNullOrEmpty(s) && !string.Equals(s, "null", StringComparison.OrdinalIgnoreCase));
+
+                node["type"] = primary ?? "string";
+                if (nullable)
+                    node["nullable"] = true;
+            }
+
             string type = node.TryGetValue("type", out var t) ? t?.ToString() ?? string.Empty : string.Empty;
 
             // Handle enums on non-string types by converting to string enum

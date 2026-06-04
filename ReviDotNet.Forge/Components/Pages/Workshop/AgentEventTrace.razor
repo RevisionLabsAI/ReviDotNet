@@ -1,0 +1,173 @@
+@using Revi
+@using Newtonsoft.Json
+@using Newtonsoft.Json.Linq
+
+@*
+    Expandable agent-run trace. Renders EVERY ReviLog event for a run — tool calls, state
+    transitions, guardrails — and lets each row expand to reveal the full payloads captured
+    for that step: the prompt/messages sent to the LLM, the model's thinking, the raw model
+    output, and tool inputs/outputs. Used by both the Workshop "Run" (live) and "Trace" tabs.
+*@
+
+@if (Events is null || Events.Count == 0)
+{
+    <MudText Typo="Typo.caption" Color="Color.Secondary">No events yet.</MudText>
+}
+else
+{
+    <MudExpansionPanels Dense="true" Elevation="0" MultiExpansion="true">
+        @foreach (var ev in Events.OrderBy(e => e.Timestamp))
+        {
+            var hasDetail = HasDetail(ev);
+            <MudExpansionPanel Dense="true" Disabled="@(!hasDetail)">
+                <TitleContent>
+                    <div class="d-flex align-center gap-2" style="width:100%; min-width:0;">
+                        <MudIcon Icon="@StepIcon(ev.Identifier)" Color="@LevelColor(ev.Level)" Size="Size.Small" />
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Filled"
+                                 Color="@StepColor(ev.Identifier)" Class="ma-0 flex-none">@StepLabel(ev.Identifier)</MudChip>
+                        <MudText Typo="Typo.body2"
+                                 Style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;">@ev.Message</MudText>
+                        <MudSpacer />
+                        @if (LevelText(ev.Level) is { } lvl)
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                     Color="@LevelColor(ev.Level)" Class="ma-0 flex-none">@lvl</MudChip>
+                        }
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="flex-none">@ev.Timestamp.ToLocalTime().ToString("HH:mm:ss.fff")</MudText>
+                    </div>
+                </TitleContent>
+                <ChildContent>
+                    <div class="pa-2">
+                        @if (!string.IsNullOrWhiteSpace(ev.Object1))
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@ObjectLabel(ev.Object1Name, 1)</MudText>
+                            <MudPaper Outlined="true" Class="pa-2 mb-2" Style="background-color: var(--mud-palette-background-grey);">
+                                <pre style="@PreStyle">@Pretty(ev.Object1)</pre>
+                            </MudPaper>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(ev.Object2))
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@ObjectLabel(ev.Object2Name, 2)</MudText>
+                            <MudPaper Outlined="true" Class="pa-2 mb-2" Style="background-color: var(--mud-palette-background-grey);">
+                                <pre style="@PreStyle">@Pretty(ev.Object2)</pre>
+                            </MudPaper>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(ev.Tags))
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">tags</MudText>
+                            <MudText Typo="Typo.caption" Style="font-family: monospace; display:block; word-break:break-all;">@ev.Tags</MudText>
+                        }
+                    </div>
+                </ChildContent>
+            </MudExpansionPanel>
+        }
+    </MudExpansionPanels>
+}
+
+@code {
+    /// <summary>The events to render. Ordered by timestamp internally.</summary>
+    [Parameter] public IReadOnlyList<RlogEvent>? Events { get; set; }
+
+    private const string PreStyle =
+        "margin:0; white-space:pre-wrap; word-break:break-word; font-size:12px; max-height:340px; overflow:auto;";
+
+    private static bool HasDetail(RlogEvent e) =>
+        !string.IsNullOrWhiteSpace(e.Object1) ||
+        !string.IsNullOrWhiteSpace(e.Object2) ||
+        !string.IsNullOrWhiteSpace(e.Tags);
+
+    // Friendly, human-readable label per event identifier. The run-start event is logged with
+    // identifier "agent-run-start"; all other steps use the AgentReviLogger.Step constant values.
+    private static string StepLabel(string? id) => id switch
+    {
+        "agent-run-start" => "run start",
+        AgentReviLogger.Step.LlmRequest => "prompt → LLM",
+        AgentReviLogger.Step.LlmResponse => "LLM response",
+        AgentReviLogger.Step.Thinking => "thinking",
+        AgentReviLogger.Step.ToolCall => "tool call",
+        AgentReviLogger.Step.ToolResult => "tool result",
+        AgentReviLogger.Step.StateTransition => "transition",
+        AgentReviLogger.Step.End => "run end",
+        AgentReviLogger.Step.GuardrailViolation => "guardrail",
+        AgentReviLogger.Step.Error => "error",
+        _ => id ?? "event"
+    };
+
+    private static string StepIcon(string? id) => id switch
+    {
+        "agent-run-start" => Icons.Material.Filled.PlayCircleOutline,
+        AgentReviLogger.Step.LlmRequest => Icons.Material.Filled.NorthEast,
+        AgentReviLogger.Step.LlmResponse => Icons.Material.Filled.SouthWest,
+        AgentReviLogger.Step.Thinking => Icons.Material.Filled.Psychology,
+        AgentReviLogger.Step.ToolCall => Icons.Material.Filled.Build,
+        AgentReviLogger.Step.ToolResult => Icons.Material.Filled.AssignmentTurnedIn,
+        AgentReviLogger.Step.StateTransition => Icons.Material.Filled.SwapHoriz,
+        AgentReviLogger.Step.End => Icons.Material.Filled.Flag,
+        AgentReviLogger.Step.GuardrailViolation => Icons.Material.Filled.Shield,
+        AgentReviLogger.Step.Error => Icons.Material.Filled.ErrorOutline,
+        _ => Icons.Material.Filled.Circle
+    };
+
+    private static Color StepColor(string? id) => id switch
+    {
+        "agent-run-start" => Color.Primary,
+        AgentReviLogger.Step.LlmRequest => Color.Info,
+        AgentReviLogger.Step.LlmResponse => Color.Info,
+        AgentReviLogger.Step.Thinking => Color.Tertiary,
+        AgentReviLogger.Step.ToolCall => Color.Warning,
+        AgentReviLogger.Step.ToolResult => Color.Warning,
+        AgentReviLogger.Step.StateTransition => Color.Secondary,
+        AgentReviLogger.Step.End => Color.Success,
+        AgentReviLogger.Step.GuardrailViolation => Color.Error,
+        AgentReviLogger.Step.Error => Color.Error,
+        _ => Color.Default
+    };
+
+    // Nicer payload captions for the well-known object names emitted by AgentReviLogger / AgentRunner.
+    private static string ObjectLabel(string? name, int slot) => name switch
+    {
+        "messages" => "prompt — messages sent to the LLM",
+        "raw" => "raw model output",
+        "meta" => "completion metadata (tokens, model)",
+        "thinking" => "model thinking",
+        "input" => "tool input",
+        "output" => "tool output",
+        "status" => "tool status",
+        "transition" => "transition",
+        "history" => "state history",
+        "final-output" => "final output",
+        "result" => "result",
+        "inputs" => "run inputs",
+        "profile" => "agent profile",
+        null or "" => $"object{slot}",
+        _ => name
+    };
+
+    private static Color LevelColor(LogLevel level) => level switch
+    {
+        LogLevel.Warning => Color.Warning,
+        LogLevel.Error or LogLevel.Fatal => Color.Error,
+        _ => Color.Default
+    };
+
+    private static string? LevelText(LogLevel level) => level switch
+    {
+        LogLevel.Warning => "warning",
+        LogLevel.Error => "error",
+        LogLevel.Fatal => "fatal",
+        _ => null
+    };
+
+    // Pretty-print JSON payloads (messages, tool I/O, meta) so the prompt/response is readable.
+    // Non-JSON strings (plain content / thinking) are returned unchanged.
+    private static string Pretty(string value)
+    {
+        string trimmed = value.TrimStart();
+        if (trimmed.StartsWith('{') || trimmed.StartsWith('['))
+        {
+            try { return JToken.Parse(value).ToString(Formatting.Indented); }
+            catch { /* not valid JSON — fall through */ }
+        }
+        return value;
+    }
+}

@@ -218,18 +218,10 @@
                                         {
                                             <MudAlert Severity="Severity.Error" Class="mb-2">@runState.ErrorMessage</MudAlert>
                                         }
-                                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">Trace</MudText>
-                                        <MudList T="RlogEvent" Dense="true">
-                                            @foreach (var ev in runState.Events.OrderBy(e => e.Timestamp))
-                                            {
-                                                <MudListItem T="RlogEvent">
-                                                    <div class="d-flex gap-2 align-center">
-                                                        <MudChip T="string" Size="Size.Small" Color="@StepColor(ev.Identifier)" Variant="Variant.Filled">@ev.Identifier</MudChip>
-                                                        <MudText Typo="Typo.body2">@ev.Message</MudText>
-                                                    </div>
-                                                </MudListItem>
-                                            }
-                                        </MudList>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">
+                                            Trace — @runState.Events.Count event(s) · click any row to expand the prompt, thinking, and tool I/O
+                                        </MudText>
+                                        <AgentEventTrace Events="@runState.Events" />
                                     </div>
                                 </ChildContent>
                             </MudExpansionPanel>
@@ -256,42 +248,7 @@
             else
             {
                 <MudText Typo="Typo.subtitle1" Class="mb-2">Session @_selectedSessionId</MudText>
-                @foreach (var ev in _selectedSessionEvents.OrderBy(e => e.Timestamp))
-                {
-                    <MudExpansionPanel Class="mb-1">
-                        <TitleContent>
-                            <div class="d-flex align-center gap-2 flex-grow-1">
-                                <MudChip T="string" Size="Size.Small" Color="@StepColor(ev.Identifier)">@ev.Identifier</MudChip>
-                                <MudText Typo="Typo.body2">@ev.Message</MudText>
-                                <MudSpacer />
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">@ev.Timestamp.ToString("HH:mm:ss.fff")</MudText>
-                            </div>
-                        </TitleContent>
-                        <ChildContent>
-                            <div class="pa-2">
-                                @if (!string.IsNullOrEmpty(ev.Tags))
-                                {
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Tags</MudText>
-                                    <MudText Typo="Typo.body2" Style="font-family: monospace;">@ev.Tags</MudText>
-                                }
-                                @if (!string.IsNullOrEmpty(ev.Object1))
-                                {
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">@(ev.Object1Name ?? "object1")</MudText>
-                                    <MudPaper Class="pa-2" Outlined="true">
-                                        <pre style="margin:0; white-space:pre-wrap; font-size:12px;">@ev.Object1</pre>
-                                    </MudPaper>
-                                }
-                                @if (!string.IsNullOrEmpty(ev.Object2))
-                                {
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">@(ev.Object2Name ?? "object2")</MudText>
-                                    <MudPaper Class="pa-2" Outlined="true">
-                                        <pre style="margin:0; white-space:pre-wrap; font-size:12px;">@ev.Object2</pre>
-                                    </MudPaper>
-                                }
-                            </div>
-                        </ChildContent>
-                    </MudExpansionPanel>
-                }
+                <AgentEventTrace Events="@_selectedSessionEvents" />
             }
         </div>
     </MudTabPanel>
@@ -841,21 +798,6 @@
             </div>
             <MudText Typo="Typo.body2" Color="Color.Secondary">@rec.Rationale</MudText>
         </MudPaper>
-    };
-
-    private static Color StepColor(string? step) => step switch
-    {
-        AgentReviLogger.Step.Start => Color.Primary,
-        AgentReviLogger.Step.LlmRequest => Color.Info,
-        AgentReviLogger.Step.LlmResponse => Color.Info,
-        AgentReviLogger.Step.Thinking => Color.Tertiary,
-        AgentReviLogger.Step.ToolCall => Color.Warning,
-        AgentReviLogger.Step.ToolResult => Color.Warning,
-        AgentReviLogger.Step.StateTransition => Color.Secondary,
-        AgentReviLogger.Step.End => Color.Success,
-        AgentReviLogger.Step.GuardrailViolation => Color.Error,
-        AgentReviLogger.Step.Error => Color.Error,
-        _ => Color.Default
     };
 
     private static string RunStateIcon(RunState s) =>

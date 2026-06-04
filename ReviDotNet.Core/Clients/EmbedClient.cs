@@ -102,7 +102,14 @@ public class EmbedClient : IDisposable
         _client.DefaultRequestHeaders.Add("Accept", "application/json");
         
         if (_useApiKey)
-            _client.DefaultRequestHeaders.Add("Authorization", $"Bearer {_apiKey}");
+        {
+            if (_protocol == Protocol.Gemini)
+                // Gemini (Google Generative Language API) authenticates via the x-goog-api-key
+                // header, keeping the key out of the request URL where it could otherwise leak.
+                _client.DefaultRequestHeaders.Add("x-goog-api-key", _apiKey);
+            else
+                _client.DefaultRequestHeaders.Add("Authorization", $"Bearer {_apiKey}");
+        }
         
         _client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
     }

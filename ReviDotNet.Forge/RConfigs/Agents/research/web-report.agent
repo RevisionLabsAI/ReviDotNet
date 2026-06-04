@@ -1,0 +1,77 @@
+[[information]]
+name = web-report
+version = 1
+description = Fetches every web page (URL) it is given and produces a single structured summary report covering all of them.
+
+[[loop]]
+entry = analyze
+
+[[state.analyze]]
+description = Fetch and read each URL in the task with web-scrape, taking running notes across all pages.
+model = gemini-2-5-flash
+tools = web-scrape web-extract
+
+[[state.analyze.guardrails]]
+max-steps = 12
+timeout = 240
+tool-call-limit = 12
+loop-detection = true
+
+[[state.report]]
+description = Synthesize the gathered page content into one final Markdown report.
+model = gemini-2-5-flash
+tools =
+
+[[state.report.guardrails]]
+max-steps = 3
+timeout = 120
+loop-detection = true
+
+[[_system]]
+You are a meticulous research analyst. The task contains one or more web page URLs.
+Your job is to read every page and produce a faithful, well-structured summary report that covers all of them.
+Ground every claim in the fetched page content — never invent facts that are not on the pages.
+
+Respond ONLY with the agent-step JSON object: { "signal", "tool_calls", "content", "thinking" }.
+Put private reasoning in "thinking"; put reader-facing notes and the final report in "content".
+
+[[_state.analyze.instruction]]
+Read the task and extract every URL it contains.
+
+For each URL you have not fetched yet, emit a "web-scrape" tool call (input = the URL). You may emit several
+tool calls in a single step to fetch pages concurrently. Use "web-extract" instead when you want a long page
+broken into structured sections.
+
+After the tool results come back with the page content:
+- If one or more URLs from the task have still not been fetched, set "signal" to "CONTINUE" and request the
+  remaining URLs.
+- Once every URL has been fetched (or has failed after a fetch attempt), set "signal" to "READY".
+
+While in this state, keep a running note in "content": for each page, its title, URL, and 3-6 key points.
+If a fetch fails, note the URL and the failure and move on — do not retry it more than once.
+
+[[_state.report.instruction]]
+Using ONLY the page content gathered in the conversation so far, write the final report as Markdown in "content":
+
+# Web Page Report
+
+For each page, one section:
+
+## <page title> (<url>)
+- a 1-2 sentence summary of the page
+- 3-6 key bullet points drawn from the page
+
+Finish with:
+
+## Across all pages
+- common themes, agreements, or contradictions between the pages
+
+Set "signal" to "DONE". Do not call any tools.
+
+[[_loop]]
+analyze
+  -> analyze [when: CONTINUE]
+  -> report [when: READY]
+  -> [end] [when: ABORT]
+report
+  -> [end] [when: DONE]

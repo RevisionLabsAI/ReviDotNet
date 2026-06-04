@@ -59,11 +59,8 @@ internal class InferenceHttpClient : IDisposable
             if (_config.Protocol == Protocol.Gemini)
             {
                 payload = _payloadTransformer.TransformToGeminiPayload(payload);
-                // Add API key to endpoint for Gemini
-                if (_config.UseApiKey && !endpoint.Contains("key="))
-                {
-                    endpoint += (endpoint.Contains("?") ? "&" : "?") + $"key={_config.ApiKey}";
-                }
+                // The Gemini API key travels in the x-goog-api-key header (configured on the
+                // shared HttpClient in the InferClient ctor), never in the request URL.
             }
             else if (_config.Protocol == Protocol.Claude)
             {
@@ -100,7 +97,10 @@ internal class InferenceHttpClient : IDisposable
         int attempt = 0;
         HttpResponseMessage? response = null;
         TimeSpan inactivity = TimeSpan.FromSeconds(Math.Max(1, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds));
-        string uri = (_httpClient.BaseAddress?.ToString() ?? string.Empty) + endpoint;
+        // Used only for logging/diagnostics below, never for the actual request (that uses `endpoint`).
+        // Redact defensively: the Gemini key now travels in a header rather than the URL, but any
+        // secret-bearing query parameter must still never reach a log sink.
+        string uri = Util.RedactSecrets((_httpClient.BaseAddress?.ToString() ?? string.Empty) + endpoint);
 
         while (true)
         {

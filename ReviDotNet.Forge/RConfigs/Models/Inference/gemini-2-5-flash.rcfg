@@ -1,0 +1,13 @@
+[[general]]
+name = gemini-2-5-flash
+enabled = true
+model-string = gemini-2.5-flash
+provider-name = gemini
+
+[[settings]]
+tier = B
+token-limit = 1048576
+supports-response-completion = true
+
+[[override-settings]]
+use-search-grounding = disabled
