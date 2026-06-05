@@ -1,0 +1,171 @@
+@using System.Text.RegularExpressions
+@using ReviDotNet.Forge.Services
+@using ReviDotNet.Forge.Services.Workshop
+@inject ArtifactHistoryService History
+@inject IWorkshopStore Store
+@inject IAgentWorkshopService WorkshopSvc
+
+@*
+    Versions hub — the .agent revision lineage for one agent. Combines the live on-disk
+    file with the archived snapshots ArtifactHistoryService captures on every save, annotates
+    each version with its best evaluation score, and diffs a selected version against the
+    one before it. This is where the run → evaluate → revise loop becomes visible.
+*@
+
+<div class="d-flex align-center mb-3">
+    <MudText Typo="Typo.subtitle1">Versions</MudText>
+    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ml-2">@_entries.Count for @AgentName</MudText>
+</div>
+
+@if (_entries.Count == 0)
+{
+    <MudPaper Class="pa-6" Outlined="true">
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            No version history. This agent may be an embedded resource (read-only), or it hasn't been revised yet.
+            Saving a revision from the Evaluations tab records a snapshot here.
+        </MudText>
+    </MudPaper>
+}
+else
+{
+    <MudGrid Spacing="3">
+        <!-- Lineage -->
+        <MudItem xs="12" md="4">
+            <MudPaper Outlined="true" Style="max-height: 70vh; overflow-y: auto;">
+                <MudList T="string" Dense="true">
+                    @for (int i = 0; i < _entries.Count; i++)
+                    {
+                        var e = _entries[i];
+                        var idx = i;
+                        var selected = idx == _selectedIndex;
+                        <MudListItem T="string"
+                                     OnClick="@(() => _selectedIndex = idx)"
+                                     Style="@(selected ? "background-color: var(--mud-palette-action-default-hover);" : "")">
+                            <div class="d-flex align-center gap-2" style="width:100%; min-width:0;">
+                                <MudIcon Icon="@(e.IsCurrent ? Icons.Material.Filled.Star : Icons.Material.Filled.History)"
+                                         Color="@(e.IsCurrent ? Color.Primary : Color.Default)" Size="Size.Small" />
+                                <div style="min-width:0; flex:1;">
+                                    <MudText Typo="Typo.body2">@e.Label</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@SubLabel(e)</MudText>
+                                </div>
+                                @if (e.BestScore is { } score)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="@ScoreColor(score)" Class="ma-0 flex-none">@($"{score:0.0}")</MudChip>
+                                }
+                            </div>
+                        </MudListItem>
+                    }
+                </MudList>
+            </MudPaper>
+        </MudItem>
+
+        <!-- Diff -->
+        <MudItem xs="12" md="8">
+            @{
+                var newer = _entries[_selectedIndex];
+                var older = _selectedIndex + 1 < _entries.Count ? _entries[_selectedIndex + 1] : null;
+            }
+            <div class="d-flex align-center mb-2">
+                <MudText Typo="Typo.subtitle2">
+                    @(older is null ? $"{newer.Label} (initial version)" : $"{older.Label} → {newer.Label}")
+                </MudText>
+            </div>
+            <DiffViewer Left="@(older?.Content ?? string.Empty)"
+                        Right="@newer.Content"
+                        LeftLabel="@(older?.Label ?? "(none)")"
+                        RightLabel="@newer.Label"
+                        LeftSubLabel="@(older is null ? null : SubLabel(older))"
+                        RightSubLabel="@SubLabel(newer)" />
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    [Parameter] public string AgentName { get; set; } = string.Empty;
+
+    private string? _lastAgentName;
+    private int _selectedIndex;
+    private List<VersionEntry> _entries = new();
+
+    private sealed class VersionEntry
+    {
+        public required string Label { get; init; }
+        public int? Version { get; init; }
+        public DateTime? SavedAt { get; init; }
+        public required string Content { get; init; }
+        public bool IsCurrent { get; init; }
+        public double? BestScore { get; set; }
+    }
+
+    private static readonly Regex VersionRegex =
+        new(@"version\s*[:=]\s*(\d+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.Equals(_lastAgentName, AgentName, StringComparison.Ordinal)) return;
+        _lastAgentName = AgentName;
+        _selectedIndex = 0;
+        await BuildLineageAsync();
+    }
+
+    private async Task BuildLineageAsync()
+    {
+        var entries = new List<VersionEntry>();
+
+        string? current = null;
+        try { current = await WorkshopSvc.ReadAgentSourceAsync(AgentName, CancellationToken.None); }
+        catch { /* not on disk */ }
+
+        if (!string.IsNullOrEmpty(current))
+        {
+            var v = ParseVersion(current);
+            entries.Add(new VersionEntry
+            {
+                Label = v.HasValue ? $"v{v} (current)" : "current",
+                Version = v,
+                Content = current,
+                IsCurrent = true
+            });
+        }
+
+        foreach (var snap in History.ListVersions("agent", AgentName)) // newest first
+        {
+            var v = ParseVersion(snap.Content);
+            entries.Add(new VersionEntry
+            {
+                Label = v.HasValue ? $"v{v}" : "snapshot",
+                Version = v,
+                SavedAt = snap.SavedAt,
+                Content = snap.Content
+            });
+        }
+
+        // Annotate with best evaluation score per version.
+        var scores = Store.GetEvaluations(AgentName)
+            .Where(e => e.AgentVersion.HasValue)
+            .GroupBy(e => e.AgentVersion!.Value)
+            .ToDictionary(g => g.Key, g => g.Max(e => e.Result.Score));
+
+        foreach (var e in entries)
+            if (e.Version is { } ver && scores.TryGetValue(ver, out var best))
+                e.BestScore = best;
+
+        _entries = entries;
+        if (_selectedIndex >= _entries.Count) _selectedIndex = 0;
+    }
+
+    private static int? ParseVersion(string content)
+    {
+        var m = VersionRegex.Match(content ?? string.Empty);
+        return m.Success && int.TryParse(m.Groups[1].Value, out var v) ? v : null;
+    }
+
+    private static string SubLabel(VersionEntry e)
+    {
+        var when = e.IsCurrent ? "on disk" : e.SavedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "archived";
+        return e.BestScore is { } s ? $"{when} · best eval {s:0.0}/10" : when;
+    }
+
+    private static Color ScoreColor(double score) =>
+        score >= 7.5 ? Color.Success : score >= 5.0 ? Color.Warning : Color.Error;
+}

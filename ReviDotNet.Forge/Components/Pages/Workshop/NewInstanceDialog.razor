@@ -1,0 +1,113 @@
+@using Revi
+@using ReviDotNet.Forge.Services.Workshop.Models
+@inject IAgentManager Agents
+
+@*
+    Composer for a new run Instance. Pure parameter collector — it gathers the agent,
+    task, parallel run count, and any additional inputs, then returns a NewInstanceSpec.
+    The Instances hub owns the actual run + live streaming.
+*@
+
+<MudDialog>
+    <DialogContent>
+        <MudSelect @bind-Value="_agentName"
+                   Label="Agent"
+                   Variant="Variant.Outlined"
+                   FullWidth="true"
+                   Class="mb-3">
+            @foreach (var a in Agents.GetAll().OrderBy(a => a.Name))
+            {
+                <MudSelectItem Value="@(a.Name ?? string.Empty)">@a.Name</MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudTextField @bind-Value="_task"
+                      Label="Task"
+                      Variant="Variant.Outlined"
+                      FullWidth="true"
+                      Lines="4"
+                      Immediate="true"
+                      Class="mb-3"
+                      Placeholder="What should the agent do?" />
+
+        <MudNumericField @bind-Value="_runs"
+                         Label="Runs (parallel)"
+                         Min="1" Max="20"
+                         Variant="Variant.Outlined"
+                         FullWidth="true"
+                         Class="mb-3" />
+
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">Additional inputs (optional)</MudText>
+        @for (int i = 0; i < _inputs.Count; i++)
+        {
+            int idx = i;
+            <div class="d-flex gap-2 mb-2">
+                <MudTextField @bind-Value="_inputs[idx].Key"
+                              Label="Key"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Style="max-width: 140px;" />
+                <MudTextField @bind-Value="_inputs[idx].Value"
+                              Label="Value"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              FullWidth="true" />
+                <MudIconButton Icon="@Icons.Material.Filled.Remove"
+                               Size="Size.Small"
+                               OnClick="@(() => _inputs.RemoveAt(idx))" />
+            </div>
+        }
+        <MudButton Variant="Variant.Text"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="@(() => _inputs.Add(new KvPair()))">
+            Add Input
+        </MudButton>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.PlayArrow"
+                   OnClick="Confirm"
+                   Disabled="@(string.IsNullOrWhiteSpace(_agentName) || string.IsNullOrWhiteSpace(_task))">
+            Create &amp; Run
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    /// <summary>Agent to preselect (the rail's current selection).</summary>
+    [Parameter] public string? AgentName { get; set; }
+
+    private string _agentName = string.Empty;
+    private string _task = string.Empty;
+    private int _runs = 1;
+    private readonly List<KvPair> _inputs = new();
+
+    private sealed class KvPair { public string Key { get; set; } = ""; public string Value { get; set; } = ""; }
+
+    protected override void OnInitialized()
+        => _agentName = !string.IsNullOrWhiteSpace(AgentName)
+            ? AgentName!
+            : Agents.GetAll().FirstOrDefault()?.Name ?? string.Empty;
+
+    private void Confirm()
+    {
+        if (string.IsNullOrWhiteSpace(_agentName) || string.IsNullOrWhiteSpace(_task)) return;
+
+        var spec = new NewInstanceSpec
+        {
+            AgentName = _agentName,
+            Task = _task,
+            Runs = Math.Max(1, _runs),
+            Inputs = _inputs
+                .Where(kv => !string.IsNullOrWhiteSpace(kv.Key))
+                .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase)
+        };
+        MudDialog.Close(DialogResult.Ok(spec));
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

@@ -154,6 +154,7 @@ builder.Services.AddSingleton<OptimizerService>();
 
 // Agent Workshop
 builder.Services.AddSingleton<IAgentWorkshopService, AgentWorkshopService>();
+builder.Services.AddSingleton<IWorkshopStore, WorkshopStore>();
 builder.Services.AddSingleton<AgentGeneratorService>();
 
 // Registry + export services for the new edit pages

@@ -1,0 +1,177 @@
+@using Revi
+@using ReviDotNet.Forge.Services.Workshop
+@using ReviDotNet.Forge.Services.Workshop.Models
+@inject IAgentManager Agents
+@inject IWorkshopStore Store
+
+@*
+    Composer for a new Evaluation. Either point it at an existing instance's runs, or
+    give it a task to run fresh and then evaluate. Returns a NewEvaluationSpec; the
+    Evaluations hub does the running / evaluating / suggesting.
+*@
+
+<MudDialog>
+    <DialogContent>
+        <MudSelect @bind-Value="_agentName"
+                   Label="Agent"
+                   Variant="Variant.Outlined"
+                   FullWidth="true"
+                   Class="mb-3">
+            @foreach (var a in Agents.GetAll().OrderBy(a => a.Name))
+            {
+                <MudSelectItem Value="@(a.Name ?? string.Empty)">@a.Name</MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudRadioGroup @bind-Value="_mode" Class="mb-3">
+            <MudRadio Value="EvaluationMode.RunFresh" Color="Color.Primary" Dense="true">Run fresh &amp; evaluate</MudRadio>
+            <MudRadio Value="EvaluationMode.ExistingInstance" Color="Color.Primary" Dense="true"
+                      Disabled="@(_completedInstances.Count == 0)">
+                Evaluate an existing instance
+            </MudRadio>
+        </MudRadioGroup>
+
+        @if (_mode == EvaluationMode.ExistingInstance)
+        {
+            <MudSelect @bind-Value="_instanceId"
+                       Label="Instance"
+                       Variant="Variant.Outlined"
+                       FullWidth="true"
+                       Class="mb-3">
+                @foreach (var inst in _completedInstances)
+                {
+                    <MudSelectItem Value="@inst.Id">@InstanceLabel(inst)</MudSelectItem>
+                }
+            </MudSelect>
+        }
+        else
+        {
+            <MudTextField @bind-Value="_task"
+                          Label="Task"
+                          Variant="Variant.Outlined"
+                          FullWidth="true"
+                          Lines="4"
+                          Immediate="true"
+                          Class="mb-3"
+                          Placeholder="What should the agent do?" />
+
+            <MudNumericField @bind-Value="_runs"
+                             Label="Runs (parallel)"
+                             Min="1" Max="20"
+                             Variant="Variant.Outlined"
+                             FullWidth="true"
+                             Class="mb-3" />
+
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">Additional inputs (optional)</MudText>
+            @for (int i = 0; i < _inputs.Count; i++)
+            {
+                int idx = i;
+                <div class="d-flex gap-2 mb-2">
+                    <MudTextField @bind-Value="_inputs[idx].Key" Label="Key" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width: 140px;" />
+                    <MudTextField @bind-Value="_inputs[idx].Value" Label="Value" Variant="Variant.Outlined" Margin="Margin.Dense" FullWidth="true" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Remove" Size="Size.Small" OnClick="@(() => _inputs.RemoveAt(idx))" />
+                </div>
+            }
+            <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => _inputs.Add(new KvPair()))" Class="mb-2">
+                Add Input
+            </MudButton>
+        }
+
+        <MudDivider Class="my-2" />
+        <MudCheckBox @bind-Value="_autoSuggest" Color="Color.Primary" Dense="true">
+            Suggest agent changes (auto-generate a revision from the top recommendation)
+        </MudCheckBox>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Analytics"
+                   OnClick="Confirm"
+                   Disabled="@(!CanConfirm)">
+            @(_mode == EvaluationMode.RunFresh ? "Run & Evaluate" : "Evaluate")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public string? AgentName { get; set; }
+    /// <summary>If set, default to evaluating this instance.</summary>
+    [Parameter] public string? PreselectInstanceId { get; set; }
+
+    private string _agentName = string.Empty;
+    private EvaluationMode _mode = EvaluationMode.RunFresh;
+    private string? _instanceId;
+    private string _task = string.Empty;
+    private int _runs = 1;
+    private bool _autoSuggest = true;
+    private readonly List<KvPair> _inputs = new();
+
+    private List<WorkshopInstance> _completedInstances = new();
+
+    private sealed class KvPair { public string Key { get; set; } = ""; public string Value { get; set; } = ""; }
+
+    private bool CanConfirm => !string.IsNullOrWhiteSpace(_agentName) && _mode switch
+    {
+        EvaluationMode.ExistingInstance => !string.IsNullOrWhiteSpace(_instanceId),
+        _ => !string.IsNullOrWhiteSpace(_task)
+    };
+
+    protected override void OnInitialized()
+    {
+        _agentName = !string.IsNullOrWhiteSpace(AgentName)
+            ? AgentName!
+            : Agents.GetAll().FirstOrDefault()?.Name ?? string.Empty;
+        RefreshInstances();
+
+        if (!string.IsNullOrWhiteSpace(PreselectInstanceId))
+        {
+            _mode = EvaluationMode.ExistingInstance;
+            _instanceId = PreselectInstanceId;
+        }
+    }
+
+    private void RefreshInstances()
+    {
+        _completedInstances = Store.GetInstances(_agentName)
+            .Where(i => i.IsComplete && i.SessionIds.Count > 0)
+            .ToList();
+        if (_instanceId != null && _completedInstances.All(i => i.Id != _instanceId))
+            _instanceId = null;
+        if (_completedInstances.Count == 0 && _mode == EvaluationMode.ExistingInstance)
+            _mode = EvaluationMode.RunFresh;
+    }
+
+    private static string InstanceLabel(WorkshopInstance i)
+    {
+        var task = string.IsNullOrWhiteSpace(i.Task) ? "(no task)" : (i.Task.Length > 60 ? i.Task[..60] + "…" : i.Task);
+        var ver = i.AgentVersion.HasValue ? $"v{i.AgentVersion} · " : "";
+        return $"{task}  ({ver}{i.RunCount} run(s))";
+    }
+
+    private void Confirm()
+    {
+        if (!CanConfirm) return;
+
+        // If the agent was changed in the dialog, re-scope instances for safety.
+        if (_mode == EvaluationMode.ExistingInstance && Store.GetInstance(_instanceId!) is null) return;
+
+        var spec = new NewEvaluationSpec
+        {
+            Mode = _mode,
+            AgentName = _agentName,
+            InstanceId = _mode == EvaluationMode.ExistingInstance ? _instanceId : null,
+            Task = _task,
+            Runs = Math.Max(1, _runs),
+            Inputs = _inputs
+                .Where(kv => !string.IsNullOrWhiteSpace(kv.Key))
+                .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
+            AutoSuggest = _autoSuggest
+        };
+        MudDialog.Close(DialogResult.Ok(spec));
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}
