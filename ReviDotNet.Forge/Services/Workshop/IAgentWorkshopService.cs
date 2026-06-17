@@ -41,11 +41,24 @@ public interface IAgentWorkshopService
     IAsyncEnumerable<string> GenerateAgentDiffAsync(string agentName, AgentRecommendation recommendation, AgentEvaluationResult evaluation, CancellationToken ct);
 
     /// <summary>
-    /// Persists a revised .agent file to disk and reloads AgentManager so subsequent
-    /// runs pick up the new revision. Throws if the agent's source file cannot be located.
+    /// Persists a revised .agent definition and reloads the affected agent so subsequent runs
+    /// pick up the new revision. When the agent has a writable file on disk the change is written
+    /// there and archived under .history; otherwise (embedded-resource agents) the change is
+    /// applied in memory for the current session. Throws only if the agent cannot be located at all.
     /// </summary>
     Task SaveAgentRevisionAsync(string agentName, string newContent, CancellationToken ct);
 
-    /// <summary>Returns the raw .agent file text for the given registered agent, or null if not on disk.</summary>
+    /// <summary>
+    /// Returns the raw .agent definition text for the given registered agent: the in-memory edit
+    /// if one exists, otherwise the on-disk file, otherwise the embedded resource it was loaded from.
+    /// Null only when no source can be found for the agent.
+    /// </summary>
     Task<string?> ReadAgentSourceAsync(string agentName, CancellationToken ct);
+
+    /// <summary>
+    /// True when the agent's .agent file exists on disk and can be overwritten. When false the agent
+    /// is an embedded resource: its source can still be read and edited, but Save applies the change
+    /// in memory for the current session only (it won't survive a restart).
+    /// </summary>
+    bool CanPersistToDisk(string agentName);
 }

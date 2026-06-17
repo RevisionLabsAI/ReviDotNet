@@ -22,4 +22,11 @@ public interface IAgentManager
 
     /// <summary>Programmatically adds an agent profile to the registry.</summary>
     void Add(AgentProfile agent);
+
+    /// <summary>
+    /// Adds an agent profile, replacing any existing profile with the same name.
+    /// Used to apply in-memory edits to agents that have no writable file on disk
+    /// (e.g. embedded-resource agents) so subsequent runs pick up the change.
+    /// </summary>
+    void AddOrReplace(AgentProfile agent);
 }

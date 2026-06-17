@@ -22,7 +22,7 @@ else
         <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/agents" />
         <div class="ml-2">
             <MudText Typo="Typo.h4">@_agent.Name</MudText>
-            <MudText Typo="Typo.caption" Color="Color.Secondary">v@(_agent.Version) · @(_dirty ? "modified" : "saved")</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">v@(_agent.Version) · @(_dirty ? "modified" : "saved")@(_inMemoryOnly ? " · in memory" : "")</MudText>
         </div>
         <MudSpacer />
         <MudButton Variant="Variant.Outlined"
@@ -41,17 +41,24 @@ else
                    Variant="Variant.Filled"
                    Color="Color.Success"
                    StartIcon="@Icons.Material.Filled.Save"
-                   Disabled="@(!_dirty || _saving || _readOnly)"
+                   Disabled="@(!_dirty || _saving || _sourceUnavailable)"
                    OnClick="@PromptToSave">
-            @(_saving ? "Saving…" : "Save")
+            @(_saving ? "Saving…" : (_inMemoryOnly ? "Save (in memory)" : "Save"))
         </MudButton>
     </div>
 
-    @if (_readOnly)
+    @if (_sourceUnavailable)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mb-3">
+            Couldn't load this agent's source, so it can't be edited here.
+        </MudAlert>
+    }
+    else if (_inMemoryOnly)
     {
         <MudAlert Severity="Severity.Info" Class="mb-3">
-            This agent's source file isn't on disk (it's an embedded resource), so Save is disabled.
-            You can still Export and use the content as a starting point for a new agent.
+            This agent is loaded from an embedded resource, so changes can't be written to disk.
+            Saving applies your edits in memory — new Workshop runs will use them until the app restarts.
+            Use Export to keep a copy.
         </MudAlert>
     }
 
@@ -137,7 +144,8 @@ else
     private string _source = "";
     private bool _dirty;
     private bool _saving;
-    private bool _readOnly;
+    private bool _inMemoryOnly;      // embedded-resource agent: edits apply in memory only
+    private bool _sourceUnavailable; // source couldn't be read at all
 
     protected override async Task OnParametersSetAsync()
     {
@@ -148,13 +156,16 @@ else
         var src = await WorkshopSvc.ReadAgentSourceAsync(Name, CancellationToken.None);
         if (src is null)
         {
-            // Embedded-resource agent: not editable on disk. Still show parsed content.
-            _readOnly = true;
-            _source = "# Source not available on disk — this agent is loaded from an embedded resource.\n";
+            _sourceUnavailable = true;
+            _inMemoryOnly = false;
+            _source = "# Source unavailable for this agent.\n";
         }
         else
         {
-            _readOnly = false;
+            // Source is shown from disk or, for embedded agents, the embedded resource.
+            // Embedded agents can still be edited — Save applies the change in memory.
+            _sourceUnavailable = false;
+            _inMemoryOnly = !WorkshopSvc.CanPersistToDisk(Name);
             _source = src;
         }
         _dirty = false;
@@ -167,11 +178,13 @@ else
 
     private async Task PromptToSave()
     {
-        if (_agent is null || _readOnly) return;
+        if (_agent is null || _sourceUnavailable) return;
         var parameters = new DialogParameters
         {
             ["Message"] = $"Save changes to '{_agent.Name}'?",
-            ["Detail"] = "Saving will overwrite the .agent file on disk and archive the prior version under .history.",
+            ["Detail"] = _inMemoryOnly
+                ? "This agent has no file on disk. Saving applies your changes in memory — new Workshop runs will use them, but they won't persist after the app restarts."
+                : "Saving will overwrite the .agent file on disk and archive the prior version under .history.",
             ["ConfirmLabel"] = "Save",
         };
         var dialog = await DialogSvc.ShowAsync<ConfirmDialog>("Confirm save", parameters);

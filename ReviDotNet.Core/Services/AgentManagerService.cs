@@ -55,6 +55,13 @@ public sealed class AgentManagerService : IAgentManager
     public void Add(AgentProfile agent)
         => _agents.Add(agent);
 
+    /// <inheritdoc/>
+    public void AddOrReplace(AgentProfile agent)
+    {
+        _agents.RemoveAll(a => a.Name == agent.Name);
+        _agents.Add(agent);
+    }
+
     private void LoadFromFileSystem(string path)
     {
         List<string> files = Directory

@@ -39,6 +39,12 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
     private readonly IToolManager _tools;
     private readonly ArtifactHistoryService? _history;
 
+    /// <summary>
+    /// In-memory revisions for agents that have no writable file on disk (embedded resources),
+    /// keyed by agent name. Lets the workshop edit such agents for the lifetime of the process.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, string> _inMemoryEdits = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Initialises the workshop service with all required dependencies.</summary>
     public AgentWorkshopService(
         IWorkshopEventBus bus,
@@ -287,7 +293,7 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
         var evalInputs = new List<Input>
         {
             new("Agent Name", agentName),
-            new("Agent Definition", agentSource ?? "(.agent source not available on disk)"),
+            new("Agent Definition", agentSource ?? "(.agent source unavailable)"),
             new("Run Count", runs.Count.ToString()),
             new("Runs", JsonConvert.SerializeObject(runs, Formatting.Indented))
         };
@@ -355,7 +361,7 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
     {
         string? current = await ReadAgentSourceAsync(agentName, ct);
         if (current == null)
-            throw new InvalidOperationException($"Cannot generate revision: source .agent file for '{agentName}' not on disk.");
+            throw new InvalidOperationException($"Cannot generate revision: no source could be found for agent '{agentName}'.");
 
         Prompt? reviser = _prompts.Get(ReviserPrompt)
             ?? throw new InvalidOperationException($"Prompt '{ReviserPrompt}' not found.");
@@ -390,36 +396,79 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
     public async Task SaveAgentRevisionAsync(string agentName, string newContent, CancellationToken ct)
     {
         string? path = LocateAgentFile(agentName);
-        if (path == null)
-            throw new InvalidOperationException(
-                $"Cannot save revision: source .agent file for '{agentName}' not on disk. " +
-                "Embedded-resource agents are read-only.");
+        if (path != null)
+        {
+            // Writable file on disk: snapshot the prior version, overwrite, and reload from disk.
+            if (_history is not null)
+            {
+                try
+                {
+                    var existing = await File.ReadAllTextAsync(path, ct);
+                    _history.Snapshot("agent", agentName, existing);
+                }
+                catch { /* best-effort */ }
+            }
 
-        // Snapshot the existing content for version history before overwriting.
+            await File.WriteAllTextAsync(path, newContent, ct);
+
+            // Reload agent registry so the new revision is picked up.
+            await _agents.LoadAsync(Assembly.GetExecutingAssembly(), ct);
+            return;
+        }
+
+        // No writable file (embedded-resource agent): apply the edit in memory so the current
+        // session's runs pick it up, without persisting to disk.
+        SaveInMemoryRevision(agentName, newContent);
+    }
+
+    /// <summary>
+    /// Applies an edit to an agent that has no writable file on disk. The prior text is snapshotted
+    /// for version history, the new text is parsed and swapped into the live registry under the same
+    /// name, and the edit is remembered so <see cref="ReadAgentSourceAsync"/> returns it.
+    /// </summary>
+    private void SaveInMemoryRevision(string agentName, string newContent)
+    {
         if (_history is not null)
         {
             try
             {
-                var existing = await File.ReadAllTextAsync(path, ct);
-                _history.Snapshot("agent", agentName, existing);
+                string? prior = _inMemoryEdits.TryGetValue(agentName, out var edited)
+                    ? edited
+                    : ReadEmbeddedAgentSource(agentName);
+                if (prior is not null)
+                    _history.Snapshot("agent", agentName, prior);
             }
             catch { /* best-effort */ }
         }
 
-        await File.WriteAllTextAsync(path, newContent, ct);
+        // Re-parse the edited text and replace the live profile, keeping the agent's existing
+        // registry identity (folder prefix included) so the workshop can still find it by name.
+        var data = RConfigParser.ReadEmbedded(newContent);
+        AgentProfile profile = AgentProfile.ToObject(data, namePrefix: "");
+        profile.Name = agentName;
+        _agents.AddOrReplace(profile);
 
-        // Reload agent registry so the new revision is picked up.
-        await _agents.LoadAsync(Assembly.GetExecutingAssembly());
+        _inMemoryEdits[agentName] = newContent;
     }
 
     public Task<string?> ReadAgentSourceAsync(string agentName, CancellationToken ct)
     {
-        string? path = LocateAgentFile(agentName);
-        if (path == null) return Task.FromResult<string?>(null);
+        // In-memory edits (for agents with no writable file on disk) take precedence.
+        if (_inMemoryEdits.TryGetValue(agentName, out var edited))
+            return Task.FromResult<string?>(edited);
 
-        try { return File.ReadAllTextAsync(path, ct).ContinueWith(t => (string?)t.Result, ct); }
-        catch { return Task.FromResult<string?>(null); }
+        string? path = LocateAgentFile(agentName);
+        if (path != null)
+        {
+            try { return File.ReadAllTextAsync(path, ct).ContinueWith(t => (string?)t.Result, ct); }
+            catch { return Task.FromResult<string?>(null); }
+        }
+
+        // No file on disk: surface the source the agent was loaded from as an embedded resource.
+        return Task.FromResult(ReadEmbeddedAgentSource(agentName));
     }
+
+    public bool CanPersistToDisk(string agentName) => LocateAgentFile(agentName) != null;
 
     private static string? LocateAgentFile(string agentName)
     {
@@ -448,6 +497,40 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
             }
         }
         catch { /* ignore */ }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Reads the raw .agent text for an embedded-resource agent by matching the resource's declared
+    /// name (folder prefix + information_name) against <paramref name="agentName"/>. Mirrors
+    /// AgentManagerService.LoadFromEmbeddedResources so the text shown matches what was actually loaded.
+    /// </summary>
+    private static string? ReadEmbeddedAgentSource(string agentName)
+    {
+        Assembly assembly = Assembly.GetExecutingAssembly();
+
+        foreach (string resourceName in assembly.GetManifestResourceNames()
+                     .Where(n => n.Contains(".Agents.") &&
+                                 n.EndsWith(".agent", StringComparison.InvariantCultureIgnoreCase)))
+        {
+            try
+            {
+                using Stream? stream = assembly.GetManifestResourceStream(resourceName);
+                if (stream == null) continue;
+
+                using StreamReader reader = new(stream);
+                string content = reader.ReadToEnd();
+
+                var data = RConfigParser.ReadEmbedded(content);
+                if (!data.TryGetValue("information_name", out var baseName)) continue;
+
+                string folder = Util.ExtractEmbeddedDirectories(".Agents.", resourceName).ToLower();
+                if (string.Equals(folder + baseName, agentName, StringComparison.OrdinalIgnoreCase))
+                    return content;
+            }
+            catch { /* skip unreadable / malformed resource */ }
+        }
 
         return null;
     }
