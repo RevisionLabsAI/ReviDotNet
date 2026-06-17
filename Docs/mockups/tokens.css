@@ -1,0 +1,221 @@
+/* ============================================================================
+   Forge design tokens — extracted from ReviDotNet.Forge/Theme/ForgeTheme.cs
+   and wwwroot/app.css. Shared by every mockup so the palette stays faithful.
+   Light is the default (matches Forge's #F6F7FB page bg); [data-theme="dark"]
+   mirrors Forge's first-class dark theme.
+   ========================================================================== */
+
+:root {
+  /* Fonts */
+  --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  /* Radii */
+  --r-sm: 8px;
+  --r: 10px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-pill: 999px;
+
+  /* ---- Light palette ---- */
+  --bg: #f6f7fb;
+  --bg-soft: #edeff5;
+  --surface: #ffffff;
+  --surface-2: #fbfbfe;
+  --text: rgba(17, 21, 29, 0.92);
+  --text-2: rgba(17, 21, 29, 0.58);
+  --text-3: rgba(17, 21, 29, 0.40);
+  --border: rgba(17, 21, 29, 0.10);
+  --border-2: rgba(17, 21, 29, 0.16);
+  --hover: rgba(17, 21, 29, 0.04);
+
+  --primary: #4f46e5;        --primary-rgb: 79, 70, 229;
+  --secondary: #0e9ab8;      --secondary-rgb: 14, 154, 184;
+  --tertiary: #7c3aed;       --tertiary-rgb: 124, 58, 237;
+  --success: #0f9d6e;        --success-rgb: 15, 157, 110;
+  --warning: #d97706;        --warning-rgb: 217, 119, 6;
+  --error: #dc2626;          --error-rgb: 220, 38, 38;
+  --info: #0284c7;           --info-rgb: 2, 132, 199;
+
+  /* Event-type accents */
+  --ev-message: var(--primary);     --ev-message-rgb: var(--primary-rgb);
+  --ev-think: #8b5cf6;              --ev-think-rgb: 139, 92, 246;
+  --ev-tool: var(--secondary);      --ev-tool-rgb: var(--secondary-rgb);
+  --ev-sub: var(--tertiary);        --ev-sub-rgb: var(--tertiary-rgb);
+  --ev-system: #64748b;             --ev-system-rgb: 100, 116, 139;
+
+  --code-bg: #f4f5fa;
+  --shadow-1: 0 1px 2px rgba(15, 18, 26, .06), 0 1px 3px rgba(15, 18, 26, .05);
+  --shadow-2: 0 2px 4px rgba(15, 18, 26, .06), 0 4px 12px rgba(15, 18, 26, .08);
+  --shadow-3: 0 4px 8px rgba(15, 18, 26, .07), 0 8px 24px rgba(15, 18, 26, .10);
+}
+
+[data-theme="dark"] {
+  --bg: #0b0e15;
+  --bg-soft: #171c28;
+  --surface: #12161f;
+  --surface-2: #0e121b;
+  --text: rgba(236, 239, 246, 0.92);
+  --text-2: rgba(236, 239, 246, 0.56);
+  --text-3: rgba(236, 239, 246, 0.36);
+  --border: rgba(236, 239, 246, 0.11);
+  --border-2: rgba(236, 239, 246, 0.18);
+  --hover: rgba(236, 239, 246, 0.06);
+
+  --primary: #7c8aff;        --primary-rgb: 124, 138, 255;
+  --secondary: #22d3ee;      --secondary-rgb: 34, 211, 238;
+  --tertiary: #c084fc;       --tertiary-rgb: 192, 132, 252;
+  --success: #34d399;        --success-rgb: 52, 211, 153;
+  --warning: #fbbf24;        --warning-rgb: 251, 191, 36;
+  --error: #f87171;          --error-rgb: 248, 113, 113;
+  --info: #38bdf8;           --info-rgb: 56, 189, 248;
+
+  --ev-think: #a78bfa;       --ev-think-rgb: 167, 139, 250;
+  --ev-system: #94a3b8;      --ev-system-rgb: 148, 163, 184;
+
+  --code-bg: rgba(255, 255, 255, 0.04);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .40);
+  --shadow-2: 0 2px 8px rgba(0, 0, 0, .45);
+  --shadow-3: 0 8px 28px rgba(0, 0, 0, .55);
+}
+
+/* ---- Base reset ---- */
+* { box-sizing: border-box; }
+html { scrollbar-width: thin; scrollbar-color: rgba(136, 146, 168, .45) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background-color: rgba(136, 146, 168, .40);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover { background-color: rgba(136, 146, 168, .65); }
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ---- Shared top bar (every mockup) ---- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 20px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: saturate(140%) blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+.topbar .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.topbar .brand .mark {
+  width: 30px; height: 30px; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 9px; color: #fff;
+  background: linear-gradient(135deg, var(--primary), var(--tertiary));
+  box-shadow: 0 2px 8px rgba(var(--primary-rgb), .40);
+}
+.topbar .brand .mark svg { width: 18px; height: 18px; }
+.topbar .brand .name { font-weight: 700; letter-spacing: -.01em; }
+.topbar .brand .eyebrow {
+  font-size: .625rem; font-weight: 600; letter-spacing: .10em;
+  text-transform: uppercase; color: var(--text-2); line-height: 1;
+}
+.topbar .spacer { flex: 1 1 auto; }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  font: inherit; font-size: .8125rem; font-weight: 600;
+  color: var(--text); background: var(--surface);
+  border: 1px solid var(--border-2); border-radius: var(--r-sm);
+  padding: 6px 11px; cursor: pointer;
+  transition: background-color .14s ease, border-color .14s ease, transform .06s ease;
+}
+.btn:hover { background: var(--hover); }
+.btn:active { transform: translateY(.5px); }
+.btn svg { width: 15px; height: 15px; }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--text-2); }
+.btn-ghost:hover { background: var(--hover); color: var(--text); }
+
+/* ---- Shared pills / status ---- */
+.pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: .72rem; font-weight: 600; line-height: 1;
+  padding: 4px 9px; border-radius: var(--r-pill);
+  white-space: nowrap;
+}
+.pill svg { width: 12px; height: 12px; }
+.pill-soft { background: var(--hover); color: var(--text-2); }
+.pill-mono { font-family: var(--font-mono); font-weight: 500; letter-spacing: -.01em; }
+
+.st { display: inline-flex; align-items: center; gap: 5px;
+  font-size: .7rem; font-weight: 600; line-height: 1;
+  padding: 4px 8px; border-radius: var(--r-pill); white-space: nowrap; }
+.st .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+.st-ok      { color: var(--success); background: rgba(var(--success-rgb), .13); }
+.st-ok .dot { background: var(--success); }
+.st-fail    { color: var(--error); background: rgba(var(--error-rgb), .13); }
+.st-fail .dot { background: var(--error); }
+.st-run     { color: var(--info); background: rgba(var(--info-rgb), .14); }
+.st-run .dot { background: var(--info); animation: pulse 1.4s ease-in-out infinite; }
+.st-wait    { color: var(--text-3); background: var(--hover); }
+.st-wait .dot { background: var(--text-3); }
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--info-rgb), .55); opacity: 1; }
+  50%      { box-shadow: 0 0 0 5px rgba(var(--info-rgb), 0); opacity: .65; }
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 0.9s linear infinite; transform-origin: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  .st-run .dot, .spin { animation: none; }
+}
+
+/* ---- Shared code / kv blocks ---- */
+.code {
+  font-family: var(--font-mono);
+  font-size: .8rem; line-height: 1.5;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+  color: var(--text);
+}
+.code .k { color: var(--ev-tool); }
+.code .s { color: var(--success); }
+.code .n { color: var(--warning); }
+.code .p { color: var(--text-3); }
+
+.io-label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: .65rem; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-2);
+  margin: 0 0 6px;
+}
+.mono { font-family: var(--font-mono); }
+.muted { color: var(--text-2); }
+.faint { color: var(--text-3); }
+
+/* Generic chevron used by several mockups; rotates when its <details> opens */
+.chev { width: 16px; height: 16px; color: var(--text-3); transition: transform .18s ease; flex: 0 0 auto; }
+details[open] > summary .chev { transform: rotate(90deg); }
+summary { cursor: pointer; list-style: none; }
+summary::-webkit-details-marker { display: none; }
+summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: var(--r-sm); }

@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Forge · Agent Instance — Mockup Gallery</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 30px 22px 110px; }
+
+  .hero h1 { font-size: 2rem; font-weight: 800; letter-spacing: -.025em; margin: 0 0 8px; }
+  .hero .lead { font-size: 1.02rem; color: var(--text-2); max-width: 760px; margin: 0 0 18px; line-height: 1.6; }
+  .scenario {
+    display: flex; gap: 14px; align-items: flex-start; background: var(--surface);
+    border: 1px solid var(--border); border-left: 3px solid var(--primary);
+    border-radius: var(--r-md); padding: 14px 16px; box-shadow: var(--shadow-1); margin-bottom: 34px;
+  }
+  .scenario .ic { width: 20px; height: 20px; color: var(--primary); flex: 0 0 auto; margin-top: 2px; }
+  .scenario p { margin: 0; font-size: .9rem; line-height: 1.6; color: var(--text); }
+  .scenario b { font-weight: 600; }
+  .scenario .mono { color: var(--secondary); }
+
+  h2.sec { font-size: 1.25rem; font-weight: 700; letter-spacing: -.01em; margin: 0 0 4px; }
+  .sec-sub { color: var(--text-2); font-size: .9rem; margin: 0 0 18px; }
+
+  /* Variation gallery */
+  .gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; margin-bottom: 44px; }
+  @media (max-width: 760px) { .gallery { grid-template-columns: 1fr; } }
+  .gcard {
+    display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-lg); overflow: hidden; box-shadow: var(--shadow-1); color: inherit;
+    transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+  }
+  .gcard:hover { text-decoration: none; border-color: rgba(var(--primary-rgb), .5); box-shadow: var(--shadow-3); transform: translateY(-3px); }
+  .gprev { height: 168px; padding: 16px; background: var(--bg-soft); border-bottom: 1px solid var(--border); overflow: hidden; position: relative; }
+  .gbody { padding: 15px 17px 17px; }
+  .gnum { font-family: var(--font-mono); font-size: .72rem; color: var(--text-3); font-weight: 600; }
+  .gtitle { font-size: 1.08rem; font-weight: 700; letter-spacing: -.01em; margin: 2px 0 6px; display: flex; align-items: center; gap: 9px; }
+  .gtitle .go { margin-left: auto; color: var(--text-3); width: 18px; height: 18px; transition: transform .15s ease, color .15s ease; }
+  .gcard:hover .gtitle .go { color: var(--primary); transform: translateX(3px); }
+  .gdesc { font-size: .86rem; color: var(--text-2); line-height: 1.55; margin: 0 0 12px; }
+  .gtags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .gtag { font-size: .68rem; font-weight: 600; padding: 3px 9px; border-radius: var(--r-pill); background: var(--hover); color: var(--text-2); }
+  .gtag.best { background: rgba(var(--success-rgb), .14); color: var(--success); }
+
+  /* Mini-preview primitives */
+  .mp { display: flex; flex-direction: column; gap: 7px; height: 100%; }
+  .mp .bub { background: var(--surface); border: 1px solid var(--border); border-radius: 4px 11px 11px 11px; padding: 7px 9px; font-size: .64rem; color: var(--text-2); max-width: 78%; box-shadow: var(--shadow-1); }
+  .mp .bub.r { align-self: flex-end; border-radius: 11px 4px 11px 11px; background: rgba(var(--primary-rgb), .1); border-color: rgba(var(--primary-rgb), .22); }
+  .mp .evbar { display: flex; align-items: center; gap: 7px; background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--ev-tool); border-radius: 8px; padding: 6px 9px; font-size: .62rem; color: var(--text-2); box-shadow: var(--shadow-1); }
+  .mp .evbar .d { width: 14px; height: 14px; border-radius: 5px; background: rgba(var(--ev-tool-rgb), .16); flex: 0 0 auto; }
+  .mp .evbar.sub { border-left-color: var(--ev-sub); }
+  .mp .evbar.sub .d { background: rgba(var(--ev-sub-rgb), .18); }
+  .mp .dot7 { width: 7px; height: 7px; border-radius: 50%; margin-left: auto; flex: 0 0 auto; }
+
+  /* timeline mini */
+  .mp-tl { position: relative; padding-left: 20px; height: 100%; display: flex; flex-direction: column; gap: 8px; justify-content: center; }
+  .mp-tl::before { content: ""; position: absolute; left: 7px; top: 6px; bottom: 6px; width: 2px; background: var(--border); }
+  .mp-tl .tlr { position: relative; display: flex; align-items: center; gap: 8px; }
+  .mp-tl .nd { position: absolute; left: -20px; width: 16px; height: 16px; border-radius: 50%; background: var(--bg-soft); border: 2px solid var(--ev-tool); }
+  .mp-tl .nd.a { border-color: var(--ev-message); } .mp-tl .nd.b { border-color: var(--ev-sub); } .mp-tl .nd.c { border-color: var(--ev-think); }
+  .mp-tl .ln { height: 9px; border-radius: 5px; background: var(--surface); border: 1px solid var(--border); flex: 1 1 auto; }
+
+  /* inspector mini */
+  .mp-in { display: flex; flex-direction: column; height: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .mp-in .ir { display: flex; align-items: center; gap: 7px; padding: 6px 9px; border-top: 1px solid var(--border); font-size: .6rem; }
+  .mp-in .ir:first-child { border-top: none; background: var(--bg-soft); }
+  .mp-in .ir .g { width: 9px; height: 9px; border-radius: 2px; background: var(--ev-tool); flex: 0 0 auto; }
+  .mp-in .ir .g.m { background: var(--ev-message); } .mp-in .ir .g.s { background: var(--ev-sub); } .mp-in .ir .g.y { background: var(--ev-system); }
+  .mp-in .ir .nm { font-family: var(--font-mono); color: var(--text-2); }
+  .mp-in .ir .dd { width: 6px; height: 6px; border-radius: 50%; margin-left: auto; }
+
+  /* studio mini */
+  .mp-st { display: flex; flex-direction: column; gap: 9px; justify-content: center; height: 100%; }
+  .mp-st .sc { display: flex; align-items: center; gap: 9px; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 9px 11px; box-shadow: inset 4px 0 0 var(--ev-tool), var(--shadow-1); }
+  .mp-st .sc.m { box-shadow: inset 4px 0 0 var(--ev-message), var(--shadow-1); }
+  .mp-st .sc.s { box-shadow: inset 4px 0 0 var(--ev-sub), var(--shadow-1); }
+  .mp-st .sc .t { width: 22px; height: 22px; border-radius: 7px; background: rgba(var(--ev-tool-rgb), .16); flex: 0 0 auto; }
+  .mp-st .sc.m .t { background: rgba(var(--ev-message-rgb), .16); } .mp-st .sc.s .t { background: rgba(var(--ev-sub-rgb), .18); }
+  .mp-st .sc .ll { height: 7px; width: 60%; border-radius: 4px; background: var(--bg-soft); }
+
+  /* Dimensions */
+  .dims { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 44px; }
+  @media (max-width: 760px) { .dims { grid-template-columns: 1fr; } }
+  .dim { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); padding: 14px 16px; box-shadow: var(--shadow-1); }
+  .dim h3 { font-size: .95rem; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+  .dim h3 .ic { width: 17px; height: 17px; color: var(--primary); }
+  .dim p { font-size: .82rem; color: var(--text-2); margin: 0 0 10px; line-height: 1.5; }
+  .opts { display: flex; flex-direction: column; gap: 6px; }
+  .opt { display: flex; align-items: baseline; gap: 8px; font-size: .82rem; }
+  .opt .b { font-weight: 600; color: var(--text); flex: 0 0 auto; }
+  .opt .src { margin-left: auto; font-size: .68rem; font-family: var(--font-mono); color: var(--text-3); white-space: nowrap; }
+
+  /* Comparison table */
+  .tablecard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; box-shadow: var(--shadow-1); margin-bottom: 44px; }
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  thead th { text-align: left; font-size: .66rem; letter-spacing: .07em; text-transform: uppercase; color: var(--text-2); font-weight: 700; padding: 11px 14px; background: var(--bg-soft); border-bottom: 1px solid var(--border); }
+  tbody td { padding: 12px 14px; border-top: 1px solid var(--border); vertical-align: top; }
+  tbody tr:hover { background: var(--hover); }
+  td .vn { font-weight: 600; }
+  td .vn a { color: var(--text); }
+
+  /* Legend */
+  .legend { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); padding: 16px 18px; box-shadow: var(--shadow-1); }
+  @media (max-width: 640px) { .legend { grid-template-columns: 1fr; } }
+  .legend h4 { font-size: .7rem; letter-spacing: .07em; text-transform: uppercase; color: var(--text-2); margin: 0 0 10px; }
+  .legrow { display: flex; align-items: center; gap: 9px; padding: 4px 0; font-size: .84rem; }
+  .legrow .sw { width: 11px; height: 11px; border-radius: 3px; flex: 0 0 auto; }
+  .legrow .mono { color: var(--text-3); margin-left: auto; font-size: .72rem; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+<symbol id="i-agent" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 8V5.2"/><path d="M12 4h0"/><path d="M9.3 13h0"/><path d="M14.7 13h0"/><path d="M9.5 16.2h5"/><path d="M2.6 12.5v3"/><path d="M21.4 12.5v3"/></symbol>
+<symbol id="i-theme" viewBox="0 0 24 24"><path d="M20 14.6A8 8 0 1 1 9.4 4a6.5 6.5 0 0 0 10.6 10.6Z"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></symbol>
+<symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M12 11v5"/><path d="M12 7.6h0"/></symbol>
+<symbol id="i-layout" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2.5"/><path d="M3.5 9h17M9 9v11"/></symbol>
+<symbol id="i-density" viewBox="0 0 24 24"><path d="M4 6h16M4 10h16M4 14h16M4 18h16"/></symbol>
+<symbol id="i-nest" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="13" height="13" rx="2"/><rect x="9" y="9" width="11.5" height="11.5" rx="2"/></symbol>
+<symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.4 0 1.8-1 1.3-1.9-.6-1.1.2-2.1 1.4-2.1H17a3.5 3.5 0 0 0 3.5-3.6A8.6 8.6 0 0 0 12 3.5Z"/><path d="M7.5 11h0M10 7.5h0M14 7.5h0"/></symbol>
+<symbol id="i-status" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M8.5 12.2l2.4 2.4 4.6-4.8"/></symbol>
+<symbol id="i-click" viewBox="0 0 24 24"><path d="M9 4.5v6M9 7.5H5.5M9 13l9 3.5-4 1.5-1.5 4L9 13Z"/></symbol>
+</defs></svg>
+<style>.ic{fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}</style>
+
+<div class="topbar">
+  <span class="brand">
+    <span class="mark"><svg class="ic"><use href="#i-agent"/></svg></span>
+    <span style="display:flex;flex-direction:column;line-height:1.1">
+      <span class="eyebrow">ReviDotNet · Forge</span><span class="name">Agent Instance — Mockups</span>
+    </span>
+  </span>
+  <span class="spacer"></span>
+  <button class="btn" onclick="toggleTheme()"><svg class="ic"><use href="#i-theme"/></svg><span data-theme-label>Dark</span></button>
+</div>
+
+<div class="wrap">
+
+  <div class="hero">
+    <h1>Agent instance as a chat log</h1>
+    <p class="lead">Four ways to render a running agent instance as a conversation — agent messages, tool calls (with input &amp; output), and sub-agents all appear as events. Every event is <b>collapsed by default</b>, showing a one-line summary and live status, and <b>expands on click</b>. Toggle light/dark on any page. Pick a base, then mix the design choices below.</p>
+  </div>
+
+  <div class="scenario">
+    <svg class="ic"><use href="#i-info"/></svg>
+    <p>All four use the same live trace: the <b class="mono">research / web-report</b> agent (model <b class="mono">gemini-2-5-flash</b>) summarizing &amp; fact-checking three articles. It has scraped two pages (one <b style="color:var(--error)">403 → retried</b>), extracted 4 claims, and is now <b style="color:var(--info)">mid-run</b> inside a <b class="mono">fact-checker</b> sub-agent — so you can see done, failed, running, and queued states side by side.</p>
+  </div>
+
+  <!-- Variations -->
+  <h2 class="sec">The four variations</h2>
+  <p class="sec-sub">Same data, same interactions — different layout, density, and nesting model.</p>
+  <div class="gallery">
+
+    <a class="gcard" href="01-conversational.html">
+      <div class="gprev"><div class="mp">
+        <div class="bub r">Read the 3 articles &amp; verify the numbers…</div>
+        <div class="bub">Got it — I'll fetch, extract, verify, then combine.</div>
+        <div class="evbar"><span class="d"></span>web-scrape · techreview.com<span class="dot7" style="background:var(--success)"></span></div>
+        <div class="evbar sub"><span class="d"></span>sub-agent · fact-checker<span class="dot7" style="background:var(--info)"></span></div>
+      </div></div>
+      <div class="gbody">
+        <div class="gnum">01</div>
+        <div class="gtitle">Conversational <svg class="ic go"><use href="#i-arrow"/></svg></div>
+        <p class="gdesc">A messaging-app feel. Agent replies are left-aligned bubbles with an avatar; the task sits on the right. Tool calls &amp; sub-agents drop in as inline, collapsible event cards.</p>
+        <div class="gtags"><span class="gtag best">Best for readability</span><span class="gtag">Bubbles</span><span class="gtag">Spacious</span></div>
+      </div>
+    </a>
+
+    <a class="gcard" href="02-timeline.html">
+      <div class="gprev"><div class="mp-tl">
+        <div class="tlr"><span class="nd a"></span><span class="ln" style="width:70%"></span></div>
+        <div class="tlr"><span class="nd"></span><span class="ln" style="width:90%"></span></div>
+        <div class="tlr"><span class="nd c"></span><span class="ln" style="width:55%"></span></div>
+        <div class="tlr"><span class="nd b"></span><span class="ln" style="width:80%"></span></div>
+      </div></div>
+      <div class="gbody">
+        <div class="gnum">02</div>
+        <div class="gtitle">Timeline <svg class="ic go"><use href="#i-arrow"/></svg></div>
+        <p class="gdesc">A vertical spine with a type-colored node per event. Everything is left-aligned and scannable; a sub-agent expands into its own indented sub-timeline.</p>
+        <div class="gtags"><span class="gtag best">Best for scanning order</span><span class="gtag">Spine + nodes</span><span class="gtag">Balanced</span></div>
+      </div>
+    </a>
+
+    <a class="gcard" href="03-inspector.html">
+      <div class="gprev"><div class="mp-in">
+        <div class="ir"><span class="nm" style="font-weight:700;color:var(--text-2)">EVENT</span><span style="margin-left:auto" class="nm">STATUS</span></div>
+        <div class="ir"><span class="g y"></span><span class="nm">start</span><span class="dd" style="background:var(--success)"></span></div>
+        <div class="ir"><span class="g"></span><span class="nm">web-scrape</span><span class="dd" style="background:var(--success)"></span></div>
+        <div class="ir"><span class="g"></span><span class="nm">web-scrape</span><span class="dd" style="background:var(--error)"></span></div>
+        <div class="ir"><span class="g s"></span><span class="nm">invoke_agent</span><span class="dd" style="background:var(--info)"></span></div>
+      </div></div>
+      <div class="gbody">
+        <div class="gnum">03</div>
+        <div class="gtitle">Inspector <svg class="ic go"><use href="#i-arrow"/></svg></div>
+        <p class="gdesc">A dense, devtools-style trace table. Filter chips (Tools / Sub-agents / Errors), monospace identifiers, indentation guides for depth, and inline status dots.</p>
+        <div class="gtags"><span class="gtag best">Best for debugging</span><span class="gtag">Compact</span><span class="gtag">Filterable</span></div>
+      </div>
+    </a>
+
+    <a class="gcard" href="04-studio.html">
+      <div class="gprev"><div class="mp-st">
+        <div class="sc m"><span class="t"></span><span class="ll" style="width:50%"></span></div>
+        <div class="sc"><span class="t"></span><span class="ll" style="width:70%"></span></div>
+        <div class="sc s"><span class="t"></span><span class="ll" style="width:42%"></span></div>
+      </div></div>
+      <div class="gbody">
+        <div class="gnum">04</div>
+        <div class="gtitle">Studio <svg class="ic go"><use href="#i-arrow"/></svg></div>
+        <p class="gdesc">Spacious cards with a type-colored accent stripe and clear header. Inputs/outputs render in labeled panels; a sub-agent becomes an inset "instance-within-an-instance".</p>
+        <div class="gtags"><span class="gtag best">Best for a primary view</span><span class="gtag">Cards</span><span class="gtag">Presentation</span></div>
+      </div>
+    </a>
+
+  </div>
+
+  <!-- Design dimensions -->
+  <h2 class="sec">Design choices to mix &amp; match</h2>
+  <p class="sec-sub">These axes are independent — e.g. you could keep Studio's cards but adopt Inspector's filter bar, or put Timeline nodes on Conversational bubbles.</p>
+  <div class="dims">
+
+    <div class="dim">
+      <h3><svg class="ic"><use href="#i-layout"/></svg>Layout model</h3>
+      <p>The overall shape of the stream.</p>
+      <div class="opts">
+        <div class="opt"><span class="b">Chat bubbles</span> alternating sides for agent vs task <span class="src">01</span></div>
+        <div class="opt"><span class="b">Timeline rail</span> single spine, all left-aligned <span class="src">02</span></div>
+        <div class="opt"><span class="b">Dense table</span> one tight row per event <span class="src">03</span></div>
+        <div class="opt"><span class="b">Stacked cards</span> one card per event <span class="src">04</span></div>
+      </div>
+    </div>
+
+    <div class="dim">
+      <h3><svg class="ic"><use href="#i-density"/></svg>Information density</h3>
+      <p>How much vertical space each event takes.</p>
+      <div class="opts">
+        <div class="opt"><span class="b">Spacious</span> generous padding, large type <span class="src">01 · 04</span></div>
+        <div class="opt"><span class="b">Balanced</span> medium rows <span class="src">02</span></div>
+        <div class="opt"><span class="b">Compact</span> ~28px rows, mono accents <span class="src">03</span></div>
+      </div>
+    </div>
+
+    <div class="dim">
+      <h3><svg class="ic"><use href="#i-nest"/></svg>Sub-agent nesting</h3>
+      <p>How a child agent's events are shown under its parent.</p>
+      <div class="opts">
+        <div class="opt"><span class="b">Inset block</span> dashed left rule + mini events <span class="src">01</span></div>
+        <div class="opt"><span class="b">Sub-timeline</span> indented spine of its own <span class="src">02</span></div>
+        <div class="opt"><span class="b">Indent guides</span> tree lines like devtools <span class="src">03</span></div>
+        <div class="opt"><span class="b">Mini-instance</span> nested card w/ its own header <span class="src">04</span></div>
+      </div>
+    </div>
+
+    <div class="dim">
+      <h3><svg class="ic"><use href="#i-palette"/></svg>Event-type signal</h3>
+      <p>How each event type is color-coded.</p>
+      <div class="opts">
+        <div class="opt"><span class="b">Accent stripe</span> colored left border <span class="src">01 · 04</span></div>
+        <div class="opt"><span class="b">Node ring</span> colored timeline dot <span class="src">02</span></div>
+        <div class="opt"><span class="b">Mono tag + glyph</span> colored kind label <span class="src">02 · 03</span></div>
+        <div class="opt"><span class="b">Icon-tile tint</span> 14% colored square <span class="src">01 · 04</span></div>
+      </div>
+    </div>
+
+    <div class="dim">
+      <h3><svg class="ic"><use href="#i-status"/></svg>Status display</h3>
+      <p>How done / failed / running / queued read at a glance.</p>
+      <div class="opts">
+        <div class="opt"><span class="b">Pill + label</span> tinted, with text <span class="src">01 · 02 · 04</span></div>
+        <div class="opt"><span class="b">Dot + label</span> compact, right-aligned <span class="src">03</span></div>
+        <div class="opt"><span class="b">Pulsing node</span> live ring for running <span class="src">02</span></div>
+      </div>
+    </div>
+
+    <div class="dim">
+      <h3><svg class="ic"><use href="#i-click"/></svg>Collapse &amp; extras</h3>
+      <p>Shared interactions across every variation.</p>
+      <div class="opts">
+        <div class="opt"><span class="b">Click-to-expand</span> native, accessible <span class="src">all</span></div>
+        <div class="opt"><span class="b">Expand / collapse all</span> top-bar buttons <span class="src">all</span></div>
+        <div class="opt"><span class="b">Light / dark toggle</span> Forge tokens <span class="src">all</span></div>
+        <div class="opt"><span class="b">Type filter chips</span> Tools / Errors / … <span class="src">03</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Comparison table -->
+  <h2 class="sec">At a glance</h2>
+  <p class="sec-sub">&nbsp;</p>
+  <div class="tablecard">
+    <table>
+      <thead><tr><th>Variation</th><th>Layout</th><th>Density</th><th>Sub-agent nesting</th><th>Best for</th></tr></thead>
+      <tbody>
+        <tr><td class="vn"><a href="01-conversational.html">01 · Conversational</a></td><td>Chat bubbles</td><td>Spacious</td><td>Inset block</td><td>Reading the narrative; demos &amp; reviews</td></tr>
+        <tr><td class="vn"><a href="02-timeline.html">02 · Timeline</a></td><td>Vertical spine</td><td>Balanced</td><td>Indented sub-timeline</td><td>Scanning order &amp; causality</td></tr>
+        <tr><td class="vn"><a href="03-inspector.html">03 · Inspector</a></td><td>Dense table</td><td>Compact</td><td>Tree indent guides</td><td>Debugging long, deep runs</td></tr>
+        <tr><td class="vn"><a href="04-studio.html">04 · Studio</a></td><td>Stacked cards</td><td>Spacious</td><td>Mini-instance card</td><td>The default detail view</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Legend -->
+  <h2 class="sec">Shared vocabulary</h2>
+  <p class="sec-sub">Event types map to Forge's <span class="mono">RlogEvent</span> step kinds; statuses map to per-event state &amp; <span class="mono">AgentExitReason</span>.</p>
+  <div class="legend">
+    <div>
+      <h4>Event types</h4>
+      <div class="legrow"><span class="sw" style="background:var(--ev-message)"></span> Agent message <span class="mono">message</span></div>
+      <div class="legrow"><span class="sw" style="background:var(--ev-think)"></span> Thinking / reasoning <span class="mono">thinking</span></div>
+      <div class="legrow"><span class="sw" style="background:var(--ev-tool)"></span> Tool call + result <span class="mono">tool-call</span></div>
+      <div class="legrow"><span class="sw" style="background:var(--ev-sub)"></span> Sub-agent invocation <span class="mono">invoke_agent</span></div>
+      <div class="legrow"><span class="sw" style="background:var(--ev-system)"></span> System / lifecycle <span class="mono">start · transition · end</span></div>
+    </div>
+    <div>
+      <h4>Statuses</h4>
+      <div class="legrow"><span class="sw" style="background:var(--success);border-radius:50%"></span> Completed <span class="mono">done · ok</span></div>
+      <div class="legrow"><span class="sw" style="background:var(--error);border-radius:50%"></span> Failed <span class="mono">error · 4xx/5xx</span></div>
+      <div class="legrow"><span class="sw" style="background:var(--info);border-radius:50%"></span> Running <span class="mono">in progress</span></div>
+      <div class="legrow"><span class="sw" style="background:var(--text-3);border-radius:50%"></span> Queued <span class="mono">pending</span></div>
+    </div>
+  </div>
+
+</div>
+
+<script src="mockup.js?v=2"></script>
+</body>
+</html>

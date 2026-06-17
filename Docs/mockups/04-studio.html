@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Forge · Agent Instance — Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .wrap { max-width: 940px; margin: 0 auto; padding: 26px 20px 96px; }
+
+  /* Instance header — premium card */
+  .inst {
+    position: relative; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-lg); box-shadow: var(--shadow-2); padding: 22px 22px 18px;
+    margin-bottom: 26px; overflow: hidden;
+  }
+  .inst::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px;
+    background: linear-gradient(90deg, var(--primary), var(--tertiary), var(--secondary)); }
+  .inst-top { display: flex; align-items: center; gap: 14px; }
+  .inst-ava { width: 46px; height: 46px; border-radius: 13px; flex: 0 0 auto; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, var(--primary), var(--tertiary));
+    box-shadow: 0 4px 14px rgba(var(--primary-rgb), .4); }
+  .inst-ava svg { width: 25px; height: 25px; }
+  .inst-name { font-size: 1.2rem; font-weight: 700; letter-spacing: -.015em; }
+  .inst-sub { font-size: .79rem; color: var(--text-2); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 3px; }
+  .inst-task { margin-top: 16px; font-size: .92rem; line-height: 1.6; }
+  .inst-task .lbl { font-size: .64rem; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--text-2); display: block; margin-bottom: 4px; }
+
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 18px; }
+  .tile-stat { display: flex; align-items: center; gap: 11px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface-2); }
+  .tile-stat .ti { width: 34px; height: 34px; border-radius: 9px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; color: var(--accent, var(--primary)); background: rgba(var(--accent-rgb, var(--primary-rgb)), .14); }
+  .tile-stat .ti svg { width: 18px; height: 18px; }
+  .tile-stat .v { font-weight: 700; font-size: 1.15rem; line-height: 1.05; letter-spacing: -.02em; }
+  .tile-stat .l { font-size: .68rem; color: var(--text-2); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+  @media (max-width: 720px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+
+  /* Event stream with connectors */
+  .stream { display: flex; flex-direction: column; gap: 16px; }
+
+  .card {
+    --accent: var(--ev-tool); --accent-rgb: var(--ev-tool-rgb);
+    position: relative; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-md); box-shadow: inset 4px 0 0 var(--accent), var(--shadow-1);
+    overflow: hidden; transition: box-shadow .14s ease, border-color .14s ease;
+  }
+  .card:hover { border-color: var(--border-2); box-shadow: inset 4px 0 0 var(--accent), var(--shadow-2); }
+  .card::before { content: ""; position: absolute; left: 37px; top: -16px; width: 2px; height: 16px; background: var(--border); }
+  .card:first-child::before { display: none; }
+  .card--tool  { --accent: var(--ev-tool);  --accent-rgb: var(--ev-tool-rgb); }
+  .card--sub   { --accent: var(--ev-sub);   --accent-rgb: var(--ev-sub-rgb); }
+  .card--think { --accent: var(--ev-think); --accent-rgb: var(--ev-think-rgb); }
+  .card--sys   { --accent: var(--ev-system); --accent-rgb: var(--ev-system-rgb); }
+  .card--msg   { --accent: var(--ev-message); --accent-rgb: var(--ev-message-rgb); }
+
+  .card > summary { display: flex; align-items: center; gap: 13px; padding: 14px 16px 14px 17px; }
+  .card > summary:hover { background: var(--hover); }
+  .card .tile { width: 38px; height: 38px; border-radius: 10px; flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: center; color: var(--accent); background: rgba(var(--accent-rgb), .14); }
+  .card .tile svg { width: 20px; height: 20px; }
+  .card .head { flex: 1 1 auto; min-width: 0; }
+  .card .title { font-weight: 600; font-size: .98rem; display: flex; align-items: center; gap: 9px; }
+  .card .kind { font-family: var(--font-mono); font-size: .72rem; font-weight: 600; color: var(--accent); background: rgba(var(--accent-rgb), .12); padding: 2px 8px; border-radius: var(--r-sm); }
+  .card .summ { font-size: .85rem; color: var(--text-2); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .right { display: flex; align-items: center; gap: 11px; flex: 0 0 auto; }
+  .card .dur { font-family: var(--font-mono); font-size: .76rem; color: var(--text-3); }
+  .card .chev { width: 18px; height: 18px; }
+
+  .card .body { padding: 2px 18px 18px 18px; }
+  .panel2 { margin-top: 14px; border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+  .panel2 .ph { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--bg-soft); border-bottom: 1px solid var(--border); }
+  .panel2 .ph .io-label { margin: 0; }
+  .panel2 .ph .badge { margin-left: auto; font-family: var(--font-mono); font-size: .7rem; color: var(--text-3); }
+  .panel2 .code { border: none; border-radius: 0; background: var(--code-bg); }
+  .panel2.err { border-color: rgba(var(--error-rgb), .4); }
+  .panel2.err .ph { background: rgba(var(--error-rgb), .08); }
+  .panel2.err .ph .io-label { color: var(--error); }
+  .msgtext { font-size: .94rem; line-height: 1.65; margin: 14px 0 0; }
+  .footmeta { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); font-size: .74rem; color: var(--text-2); }
+  .footmeta .mono { color: var(--text); }
+
+  /* Sub-agent: nested mini-instance */
+  .mini-inst { margin-top: 14px; border: 1px solid var(--border); border-radius: var(--r); background: var(--bg-soft); padding: 14px; }
+  .mini-hd { display: flex; align-items: center; gap: 11px; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px dashed var(--border-2); }
+  .mini-hd .ava { width: 32px; height: 32px; border-radius: 9px; flex: 0 0 auto; color: #fff; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--ev-sub), color-mix(in srgb, var(--ev-sub) 55%, #000)); }
+  .mini-hd .ava svg { width: 17px; height: 17px; }
+  .mini-hd .n { font-weight: 700; font-size: .92rem; }
+  .mini-hd .s { font-size: .74rem; color: var(--text-2); }
+  .substream { display: flex; flex-direction: column; gap: 10px; }
+  .substream .card { box-shadow: inset 3px 0 0 var(--accent), var(--shadow-1); }
+  .substream .card::before { display: none; }
+  .substream .card > summary { padding: 10px 13px; gap: 11px; }
+  .substream .card .tile { width: 30px; height: 30px; border-radius: 8px; }
+  .substream .card .tile svg { width: 16px; height: 16px; }
+  .substream .card .title { font-size: .88rem; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+<symbol id="i-agent" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 8V5.2"/><path d="M12 4h0"/><path d="M9.3 13h0"/><path d="M14.7 13h0"/><path d="M9.5 16.2h5"/><path d="M2.6 12.5v3"/><path d="M21.4 12.5v3"/></symbol>
+<symbol id="i-think" viewBox="0 0 24 24"><path d="M12 3.2a5.4 5.4 0 0 0-3.4 9.6V15h6.8v-2.2A5.4 5.4 0 0 0 12 3.2Z"/><path d="M9.2 17.5h5.6"/><path d="M10.2 20h3.6"/></symbol>
+<symbol id="i-tool" viewBox="0 0 24 24"><path d="M14.7 6.2a3.8 3.8 0 0 0-5.1 5.1L3.4 17.5v3.1h3.1l6.2-6.2a3.8 3.8 0 0 0 5.1-5.1l-2.4 2.4-2.1-2.1 2.4-2.4Z"/></symbol>
+<symbol id="i-sub" viewBox="0 0 24 24"><rect x="9" y="3.2" width="6" height="4.2" rx="1.2"/><rect x="3" y="16.6" width="6" height="4.2" rx="1.2"/><rect x="15" y="16.6" width="6" height="4.2" rx="1.2"/><path d="M12 7.4v3.1"/><path d="M6 16.6v-2.1h12v2.1"/><path d="M12 10.5v4"/></symbol>
+<symbol id="i-transition" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2.3"/><circle cx="19" cy="12" r="2.3"/><path d="M7.3 12h9.4"/><path d="M14 9.4 16.7 12 14 14.6"/></symbol>
+<symbol id="i-start" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M10.2 8.4 16 12l-5.8 3.6Z"/></symbol>
+<symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M3.5 12h17"/><path d="M12 3.4c2.6 2.5 4.1 5.4 4.1 8.6S14.6 18.1 12 20.6c-2.6-2.5-4.1-5.4-4.1-8.6S9.4 5.9 12 3.4Z"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.4"/><path d="M20 20l-4.3-4.3"/></symbol>
+<symbol id="i-code" viewBox="0 0 24 24"><path d="M8.6 8.5 4.6 12l4 3.5"/><path d="M15.4 8.5 19.4 12l-4 3.5"/><path d="M13.4 6 10.6 18"/></symbol>
+<symbol id="i-doc" viewBox="0 0 24 24"><path d="M6.5 3.5h7l4 4v13h-11Z"/><path d="M13.4 3.6v4h4"/><path d="M9 13.5h6"/><path d="M9 16.8h6"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19.6 12a7.6 7.6 0 1 1-2.3-5.4"/><path d="M17.8 3.4v3.6h-3.6"/></symbol>
+<symbol id="i-theme" viewBox="0 0 24 24"><path d="M20 14.6A8 8 0 1 1 9.4 4a6.5 6.5 0 0 0 10.6 10.6Z"/></symbol>
+<symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 4.5H4.5V8"/><path d="M16 4.5h3.5V8"/><path d="M8 19.5H4.5V16"/><path d="M16 19.5h3.5V16"/></symbol>
+<symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3 5.5 13H11l-1 8 7.5-10H12l1-8Z"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></symbol>
+<symbol id="i-chevron-r" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+<symbol id="i-token" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M9 9.5h6M9 12h6M9 14.5h4"/></symbol>
+</defs></svg>
+<style>.ic{fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}</style>
+
+<div class="topbar">
+  <a class="brand" href="index.html" title="Back to gallery">
+    <span class="mark"><svg class="ic"><use href="#i-agent"/></svg></span>
+    <span style="display:flex;flex-direction:column;line-height:1.1">
+      <span class="eyebrow">Forge mockup</span><span class="name">Studio</span>
+    </span>
+  </a>
+  <span class="spacer"></span>
+  <button class="btn btn-ghost" onclick="setAllOpen(true)"><svg class="ic"><use href="#i-expand"/></svg>Expand all</button>
+  <button class="btn btn-ghost" onclick="setAllOpen(false)">Collapse all</button>
+  <button class="btn" onclick="toggleTheme()"><svg class="ic"><use href="#i-theme"/></svg><span data-theme-label>Dark</span></button>
+  <a class="btn" href="index.html"><svg class="ic"><use href="#i-arrow"/></svg>Gallery</a>
+</div>
+
+<div class="wrap">
+
+  <!-- Instance header -->
+  <div class="inst">
+    <div class="inst-top">
+      <span class="inst-ava"><svg class="ic"><use href="#i-agent"/></svg></span>
+      <div style="flex:1 1 auto;min-width:0">
+        <div class="inst-name">research / web-report</div>
+        <div class="inst-sub">
+          <span class="pill pill-soft pill-mono">v1</span>
+          <span class="pill pill-soft"><svg class="ic"><use href="#i-bolt"/></svg>gemini-2-5-flash</span>
+          <span class="mono faint">session 7f3a9c2e8b14</span>
+          <span class="faint">· started 14:32:08</span>
+        </div>
+      </div>
+      <span class="st st-run" style="font-size:.78rem;padding:6px 12px"><span class="dot"></span>Running · step 7</span>
+    </div>
+
+    <div class="inst-task">
+      <span class="lbl">Task</span>
+      Summarize and fact-check three articles on solid-state battery breakthroughs, then produce one combined report.
+    </div>
+
+    <div class="tiles">
+      <div class="tile-stat" style="--accent:var(--primary);--accent-rgb:var(--primary-rgb)"><span class="ti"><svg class="ic"><use href="#i-start"/></svg></span><span><span class="v">7</span><br><span class="l">Steps</span></span></div>
+      <div class="tile-stat" style="--accent:var(--secondary);--accent-rgb:var(--secondary-rgb)"><span class="ti"><svg class="ic"><use href="#i-tool"/></svg></span><span><span class="v">4</span><br><span class="l">Tool calls</span></span></div>
+      <div class="tile-stat" style="--accent:var(--tertiary);--accent-rgb:var(--tertiary-rgb)"><span class="ti"><svg class="ic"><use href="#i-sub"/></svg></span><span><span class="v">1</span><br><span class="l">Sub-agent</span></span></div>
+      <div class="tile-stat" style="--accent:var(--info);--accent-rgb:var(--info-rgb)"><span class="ti"><svg class="ic"><use href="#i-token"/></svg></span><span><span class="v">18.2k</span><br><span class="l">Tokens</span></span></div>
+    </div>
+  </div>
+
+  <!-- Event stream -->
+  <div class="stream">
+
+    <details class="card card--sys">
+      <summary><span class="tile"><svg class="ic"><use href="#i-start"/></svg></span>
+        <span class="head"><span class="title"><span class="kind">start</span> Run started</span><span class="summ">entry state analyze · 3 inputs · cycle 0</span></span>
+        <span class="right"><span class="st st-ok"><span class="dot"></span>Done</span><span class="dur">14:32:08</span><svg class="ic chev"><use href="#i-chevron-r"/></svg></span></summary>
+      <div class="body">
+        <div class="panel2"><div class="ph"><span class="io-label">Inputs</span><span class="badge">json</span></div><div class="code">{
+  "task": "Summarize and fact-check 3 articles",
+  "urls": [
+    "https://techreview.example.com/solid-state-2026",
+    "https://battery-news.example.com/qse-cells",
+    "https://arxiv.example.org/abs/2606.01234"
+  ]
+}</div></div>
+      </div>
+    </details>
+
+    <details class="card card--think">
+      <summary><span class="tile"><svg class="ic"><use href="#i-think"/></svg></span>
+        <span class="head"><span class="title"><span class="kind">thinking</span> Planned the approach</span><span class="summ">Scrape each page → extract claims → delegate fact-check → synthesize</span></span>
+        <span class="right"><span class="st st-ok"><span class="dot"></span>2.0s</span><svg class="ic chev"><use href="#i-chevron-r"/></svg></span></summary>
+      <div class="body"><p class="msgtext muted" style="font-style:italic">"Three URLs to read. I'll scrape each page, pull the quantitative claims, hand them to the fact-checker sub-agent for independent verification, then synthesize everything into one Markdown report."</p></div>
+    </details>
+
+    <details class="card card--msg" open>
+      <summary><span class="tile"><svg class="ic"><use href="#i-agent"/></svg></span>
+        <span class="head"><span class="title"><span class="kind">message</span> web-report</span><span class="summ">Plan acknowledged</span></span>
+        <span class="right"><span class="st st-ok"><span class="dot"></span>Done</span><span class="dur">14:32:11</span><svg class="ic chev"><use href="#i-chevron-r"/></svg></span></summary>
+      <div class="body"><p class="msgtext">Got it — I'll pull the three articles, extract the key claims, verify the numbers, then combine everything into a single report.</p></div>
+    </details>
+
+    <details class="card card--tool">
+      <summary><span class="tile"><svg class="ic"><use href="#i-globe"/></svg></span>
+        <span class="head"><span class="title"><span class="kind">web-scrape</span></span><span class="summ">techreview.example.com — 4,812 chars fetched</span></span>
+        <span class="right"><span class="st st-ok"><span class="dot"></span>1.2s</span><svg class="ic chev"><use href="#i-chevron-r"/></svg></span></summary>
+      <div class="body">
+        <div class="panel2"><div class="ph"><span class="io-label">Input</span></div><div class="code">{ "url": "https://techreview.example.com/solid-state-2026" }</div></div>
+        <div class="panel2"><div class="ph"><span class="io-label">Output</span><span class="badge">4,812 chars</span></div><div class="code">Solid-state batteries reached 500 Wh/kg in QuantumScape's QSE-5
+cells — nearly double today's lithium-ion packs. They sustained
+1,200 charge cycles at 90% capacity and fast-charged 10→80%
+in 15 minutes…</div></div>
+        <div class="footmeta"><span>started <span class="mono">14:32:12</span></span><span>tokens <span class="mono">1,204</span></span><span>tool <span class="mono">web-scrape</span></span></div>
+      </div>
+    </details>
+
+    <details class="card card--tool">
+      <summary><span class="tile"><svg class="ic"><use href="#i-globe"/></svg></span>
+        <span class="head"><span class="title"><span class="kind">web-scrape</span></span><span class="summ">battery-news.example.com — blocked the request</span></span>
+        <span class="right"><span class="st st-fail"><span class="dot"></span>403</span><span class="dur">0.4s</span><svg class="ic chev"><use href="#i-chevron-r"/></svg></span></summary>
+      <div class="body">
+        <div class="panel2"><div class="ph"><span class="io-label">Input</span></div><div class="code">{ "url": "https://battery-news.example.com/qse-cells" }</div></div>
+        <div class="panel2 err"><div class="ph"><span class="io-label">Error</span><span class="badge">HTTP 403</span></div><div class="code">Forbidden — the origin blocked an automated request (no browser User-Agent supplied).</div></div>
+        <div class="footmeta"><span>started <span class="mono">14:32:13</span></span><span style="color:var(--error)">failed · will retry with headers</span></div>
+      </div>
+    </details>
+
+    <details class="card card--tool">
+      <summary><span class="tile"><svg class="ic"><use href="#i-refresh"/></svg></span>
+        <span class="head"><span class="title"><span class="kind">web-scrape</span> retry</span><span class="summ">added browser headers — 3,120 chars fetched</span></span>
+        <span class="right"><span class="st st-ok"><span class="dot"></span>1.9s</span><svg class="ic chev"><use href="#i-chevron-r"/></svg></span></summary>
+      <div class="body">
+        <div class="panel2"><div class="ph"><span class="io-label">Input</span></div><div class="code">{
+  "url": "https://battery-news.example.com/qse-cells",
+  "headers": { "User-Agent": "Mozilla/5.0 (compatible; ReviBot/1.0)" }
+}</div></div>
+        <div class="panel2"><div class="ph"><span class="io-label">Output</span><span class="badge">3,120 chars</span></div><div class="code">QuantumScape's QSE pilot line is slated for 2026. Independent labs
+measured cycle life at ~1,200 cycles, consistent with the company's
+own figures…</div></div>
+      </div>
+    </details>
+
+    <details class="card card--tool">
+      <summary><span class="tile"><svg class="ic"><use href="#i-code"/></svg></span>
+        <span class="head"><span class="title"><span class="kind">web-extract</span></span><span class="summ">4 quantitative claims extracted</span></span>
+        <span class="right"><span class="st st-ok"><span class="dot"></span>0.9s</span><svg class="ic chev"><use href="#i-chevron-r"/></svg></span></summary>
+      <div class="body">
+        <div class="panel2"><div class="ph"><span class="io-label">Output</span><span class="badge">json</span></div><div class="code">{
+  "claims": [
+    { "id": 1, "metric": "energy_density", "value": "500 Wh/kg" },
+    { "id": 2, "metric": "cycle_life",     "value": "1200 @ 90%" },
+    { "id": 3, "metric": "fast_charge",    "value": "10→80% / 15m" },
+    { "id": 4, "metric": "production",     "value": "2026 pilot" }
+  ]
+}</div></div>
+      </div>
+    </details>
+
+    <details class="card card--msg">
+      <summary><span class="tile"><svg class="ic"><use href="#i-agent"/></svg></span>
+        <span class="head"><span class="title"><span class="kind">message</span> web-report</span><span class="summ">Delegating verification to the fact-checker</span></span>
+        <span class="right"><span class="st st-ok"><span class="dot"></span>Done</span><span class="dur">14:32:18</span><svg class="ic chev"><use href="#i-chevron-r"/></svg></span></summary>
+      <div class="body"><p class="msgtext">I found 4 quantitative claims. Before writing the report I'll verify the headline numbers with the fact-checker sub-agent.</p></div>
+    </details>
+
+    <!-- Sub-agent: nested mini-instance -->
+    <details class="card card--sub" open>
+      <summary><span class="tile"><svg class="ic"><use href="#i-sub"/></svg></span>
+        <span class="head"><span class="title"><span class="kind">sub-agent</span> research / fact-checker</span><span class="summ">verifying 4 claims · 3 of 5 steps done</span></span>
+        <span class="right"><span class="st st-run"><span class="dot"></span>Running</span><svg class="ic chev"><use href="#i-chevron-r"/></svg></span></summary>
+      <div class="body">
+        <div class="panel2"><div class="ph"><span class="io-label">Invocation</span><span class="badge">invoke_agent</span></div><div class="code">{
+  "agent": "research/fact-checker",
+  "task": "Verify these 4 claims against independent sources",
+  "inputs": { "claims": 4 }
+}</div></div>
+
+        <div class="mini-inst">
+          <div class="mini-hd">
+            <span class="ava"><svg class="ic"><use href="#i-agent"/></svg></span>
+            <div style="flex:1 1 auto"><div class="n">fact-checker <span class="pill pill-soft pill-mono" style="vertical-align:middle">v2</span></div><div class="s">depth 1 · entry state verify · 3 / 5 steps</div></div>
+            <span class="st st-run"><span class="dot"></span>Running</span>
+          </div>
+
+          <div class="substream">
+            <details class="card card--sys">
+              <summary><span class="tile"><svg class="ic"><use href="#i-start"/></svg></span><span class="head"><span class="title">Sub-run started</span></span><span class="right"><span class="st st-ok"><span class="dot"></span>Done</span><svg class="ic chev"><use href="#i-chevron-r"/></svg></span></summary>
+              <div class="body"><div class="panel2"><div class="ph"><span class="io-label">Inputs</span></div><div class="code">{ "claims": 4, "depth": 1 }</div></div></div>
+            </details>
+            <details class="card card--think">
+              <summary><span class="tile"><svg class="ic"><use href="#i-think"/></svg></span><span class="head"><span class="title">Thinking</span><span class="summ">one source per claim; compare figures</span></span><span class="right"><span class="st st-ok"><span class="dot"></span>Done</span><svg class="ic chev"><use href="#i-chevron-r"/></svg></span></summary>
+              <div class="body"><p class="msgtext muted" style="font-style:italic">"I'll search for one independent source per claim and check whether the figures agree."</p></div>
+            </details>
+            <details class="card card--tool">
+              <summary><span class="tile"><svg class="ic"><use href="#i-search"/></svg></span><span class="head"><span class="title"><span class="kind">web-search</span></span><span class="summ">claim 1 corroborated by 2 sources ✓</span></span><span class="right"><span class="st st-ok"><span class="dot"></span>1.1s</span><svg class="ic chev"><use href="#i-chevron-r"/></svg></span></summary>
+              <div class="body"><div class="panel2"><div class="ph"><span class="io-label">Output</span></div><div class="code">5 results · corroborated by IEEE Spectrum, Nature Energy</div></div></div>
+            </details>
+            <details class="card card--tool" open>
+              <summary><span class="tile"><svg class="ic"><use href="#i-search"/></svg></span><span class="head"><span class="title"><span class="kind">web-search</span></span><span class="summ">verifying claim 2 — cycle life 1,200…</span></span><span class="right"><span class="st st-run"><span class="dot"></span>Running</span><svg class="ic chev"><use href="#i-chevron-r"/></svg></span></summary>
+              <div class="body"><div class="panel2"><div class="ph"><span class="io-label">Input</span></div><div class="code">{ "q": "QSE-5 cycle life 1200 independent test" }</div></div><div class="muted" style="font-size:.84rem;margin-top:10px;display:flex;align-items:center;gap:8px"><svg class="ic spin" style="width:15px;height:15px;color:var(--info)"><use href="#i-refresh"/></svg> awaiting results…</div></div>
+            </details>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- Pending -->
+    <details class="card card--sys" style="opacity:.6">
+      <summary><span class="tile"><svg class="ic"><use href="#i-transition"/></svg></span>
+        <span class="head"><span class="title"><span class="kind">transition</span> analyze → report</span><span class="summ">awaiting signal READY</span></span>
+        <span class="right"><span class="st st-wait"><span class="dot"></span>Queued</span><svg class="ic chev"><use href="#i-chevron-r"/></svg></span></summary>
+      <div class="body"><p class="msgtext muted">Fires once all claims are verified and the agent emits the <span class="mono">READY</span> signal.</p></div>
+    </details>
+
+    <details class="card card--sys" style="opacity:.6">
+      <summary><span class="tile"><svg class="ic"><use href="#i-doc"/></svg></span>
+        <span class="head"><span class="title"><span class="kind">report</span> Final report</span><span class="summ">waiting for the analyze stage to finish…</span></span>
+        <span class="right"><span class="st st-wait"><span class="dot"></span>Queued</span><svg class="ic chev"><use href="#i-chevron-r"/></svg></span></summary>
+      <div class="body"><p class="msgtext muted">The combined Markdown report will render here once generated.</p></div>
+    </details>
+
+  </div>
+</div>
+
+<script src="mockup.js?v=2"></script>
+</body>
+</html>
