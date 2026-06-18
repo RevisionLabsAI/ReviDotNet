@@ -24,6 +24,8 @@ This is the full set of rules (most are on by default):
   - Cross-checks the `Input` labels you pass against the `{placeholders}` declared in the prompt's `[[_system]]`/`[[_instruction]]`. A missing required placeholder is an **Error**; an input with no matching placeholder is a **Warning**.
 - REVI004 — Duplicate prompt name (Warning)
   - Reports when multiple `.pmt` files resolve to the same effective prompt name.
+- REVI009 — Unpaired few-shot example (Warning)
+  - Flags a `.pmt` file with an `[[_exin_N]]` that has no matching `[[_exout_N]]` (or vice versa). The runtime pairs examples by index and silently drops a half-pair, so an off-by-one or typo in the index would otherwise lose a whole exemplar with no feedback.
 - REVI006 — Agent not found
   - Ensures a referenced agent name exists among your `.agent` files under `RConfigs/Agents` (any depth).
   - Uses runtime-equivalent name resolution: lower-cased folder prefix + `[[information]] name` from the `.agent` file.
@@ -193,6 +195,27 @@ string text = await Revi.Infer.ToString("x/z", new { query = "..." });
 How to fix:
 - Create or move a `.pmt` under `RConfigs/Prompts/<folders>/...` with `[[information]] name = <name>` so that the effective name matches the string you pass in code, or
 - Update the code to use the correct effective name that already exists.
+
+### REVI009 — Unpaired few-shot example
+
+- Category: Configuration
+- Default severity: Warning
+- Triggers when: A `.pmt` file declares an `[[_exin_N]]` section without a matching `[[_exout_N]]` (or an `[[_exout_N]]` without a matching `[[_exin_N]]`). Reported at the orphaned section's line.
+
+Example that produces REVI009:
+
+```ini
+[[_exin_1]]
+hi
+[[_exout_1]]
+hello
+[[_exin_2]]
+orphaned — there is no [[_exout_2]]
+```
+
+How to fix:
+- Add the missing half (`[[_exout_2]]` above), or
+- Renumber/remove the stray section so every `_exin_N` has exactly one `_exout_N` with the same index.
 
 ### REVI006 — Agent not found
 

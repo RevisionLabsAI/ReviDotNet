@@ -22,7 +22,7 @@ When embedding structured content inside `.pmt` files (for example in `[[_exout_
 The INI-like parser has a few behaviors worth knowing:
 
 - **Comments**: `#` starts a comment only when it is the **first non-whitespace character** of a line, and only in key-value sections (`[[information]]`, `[[settings]]`, `[[tuning]]`). An inline `#` (e.g. `name = a # b`) is preserved as part of the value. Inside raw sections (`[[_system]]`, `[[_instruction]]`, `[[_exout_N]]`, …) `#` is never a comment.
-- **Blank lines are dropped everywhere**, including inside raw sections. A whitespace-only line in `[[_system]]`/`[[_exout_N]]` is removed — you can't use blank lines to separate paragraphs in system text or to format multi-line examples.
+- **Blank lines**: inside raw sections (`[[_system]]`, `[[_instruction]]`, `[[_exin_N]]`, `[[_exout_N]]`, …) blank lines are **preserved**, so you can separate paragraphs in system text and format multi-line/multi-paragraph examples naturally. Leading and trailing blank lines of a raw section are trimmed, but internal ones are kept verbatim. In key-value sections (`[[information]]`/`[[settings]]`/`[[tuning]]`) blank lines are ignored.
 - **Section headers** must be a line of the exact form `[[name]]` with nothing after the closing `]]`. Trailing text on a header line breaks header recognition.
 - **Literal `[[…]]` inside a raw section**: prefix the line with a backslash — `\[[not a header]]` — and the parser emits the literal `[[not a header]]` without ending the raw block (the backslash is stripped).
 
@@ -68,9 +68,10 @@ Operational settings that govern how the prompt is executed. All items in this s
 | `preferred-models` | list | `null` | Comma/space-separated list of preferred models (e.g., `gpt-4o, groq-llama-3`).                                                                                                                                                                                                                         |
 | `blocked-models` | list | `null` | List of models that should never be used.                                                                                                                                                                                                                                                              |
 | `min-tier` | string | `C` | Minimum model tier required: `A` (Highest), `B` (Mid), `C` (Lowest). On the prompt this is stored as a **raw string** (no enum validation or default at parse time) and interpreted by `ModelManager.Find` — **case-insensitively** (`a`/`A` both work); an unrecognized/typo value means "no minimum", i.e. effectively `C`. Selection returns the lowest-tier enabled model whose tier ≥ this minimum. |
-| `completion-type` | string | `auto` | The completion interface to use. Options: `chat-only`, `prompt-only`, `prompt-chat-one`, `prompt-chat-multi`, or `auto` (unset → `chat-only`). These kebab values are normalized at runtime. A model profile's `[[override-settings]] completion-type` (a strict `CompletionType` enum) overrides this when set. Note: the separate `Prompt.IsChat()`/`IsCompletion()` helpers are a legacy convention that only recognize the literal strings `chat`/`completion`, distinct from this setting. |
+| `completion-type` | string | `auto` | The completion interface to use. Options: `chat-only`, `prompt-only`, `prompt-chat-one`, `prompt-chat-multi`, or `auto` (unset → `chat-only`). These kebab values are normalized at runtime. A model profile's `[[override-settings]] completion-type` (a strict `CompletionType` enum) overrides this when set. The `Prompt.IsCompletion()` helper (used for model selection) recognizes all of these forms — the three `prompt-*` types prefer a completion-capable provider (falling back to any model when none exists), while `chat-only`/`auto` do not. |
 | `system-input-type-override` | enum | `null` | Overrides the model's `system-input-type`. Options: `None`, `Listed`, `Filled`, `Both`. (`Both` = fill matching `{placeholders}` first, then list any inputs that weren't used for a placeholder.) |
 | `instruction-input-type-override` | enum | `null` | Overrides the model's `instruction-input-type`. Options: `None`, `Listed`, `Filled`, `Both`. (`Both` = fill matching `{placeholders}` first, then list the remainder.) |
+| `strict-inputs` | boolean | `false` | Validates input usage when the prompt is rendered. When the rendered prompt still contains an **unfilled `{placeholder}`** (no input matched it), or a provided input matched no placeholder and was **dropped** (pure `Filled` mode), ReviDotNet logs a warning. With `strict-inputs = true` it **throws** instead, so a mistyped label/placeholder fails fast (e.g. in CI) rather than shipping literal braces. Default (false/unset) is warn-only and never changes existing behavior. |
 
 ### `[[tuning]]` (Optional)
 Parameters to control the model's sampling behavior. All items in this section are optional.
@@ -103,7 +104,9 @@ Examples are used for "few-shot" prompting. They are defined in numbered pairs:
 *   `[[_exin_N]]`: The input for the N-th example.
 *   `[[_exout_N]]`: The expected output for the N-th example.
 
-ReviDotNet automatically pairs these by their index (`N`).
+ReviDotNet automatically pairs these by their index (`N`). **Both halves are required** — an `[[_exin_N]]` with no matching `[[_exout_N]]` (or vice versa) is a half-pair that gets **silently dropped** when the prompt loads. To catch the off-by-one/typo that causes this, ReviDotNet:
+- logs a load-time warning (`example N … is missing its input/output side`), and
+- raises analyzer warning **REVI009** at build time when your `.pmt` files are included as `AdditionalFiles` (see `analyzers.md`).
 
 #### Input Formatting (`[[_exin_N]]`)
 

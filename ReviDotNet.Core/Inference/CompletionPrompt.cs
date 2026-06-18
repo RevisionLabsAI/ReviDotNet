@@ -42,12 +42,13 @@ public static class CompletionPrompt
 		
 		// Process inputs
 		ProcessInputs(
-			prompt, 
-			model, 
-			out string systemSection, 
-			out string instructionSection, 
-			out string inputSection, 
-			inputs);
+			prompt,
+			model,
+			out string systemSection,
+			out string instructionSection,
+			out string inputSection,
+			inputs,
+			validate: true);
 
 		string exampleSection = ListExamples(prompt, model);
 		//Util.Log($"exampleSection: \n'''\n{exampleSection}\n'''\n");
@@ -141,7 +142,8 @@ public static class CompletionPrompt
 		out string systemSection,
 		out string instructionSection,
 		out string inputSection,
-		List<Input>? inputs = null)
+		List<Input>? inputs = null,
+		bool validate = false)
 	{
 		// Process inputs
 		// TODO: Add checks for inputs
@@ -161,7 +163,8 @@ public static class CompletionPrompt
 		// Handle "Both" input type or standard "Filled"
 		// We fill first to see what's left
 		List<Input> listedInputs = [.. inputs];
-		
+		HashSet<string> matched = new();
+
 		if (systemInputType == InputType.Filled || systemInputType == InputType.Both)
 		{
 			foreach (Input input in inputs)
@@ -170,6 +173,7 @@ public static class CompletionPrompt
 				// Use Case-Insensitive search and replace for better robustness
 				if (systemSection.Contains(placeholder, StringComparison.OrdinalIgnoreCase))
 				{
+					matched.Add(input.Identifier);
 					systemSection = Regex.Replace(systemSection, Regex.Escape(placeholder), input.Text, RegexOptions.IgnoreCase);
 					if (systemInputType == InputType.Both)
 					{
@@ -186,6 +190,7 @@ public static class CompletionPrompt
 				string placeholder = "{" + input.Identifier + "}";
 				if (instructionSection.Contains(placeholder, StringComparison.OrdinalIgnoreCase))
 				{
+					matched.Add(input.Identifier);
 					instructionSection = Regex.Replace(instructionSection, Regex.Escape(placeholder), input.Text, RegexOptions.IgnoreCase);
 					if (instructionInputType == InputType.Both)
 					{
@@ -197,7 +202,7 @@ public static class CompletionPrompt
 
 		// Generate the inputList if we're going to need it
 		string? inputList = "";
-		if (systemInputType == InputType.Listed || instructionInputType == InputType.Listed || 
+		if (systemInputType == InputType.Listed || instructionInputType == InputType.Listed ||
 		    systemInputType == InputType.Both || instructionInputType == InputType.Both)
 		{
 			if (listedInputs.Any())
@@ -205,6 +210,24 @@ public static class CompletionPrompt
 				inputList = Infer.ListInputs(model, listedInputs);
 				inputSection = AddOrFillInput(InputType.Listed, inputList, listedInputs, "");
 			}
+		}
+
+		// Warn (or throw under strict-inputs) on unfilled {placeholders} / dropped inputs — only for the
+		// real prompt render, not per-example renders (whose bodies may contain literal braces).
+		if (validate)
+		{
+			bool anyListed = systemInputType is InputType.Listed or InputType.Both
+			              || instructionInputType is InputType.Listed or InputType.Both;
+			InputValidation.Check(
+				prompt,
+				inputs,
+				new List<(string?, bool)>
+				{
+					(systemSection, systemInputType is InputType.Filled or InputType.Both),
+					(instructionSection, instructionInputType is InputType.Filled or InputType.Both),
+				},
+				matched,
+				unmatchedInputsAreDropped: !anyListed);
 		}
 	}
 	#endregion

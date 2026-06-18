@@ -31,7 +31,7 @@ public static class CompletionChat
 	public static List<Message> BuildMessages(Prompt prompt, ModelProfile model, List<Input>? inputs = null, bool singleMessageExamples = false)
 	{
 		// Process inputs
-		ProcessInputs(prompt, model, out string system, out string instruction, inputs);
+		ProcessInputs(prompt, model, out string system, out string instruction, inputs, validate: true);
 
 		// Form the prompt
 		List<Message> messages = new List<Message>();
@@ -160,11 +160,12 @@ public static class CompletionChat
 	/// <param name="instruction">The output instruction string after processing inputs.</param>
 	/// <param name="inputs">The list of inputs used for replacing placeholders in the prompt.</param>
 	private static void ProcessInputs(
-		Prompt prompt, 
+		Prompt prompt,
 		ModelProfile model,
-		out string system, 
-		out string instruction, 
-		List<Input>? inputs = null)
+		out string system,
+		out string instruction,
+		List<Input>? inputs = null,
+		bool validate = false)
 	{
 		// Process inputs
 		// TODO: Add checks for inputs
@@ -183,7 +184,8 @@ public static class CompletionChat
 		// Handle "Both" input type or standard "Filled"
 		// We fill first to see what's left
 		List<Input> listedInputs = [.. inputs];
-		
+		HashSet<string> matched = new();
+
 		if (systemInputType == InputType.Filled || systemInputType == InputType.Both)
 		{
 			foreach (Input input in inputs)
@@ -191,6 +193,7 @@ public static class CompletionChat
 				string placeholder = "{" + input.Identifier + "}";
 				if (system.Contains(placeholder, StringComparison.OrdinalIgnoreCase))
 				{
+					matched.Add(input.Identifier);
 					system = Regex.Replace(system, Regex.Escape(placeholder), input.Text, RegexOptions.IgnoreCase);
 					if (systemInputType == InputType.Both)
 					{
@@ -207,6 +210,7 @@ public static class CompletionChat
 				string placeholder = "{" + input.Identifier + "}";
 				if (instruction.Contains(placeholder, StringComparison.OrdinalIgnoreCase))
 				{
+					matched.Add(input.Identifier);
 					instruction = Regex.Replace(instruction, Regex.Escape(placeholder), input.Text, RegexOptions.IgnoreCase);
 					if (instructionInputType == InputType.Both)
 					{
@@ -240,6 +244,24 @@ public static class CompletionChat
 
 		if (instructionInputType == InputType.Both && !string.IsNullOrEmpty(inputList))
 			instruction = AddOrFillInput(InputType.Listed, inputList, listedInputs, instruction);
+
+		// Warn (or throw under strict-inputs) on unfilled {placeholders} / dropped inputs — only for the
+		// real prompt render, not per-example renders (whose bodies may contain literal braces).
+		if (validate)
+		{
+			bool anyListed = systemInputType is InputType.Listed or InputType.Both
+			              || instructionInputType is InputType.Listed or InputType.Both;
+			InputValidation.Check(
+				prompt,
+				inputs,
+				new List<(string?, bool)>
+				{
+					(system, systemInputType is InputType.Filled or InputType.Both),
+					(instruction, instructionInputType is InputType.Filled or InputType.Both),
+				},
+				matched,
+				unmatchedInputsAreDropped: !anyListed);
+		}
 	}
 	#endregion
 	

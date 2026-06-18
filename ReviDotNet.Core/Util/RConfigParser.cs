@@ -221,12 +221,12 @@ public static class RConfigParser
         {
             using var reader = new StringReader(content);
             string line;
-        
+
             while ((line = reader.ReadLine()) != null)
             {
-                if (string.IsNullOrWhiteSpace(line))
-                    continue;
-                
+                // Blank lines are NOT skipped here: inside a raw [[_section]] they are meaningful
+                // (paragraph separators in system/instruction/example bodies). ProcessLine drops them
+                // only in non-raw key=value sections.
                 ProcessLine(
                     line, 
                     ref currentSection, 
@@ -262,9 +262,7 @@ public static class RConfigParser
         {
             foreach (string line in File.ReadAllLines(filePath))
             {
-                if (string.IsNullOrWhiteSpace(line))
-                    continue;
-                
+                // Blank lines are NOT skipped here (see ReadEmbedded): raw [[_section]] bodies keep them.
                 ProcessLine(
                     line, 
                     ref currentSection, 

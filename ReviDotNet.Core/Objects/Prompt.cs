@@ -87,6 +87,15 @@ public class Prompt
     [JsonProperty("instruction-input-type-override"), RConfigProperty("settings_instruction-input-type-override")]
     public InputType? InstructionInputTypeOverride { get; set; }
 
+    /// <summary>
+    /// When true, a missing fill (an unfilled <c>{placeholder}</c> left in the rendered prompt, or a
+    /// provided input that matched no placeholder and was dropped) throws instead of only logging a
+    /// warning. Defaults to null/false (warn-only) so existing prompts are unaffected; opt in for
+    /// fail-fast validation in CI.
+    /// </summary>
+    [JsonProperty("strict-inputs"), RConfigProperty("settings_strict-inputs")]
+    public bool? StrictInputs { get; set; }
+
     
     // Tuning
     [JsonProperty("temperature"), RConfigProperty("tuning_temperature")]
@@ -262,13 +271,24 @@ public class Prompt
     // ======================
     
     #region Supporting Functions
+    /// <summary>
+    /// Whether the given completion-type prefers the prompt-completion interface (so model selection
+    /// should prefer a completion-capable provider). True for the legacy <c>completion</c> alias and for
+    /// the documented kebab forms <c>prompt-only</c>, <c>prompt-chat-one</c>, <c>prompt-chat-multi</c>
+    /// (the last two "prefer prompt completion, but fall back to chat" per <see cref="CompletionType"/>).
+    /// Accepts PascalCase and is hyphen/underscore- and case-insensitive. <c>auto</c>/null/unknown is false.
+    /// </summary>
     public static bool IsCompletion(string? chatOrCompletion)
     {
-        switch (chatOrCompletion)
+        switch (Normalize(chatOrCompletion))
         {
-            case "chat": return false;
-            case "completion": return true;
-            default: return false; //throw new Exception("Invalid chat-or-completion value");
+            case "completion":
+            case "promptonly":
+            case "promptchatone":
+            case "promptchatmulti":
+                return true;
+            default:
+                return false;
         }
     }
 
@@ -276,15 +296,23 @@ public class Prompt
     {
         return IsCompletion(CompletionType);
     }
-    
+
+    /// <summary>
+    /// Whether the given completion-type uses the chat interface. True for the legacy <c>chat</c> alias
+    /// and for <c>chat-only</c>, <c>prompt-chat-one</c>, <c>prompt-chat-multi</c> (which dispatch as / fall
+    /// back to chat). Hyphen/underscore- and case-insensitive. <c>auto</c>/null/unknown is false.
+    /// </summary>
     public static bool IsChat(string? chatOrCompletion)
     {
-        switch (chatOrCompletion)
+        switch (Normalize(chatOrCompletion))
         {
-            case "chat": return true;
-            case "completion": return false;
-            //default: return null; //throw new Exception("Invalid chat-or-completion value");
-            default: return false;
+            case "chat":
+            case "chatonly":
+            case "promptchatone":
+            case "promptchatmulti":
+                return true;
+            default:
+                return false;
         }
     }
 
@@ -292,6 +320,12 @@ public class Prompt
     {
         return IsChat(CompletionType);
     }
+
+    /// <summary>Lower-cases and strips '-'/'_' so kebab, snake, and PascalCase completion-types compare equal.</summary>
+    private static string Normalize(string? value)
+        => string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : value.Trim().Replace("-", string.Empty).Replace("_", string.Empty).ToLowerInvariant();
     
     private static string CreateSchemaFromExamples(List<Example> examples)
     {
@@ -434,6 +468,37 @@ public class Prompt
 
         return pairedExamples;
     }
+
+    /// <summary>
+    /// Finds few-shot example halves that are missing their counterpart — an <c>_exin_N</c> with no
+    /// matching <c>_exout_N</c> (or vice versa). A complete pair needs both sides; an orphan is silently
+    /// dropped by <see cref="ExtractExamples"/>, so callers surface these as load-time warnings.
+    /// </summary>
+    /// <param name="data">The raw parsed prompt dictionary.</param>
+    /// <returns>(index, missingSide) tuples where missingSide is "input" or "output", ordered by index.</returns>
+    public static List<(int Index, string MissingSide)> FindUnpairedExamples(Dictionary<string, string> data)
+    {
+        var inputs = new HashSet<int>();
+        var outputs = new HashSet<int>();
+
+        foreach (var key in data.Keys)
+        {
+            var inMatch = Regex.Match(key, @"^_exin_(\d+)$");
+            if (inMatch.Success) { inputs.Add(int.Parse(inMatch.Groups[1].Value)); continue; }
+
+            var outMatch = Regex.Match(key, @"^_exout_(\d+)$");
+            if (outMatch.Success) { outputs.Add(int.Parse(outMatch.Groups[1].Value)); }
+        }
+
+        var unpaired = new List<(int Index, string MissingSide)>();
+        foreach (var i in inputs)
+            if (!outputs.Contains(i)) unpaired.Add((i, "output"));
+        foreach (var i in outputs)
+            if (!inputs.Contains(i)) unpaired.Add((i, "input"));
+
+        unpaired.Sort((a, b) => a.Index.CompareTo(b.Index));
+        return unpaired;
+    }
     
     public static void CallInitIfExists(object obj)
     {
@@ -564,6 +629,14 @@ public class Prompt
             }
         }
 
+
+        // Warn on example halves missing their counterpart — an off-by-one or typo in the index silently
+        // drops a whole few-shot pair, so tell the author rather than losing it quietly.
+        foreach (var (index, missingSide) in FindUnpairedExamples(data))
+        {
+            string missingKey = missingSide == "output" ? $"_exout_{index}" : $"_exin_{index}";
+            Util.Log($"Warning: example {index} in prompt '{prompt.Name}' is missing its {missingSide} side ([[{missingKey}]]); the pair will be dropped.");
+        }
 
         // Special handling for examples
         var examplePairs = ExtractExamples(data);
