@@ -2,7 +2,7 @@
 name = openai
 enabled = true
 protocol = OpenAI
-api-url = https://api.openai.com/v1/
+api-url = https://api.openai.com/
 api-key = environment
 default-model = gpt-4o-mini
 

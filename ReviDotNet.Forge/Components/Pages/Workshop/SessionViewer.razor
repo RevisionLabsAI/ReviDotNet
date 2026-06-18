@@ -139,6 +139,11 @@ else
         {
             <GroupedInstanceView Data="data" />
         }
+        else if (rs.Events.Count > 0)
+        {
+            @* Events exist but no run-root could be projected — show the flat trace so nothing is lost. *@
+            <AgentEventTrace Events="@rs.Events" />
+        }
         else if (!string.IsNullOrEmpty(rs.ErrorMessage))
         {
             <MudAlert Severity="Severity.Error">@rs.ErrorMessage</MudAlert>

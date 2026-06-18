@@ -220,6 +220,7 @@ internal class InferenceHttpClient : IDisposable
                 if (claudeUsage.TryGetProperty("input_tokens", out var it)) result["input_tokens"] = it.GetInt32().ToString();
                 if (claudeUsage.TryGetProperty("output_tokens", out var ot)) result["output_tokens"] = ot.GetInt32().ToString();
             }
+            if (data.TryGetValue("model", out var claudeModel)) result["model"] = claudeModel.GetString() ?? string.Empty;
             return result;
         }
 
@@ -227,12 +228,12 @@ internal class InferenceHttpClient : IDisposable
         if (_config.Protocol == Protocol.Gemini)
         {
             if (data.TryGetValue("candidates", out JsonElement candidates) &&
-                candidates.ValueKind == JsonValueKind.Array)
+                candidates.ValueKind == JsonValueKind.Array && candidates.GetArrayLength() > 0)
             {
                 JsonElement firstCandidate = candidates[0];
                 if (firstCandidate.TryGetProperty("content", out JsonElement content) &&
                     content.TryGetProperty("parts", out JsonElement parts) &&
-                    parts.ValueKind == JsonValueKind.Array)
+                    parts.ValueKind == JsonValueKind.Array && parts.GetArrayLength() > 0)
                 {
                     JsonElement firstPart = parts[0];
                     if (firstPart.TryGetProperty("text", out JsonElement textElement))
@@ -241,11 +242,19 @@ internal class InferenceHttpClient : IDisposable
                 if (firstCandidate.TryGetProperty("finishReason", out JsonElement finishReason))
                     result.Add("finish_reason", finishReason.GetString() ?? string.Empty);
             }
+            else if (data.TryGetValue("promptFeedback", out var pf) && pf.ValueKind == JsonValueKind.Object &&
+                     pf.TryGetProperty("blockReason", out var blockReason))
+            {
+                // Safety-blocked or otherwise empty candidates: surface the reason and leave text
+                // empty so the agent degrades to a clean parse-failure path rather than throwing.
+                result["finish_reason"] = blockReason.GetString() ?? "blocked";
+            }
             if (data.TryGetValue("usageMetadata", out var geminiMeta) && geminiMeta.ValueKind == JsonValueKind.Object)
             {
                 if (geminiMeta.TryGetProperty("promptTokenCount", out var pt)) result["input_tokens"] = pt.GetInt32().ToString();
                 if (geminiMeta.TryGetProperty("candidatesTokenCount", out var ct)) result["output_tokens"] = ct.GetInt32().ToString();
             }
+            if (data.TryGetValue("modelVersion", out var geminiModel)) result["model"] = geminiModel.GetString() ?? string.Empty;
         }
         else
         {
@@ -261,28 +270,32 @@ internal class InferenceHttpClient : IDisposable
                     if (respUsage.TryGetProperty("input_tokens", out var it)) result["input_tokens"] = it.GetInt32().ToString();
                     if (respUsage.TryGetProperty("output_tokens", out var ot)) result["output_tokens"] = ot.GetInt32().ToString();
                 }
+                if (data.TryGetValue("model", out var respModel)) result["model"] = respModel.GetString() ?? string.Empty;
                 return result;
             }
 
             // Fallback to legacy choices-based parsing (Chat/Completions or vLLM-compatible)
-            if (!data.TryGetValue("choices", out JsonElement choices))
+            if (!data.TryGetValue("choices", out JsonElement choices) || choices.ValueKind != JsonValueKind.Array)
                 throw new Exception($"ProcessHttpResponse: Invalid response (missing choices and not Responses shape):\n'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''\n");
 
-            if (choices[0].TryGetProperty("text", out JsonElement textElement))
+            // Guard against an empty choices array (a content filter / refusal can return one) so we
+            // degrade to empty text rather than throwing IndexOutOfRange.
+            if (choices.GetArrayLength() > 0)
             {
-                result.Add("text", textElement.GetString() ?? "");
-            }
-            else
-            {
-                // Extracting message content from the chat completion response
-                if (choices[0].TryGetProperty("message", out JsonElement messageElement) &&
-                    messageElement.TryGetProperty("content", out JsonElement contentElement))
+                JsonElement first = choices[0];
+                if (first.TryGetProperty("text", out JsonElement textElement))
                 {
+                    result.Add("text", textElement.GetString() ?? "");
+                }
+                else if (first.TryGetProperty("message", out JsonElement messageElement) &&
+                         messageElement.TryGetProperty("content", out JsonElement contentElement))
+                {
+                    // Extracting message content from the chat completion response
                     result.Add("text", contentElement.GetString() ?? "");
                 }
+                if (first.TryGetProperty("finish_reason", out JsonElement finishReason))
+                    result.Add("finish_reason", finishReason.GetString() ?? string.Empty);
             }
-            if (choices[0].TryGetProperty("finish_reason", out JsonElement finishReason))
-                result.Add("finish_reason", finishReason.GetString() ?? string.Empty);
 
             // OpenAI/vLLM usage: { prompt_tokens, completion_tokens }
             if (data.TryGetValue("usage", out var oaiUsage) && oaiUsage.ValueKind == JsonValueKind.Object)
@@ -290,6 +303,7 @@ internal class InferenceHttpClient : IDisposable
                 if (oaiUsage.TryGetProperty("prompt_tokens", out var pt)) result["input_tokens"] = pt.GetInt32().ToString();
                 if (oaiUsage.TryGetProperty("completion_tokens", out var ct)) result["output_tokens"] = ct.GetInt32().ToString();
             }
+            if (data.TryGetValue("model", out var oaiModel)) result["model"] = oaiModel.GetString() ?? string.Empty;
         }
 
         return result;

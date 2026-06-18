@@ -305,10 +305,11 @@ public class InferClient : IDisposable
         string finishReason = serverResponse.GetValueOrDefault("finish_reason", "");
         int? inputTokens = serverResponse.TryGetValue("input_tokens", out string? itStr) && int.TryParse(itStr, out int itVal) ? itVal : null;
         int? outputTokens = serverResponse.TryGetValue("output_tokens", out string? otStr) && int.TryParse(otStr, out int otVal) ? otVal : null;
+        string? model = serverResponse.TryGetValue("model", out string? m) && !string.IsNullOrEmpty(m) ? m : null;
 
         outputs.Add(selected);
 
-        return new CompletionResult { FullPrompt = prompt, Outputs = outputs, Selected = selected, FinishReason = finishReason, InputTokens = inputTokens, OutputTokens = outputTokens };
+        return new CompletionResult { FullPrompt = prompt, Outputs = outputs, Selected = selected, FinishReason = finishReason, InputTokens = inputTokens, OutputTokens = outputTokens, Model = model };
     }
     #endregion
     

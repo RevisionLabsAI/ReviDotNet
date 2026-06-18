@@ -47,8 +47,10 @@ public class AgentRunner
     /// <summary>Unique id for this agent activation. Tagged on every emitted log event.</summary>
     public string SessionId { get; }
 
-    /// <summary>The run-root Rlog. All step events for this run are children of it.</summary>
-    private readonly Rlog _runRoot;
+    /// <summary>The run-root Rlog. All step events for this run are children of it. Emitted at the
+    /// start of <see cref="RunAsync"/> (not in the constructor) so a consumer that subscribes to the
+    /// event bus using <see cref="SessionId"/> after construction still captures this root event.</summary>
+    private Rlog _runRoot = null!;
 
     private string _currentStateName = "";
     private AgentState _currentState = null!;
@@ -58,6 +60,7 @@ public class AgentRunner
     private int _currentStateSteps;    // LLM calls in the current activation
     private int _currentStateToolCalls; // tool calls dispatched in the current activation
     private int _signalsCorrectedThisActivation; // unknown-signal nudges sent in the current activation
+    private int _malformedStepsThisActivation;   // malformed-JSON reformat nudges sent in the current activation
     private decimal _currentStateCost; // cumulative USD cost of LLM calls in the current activation
     private bool _currentStateBudgetWarned; // whether the 80% warning has been emitted for this activation
     private DateTime _stateActivatedAt;
@@ -90,16 +93,7 @@ public class AgentRunner
         _seedHistory = seedHistory;
 
         SessionId = Guid.NewGuid().ToString("n");
-
-        // Emit the run-root event before any work begins. All step events nest under this.
-        _runRoot = AgentReviLogger.LogStart(
-            parentLog: _ctx.ParentLog,
-            agentName: _profile.Name ?? "(unnamed)",
-            sessionId: SessionId,
-            depth: _ctx.Depth,
-            entryState: _profile.EntryState ?? "",
-            inputs: _inputs,
-            profileSummary: BuildProfileSummary());
+        // NOTE: the run-root event is emitted at the start of RunAsync, not here — see _runRoot.
     }
 
 
@@ -109,6 +103,18 @@ public class AgentRunner
 
     public async Task<AgentResult> RunAsync()
     {
+        // Emit the run-root event now (not in the constructor) so a consumer that subscribed to the
+        // event bus by SessionId between construction and this call still receives it — otherwise the
+        // live trace/grouped view would miss its root and render blank.
+        _runRoot = AgentReviLogger.LogStart(
+            parentLog: _ctx.ParentLog,
+            agentName: _profile.Name ?? "(unnamed)",
+            sessionId: SessionId,
+            depth: _ctx.Depth,
+            entryState: _profile.EntryState ?? "",
+            inputs: _inputs,
+            profileSummary: BuildProfileSummary());
+
         // Transition into the entry state (no state-transition event for the seed entry)
         TransitionToState(_profile.EntryState!, isEntry: true);
 
@@ -222,6 +228,19 @@ public class AgentRunner
             if (stepResponse == null)
             {
                 Util.Log($"AgentRunner '{_profile.Name}': Could not deserialize step response in state '{_currentStateName}'. Raw: {rawResponse[..Math.Min(200, rawResponse.Length)]}");
+
+                // Give the model a bounded chance to reformat (mirrors the unknown-signal nudge)
+                // before giving up — models without enforced structured output occasionally stray.
+                if (_malformedStepsThisActivation < MaxSignalCorrectionsPerActivation)
+                {
+                    _malformedStepsThisActivation++;
+                    LogStep(AgentReviLogger.Step.Error, "Step response was not valid JSON — asking the model to reformat", parent: requestLog, level: LogLevel.Warning);
+                    _conversationHistory.Add(new Message("user",
+                        "Your previous reply could not be parsed. Respond with EXACTLY ONE JSON object matching the required format — "
+                        + "no markdown code fences, no text before or after the JSON."));
+                    continue;
+                }
+
                 LogStep(AgentReviLogger.Step.Error, "Failed to deserialize step response", parent: requestLog, level: LogLevel.Error);
                 return Terminate(AgentExitReason.Error);
             }
@@ -431,6 +450,7 @@ public class AgentRunner
         _currentStateSteps = 0;
         _currentStateToolCalls = 0;
         _signalsCorrectedThisActivation = 0;
+        _malformedStepsThisActivation = 0;
         _currentStateCost = 0m;
         _currentStateBudgetWarned = false;
         _stateActivatedAt = DateTime.UtcNow;
@@ -678,12 +698,47 @@ public class AgentRunner
             systemParts.Add(fb.ToString());
         }
 
+        // Spell out the required JSON step contract on every call. Providers with structured-output
+        // guidance (e.g. Gemini's responseSchema) are constrained to it directly; providers without
+        // it (e.g. Claude, whose provider sets supports-guidance=false) rely entirely on this
+        // instruction to return a parseable AgentStepResponse instead of prose.
+        systemParts.Add(BuildResponseFormatInstruction());
+
         string systemText = string.Join("\n\n---\n\n", systemParts);
         if (!string.IsNullOrWhiteSpace(systemText))
             messages.Add(new Message("system", systemText));
 
         messages.AddRange(_conversationHistory);
         return messages;
+    }
+
+    /// <summary>
+    /// Describes the mandatory <see cref="AgentStepResponse"/> JSON contract for the current step,
+    /// including the transition signals valid from this state and the tools available. Injected into
+    /// the system prompt so every provider — guidance-capable or not — knows exactly what to emit.
+    /// </summary>
+    private string BuildResponseFormatInstruction()
+    {
+        string signals = _profile.ValidSignalsByState.TryGetValue(_currentStateName, out var sigs) && sigs.Count > 0
+            ? string.Join(", ", sigs)
+            : "(none declared for this state)";
+
+        var toolNames = new List<string>(_currentState.Tools);
+        if (_ctx.Files is { Files.Count: > 0 })
+            toolNames.AddRange(new[] { "list-files", "read-file", "search-files" });
+        string tools = toolNames.Count > 0 ? string.Join(", ", toolNames) : "(none available — use an empty tool_calls array)";
+
+        return
+            "RESPONSE FORMAT — reply with EXACTLY ONE JSON object and nothing else: no markdown code "
+            + "fences, no text before or after it. The object must have these keys:\n"
+            + "{\"signal\": <string|null>, \"tool_calls\": [{\"name\": <string>, \"input\": <string>}], "
+            + "\"content\": <string>, \"thinking\": <string|null>}\n"
+            + $"- \"signal\": the state transition to take now. Valid signals from this state: {signals}. "
+            + "Use null to take no transition this step.\n"
+            + $"- \"tool_calls\": tools to run this step; each \"input\" is a single string the tool parses. "
+            + $"Available tools: {tools}. Use [] when calling none.\n"
+            + "- \"content\": your message or result for this step.\n"
+            + "- \"thinking\": optional brief reasoning, or null.";
     }
 
     /// <summary>
@@ -756,18 +811,10 @@ public class AgentRunner
 
     private static AgentStepResponse? TryDeserializeStep(string raw)
     {
-        if (string.IsNullOrWhiteSpace(raw))
-            return null;
-
-        try
-        {
-            return JsonConvert.DeserializeObject<AgentStepResponse>(raw);
-        }
-        catch (Exception ex)
-        {
-            Util.Log($"AgentRunner: Failed to deserialize step response: {ex.Message}");
-            return null;
-        }
+        var parsed = StepJsonParser.Parse(raw);
+        if (parsed == null && !string.IsNullOrWhiteSpace(raw))
+            Util.Log($"AgentRunner: Failed to deserialize step response from: {(raw.Length > 300 ? raw[..300] + "…" : raw)}");
+        return parsed;
     }
 
 

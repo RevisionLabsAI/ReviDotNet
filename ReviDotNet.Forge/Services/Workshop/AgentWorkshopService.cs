@@ -45,6 +45,14 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
     /// </summary>
     private readonly ConcurrentDictionary<string, string> _inMemoryEdits = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// In-memory capture of every run's ReviLog events, keyed by run-session id. Populated live as a
+    /// run streams (see <see cref="RunOne"/>); read back by <see cref="ReadEventsAsync"/> so a completed
+    /// session's trace still renders after navigation/reload and can be evaluated — even when no durable
+    /// log store (Mongo) is configured. Bounded only by session activity for the process lifetime.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, List<RlogEvent>> _eventCache = new(StringComparer.Ordinal);
+
     /// <summary>Initialises the workshop service with all required dependencies.</summary>
     public AgentWorkshopService(
         IWorkshopEventBus bus,
@@ -134,9 +142,13 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
             _models, _prompts, _tools, request.SeedHistory);
         string sessionId = runner.SessionId;
 
-        // Subscribe to live events for this session before starting the run.
+        // Subscribe to live events for this session before starting the run. Each event is both
+        // streamed to the live view AND captured in _eventCache so the trace survives navigation/reload.
+        var captured = _eventCache.GetOrAdd(sessionId, _ => new List<RlogEvent>());
         IDisposable subscription = _bus.Subscribe(sessionId, ev =>
         {
+            lock (captured) captured.Add(ev);
+
             // Best-effort fan-out; ignore if the writer is already closed.
             writer.TryWrite(new WorkshopRunUpdate
             {
@@ -222,7 +234,24 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
     // =====================================================
 
     public Task<IReadOnlyList<RlogEvent>> GetSessionEventsAsync(string sessionId, CancellationToken ct)
-        => _logs.GetSessionEventsAsync(sessionId, maxEvents: 5000, ct);
+        => ReadEventsAsync(sessionId, maxEvents: 5000, ct);
+
+    /// <summary>
+    /// Reads a run's events, preferring the durable log store and falling back to the in-memory
+    /// <see cref="_eventCache"/> when no store is configured (or it has nothing for this session yet).
+    /// This is what lets a completed run still render/evaluate locally with only the Null log store.
+    /// </summary>
+    private async Task<IReadOnlyList<RlogEvent>> ReadEventsAsync(string sessionId, int maxEvents, CancellationToken ct)
+    {
+        var persisted = await _logs.GetSessionEventsAsync(sessionId, maxEvents, ct);
+        if (persisted.Count > 0) return persisted;
+
+        if (_eventCache.TryGetValue(sessionId, out var cached))
+        {
+            lock (cached) return cached.ToList();
+        }
+        return persisted;
+    }
 
     public async Task<IReadOnlyList<AgentSessionSummary>> GetSessionsForAgentAsync(string agentName, int skip, int take, CancellationToken ct)
     {
@@ -232,7 +261,7 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
         foreach (var s in sessions)
         {
             // Pull the end event (if present) to get exit reason + final output preview.
-            var events = await _logs.GetSessionEventsAsync(s.SessionId, maxEvents: 5000, ct);
+            var events = await ReadEventsAsync(s.SessionId, maxEvents: 5000, ct);
             var endEvent = events.FirstOrDefault(e => e.Identifier == AgentReviLogger.Step.End);
 
             AgentExitReason? exitReason = null;
@@ -286,7 +315,7 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
 
         foreach (var sid in sessionIds)
         {
-            var events = await _logs.GetSessionEventsAsync(sid, maxEvents: 5000, ct);
+            var events = await ReadEventsAsync(sid, maxEvents: 5000, ct);
             if (events.Count == 0) continue;
 
             var rootStart = events.FirstOrDefault(e => e.Identifier == AgentReviLogger.Step.Start);

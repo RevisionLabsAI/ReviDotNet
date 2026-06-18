@@ -1,0 +1,23 @@
+[[general]]
+name = claude-haiku-4-5
+enabled = true
+model-string = claude-haiku-4-5-20251001
+provider-name = claude
+
+[[settings]]
+tier = B
+token-limit = 200000
+supports-prompt-completion = true
+supports-response-completion = true
+
+[[override-tuning]]
+temperature = 1
+frequency-penalty = disabled
+presence-penalty = disabled
+repetition-penalty = disabled
+
+[[chat-completion]]
+system-message = true
+prompt-in-system = false
+system-in-user = true
+prompt-in-user = true

@@ -1,7 +1,7 @@
-﻿[[general]]
-name = claude-3-5-sonnet
+[[general]]
+name = claude-sonnet-4-5
 enabled = true
-model-string = claude-3-5-sonnet-latest
+model-string = claude-sonnet-4-5-20250929
 provider-name = claude
 
 [[settings]]

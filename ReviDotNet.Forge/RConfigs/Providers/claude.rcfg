@@ -4,7 +4,7 @@ enabled = true
 protocol = Claude
 api-url = https://api.anthropic.com/
 api-key = environment
-default-model = claude-3-5-sonnet-latest
+default-model = claude-sonnet-4-5-20250929
 supports-prompt-completion = true
 supports-response-completion = true
 
