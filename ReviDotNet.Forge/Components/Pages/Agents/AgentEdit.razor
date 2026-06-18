@@ -68,17 +68,35 @@ else
 
             <MudTabPanel Text="Source" Icon="@Icons.Material.Filled.Code">
                 <div class="pa-2">
-                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">
-                        Edit the full .agent file content. See ReviDotNet docs for the [[loop]] / [[state.*]] / [[_loop]] grammar.
-                    </MudText>
-                    <MudTextField @bind-Value="_source"
-                                  Variant="Variant.Outlined"
-                                  Lines="28"
-                                  Style="font-family: monospace; font-size: 0.82rem;"
-                                  FullWidth="true"
-                                  Immediate="true"
-                                  DebounceInterval="300"
-                                  OnDebounceIntervalElapsed="@((string _) => MarkDirty())" />
+                    <div class="d-flex align-center mb-1">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            The full .agent file content. See ReviDotNet docs for the [[loop]] / [[state.*]] / [[_loop]] grammar.
+                        </MudText>
+                        <MudSpacer />
+                        @if (!_sourceUnavailable)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Text"
+                                       StartIcon="@(_editing ? Icons.Material.Filled.Visibility : Icons.Material.Filled.Edit)"
+                                       OnClick="@(() => _editing = !_editing)">
+                                @(_editing ? "View" : "Edit")
+                            </MudButton>
+                        }
+                    </div>
+                    @if (_editing)
+                    {
+                        <MudTextField @bind-Value="_source"
+                                      Variant="Variant.Outlined"
+                                      Lines="28"
+                                      Style="font-family: monospace; font-size: 0.82rem;"
+                                      FullWidth="true"
+                                      Immediate="true"
+                                      DebounceInterval="300"
+                                      OnDebounceIntervalElapsed="@((string _) => MarkDirty())" />
+                    }
+                    else
+                    {
+                        <RconfigSource Text="@_source" MaxHeight="640px" />
+                    }
                 </div>
             </MudTabPanel>
 
@@ -153,6 +171,7 @@ else
     private bool _saving;
     private bool _inMemoryOnly;      // embedded-resource agent: edits apply in memory only
     private bool _sourceUnavailable; // source couldn't be read at all
+    private bool _editing;           // Source tab: false = highlighted read-only view, true = raw editor
 
     protected override async Task OnParametersSetAsync()
     {

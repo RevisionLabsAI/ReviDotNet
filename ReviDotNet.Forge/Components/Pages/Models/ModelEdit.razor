@@ -51,10 +51,7 @@ else
             </MudTabPanel>
             <MudTabPanel Text=".rcfg source" Icon="@Icons.Material.Filled.Code">
                 <div class="pa-2">
-                    <MudPaper Class="pa-3" Outlined="true"
-                              Style="font-family: monospace; font-size: 0.8rem; white-space: pre-wrap; max-height: 600px; overflow: auto;">
-                        @_serialized
-                    </MudPaper>
+                    <RconfigSource Text="@_serialized" />
                 </div>
             </MudTabPanel>
         </MudTabs>

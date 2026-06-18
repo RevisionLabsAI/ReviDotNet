@@ -1,0 +1,21 @@
+@*
+    Read-only, syntax-highlighted view of a ReviDotNet RConfig file (.rcfg / .agent / .pmt / .tool).
+    Highlighting follows the shared IDE grammar (ide/revi-syntax); colours live in wwwroot/app.css (.revi-*).
+*@
+@using ReviDotNet.Forge.Services
+
+<pre class="revi-hl @CssClass" style="@StyleString">@((MarkupString)RconfigHighlighter.ToHtml(Text))</pre>
+
+@code {
+    /// <summary>The RConfig source text to highlight.</summary>
+    [Parameter] public string? Text { get; set; }
+
+    /// <summary>Max height before the block scrolls (CSS length). Null/empty = no cap.</summary>
+    [Parameter] public string? MaxHeight { get; set; } = "600px";
+
+    /// <summary>Extra CSS class(es) appended to the block.</summary>
+    [Parameter] public string? CssClass { get; set; }
+
+    private string? StyleString =>
+        string.IsNullOrWhiteSpace(MaxHeight) ? null : $"max-height:{MaxHeight};overflow:auto;";
+}

@@ -463,10 +463,11 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
 
     public async Task SaveAgentRevisionAsync(string agentName, string newContent, CancellationToken ct)
     {
-        string? path = LocateAgentFile(agentName);
+        string? path = ResolveAgentFilePath(agentName);
         if (path != null)
         {
-            // Writable file on disk: snapshot the prior version, overwrite, and reload from disk.
+            // Writable file on disk (including a file in an additional RConfig folder): snapshot the prior
+            // version, then overwrite.
             if (_history is not null)
             {
                 try
@@ -479,8 +480,14 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
 
             await File.WriteAllTextAsync(path, newContent, ct);
 
-            // Reload agent registry so the new revision is picked up.
-            await _agents.LoadAsync(Assembly.GetExecutingAssembly(), ct);
+            // Re-parse just this agent and swap it into the registry, keeping its name + source path. We do
+            // NOT reload the whole registry — that clears it and reloads only the app's own (embedded) set,
+            // which would drop agents loaded from additional RConfig folders.
+            var data = RConfigParser.ReadEmbedded(newContent);
+            AgentProfile profile = AgentProfile.ToObject(data, namePrefix: "");
+            profile.Name = agentName;
+            profile.SourcePath = path;
+            _agents.AddOrReplace(profile);
             return;
         }
 
@@ -525,7 +532,7 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
         if (_inMemoryEdits.TryGetValue(agentName, out var edited))
             return Task.FromResult<string?>(edited);
 
-        string? path = LocateAgentFile(agentName);
+        string? path = ResolveAgentFilePath(agentName);
         if (path != null)
         {
             try { return File.ReadAllTextAsync(path, ct).ContinueWith(t => (string?)t.Result, ct); }
@@ -536,7 +543,19 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
         return Task.FromResult(ReadEmbeddedAgentSource(agentName));
     }
 
-    public bool CanPersistToDisk(string agentName) => LocateAgentFile(agentName) != null;
+    public bool CanPersistToDisk(string agentName) => ResolveAgentFilePath(agentName) != null;
+
+    /// <summary>
+    /// Resolves the on-disk <c>.agent</c> file for an agent. Prefers the exact file it was loaded from
+    /// (<see cref="AgentProfile.SourcePath"/> — covers agents in additional RConfig folders), then falls
+    /// back to probing the app's own <c>RConfigs/Agents</c>. Null for embedded / in-memory agents.
+    /// </summary>
+    private string? ResolveAgentFilePath(string agentName)
+    {
+        if (_agents.Get(agentName)?.SourcePath is { Length: > 0 } sourcePath && File.Exists(sourcePath))
+            return sourcePath;
+        return LocateAgentFile(agentName);
+    }
 
     private static string? LocateAgentFile(string agentName)
     {

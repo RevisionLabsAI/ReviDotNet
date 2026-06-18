@@ -86,6 +86,59 @@ public class LoaderResilienceTests
         });
     }
 
+    [Fact]
+    public void LoadDirectory_LoadsAgentFromExternalRConfigsRoot()
+    {
+        var service = new AgentManagerService(new RecordingReviLogger<AgentManagerService>());
+
+        RunInTempDir(root =>
+        {
+            // Mirror the RConfigs/ layout: agents live under <root>/Agents/.
+            Directory.CreateDirectory(Path.Combine(root, "Agents"));
+            File.WriteAllText(Path.Combine(root, "Agents", "ext.agent"),
+                "[[information]]\nname = ext-agent\nversion = 1\ndescription = external test agent\n\n" +
+                "[[loop]]\nentry = start\n\n" +
+                "[[state.start]]\ndescription = test state\n\n" +
+                "[[_state.start.instruction]]\nReply and finish.\n\n" +
+                "[[state.start.guardrails]]\nmax-steps = 2\ntimeout = 30\n\n" +
+                "[[_loop]]\nstart\n  -> [end] [when: DONE]\n");
+
+            service.LoadDirectory(root);
+
+            var loaded = service.GetAll().SingleOrDefault(a => a.Name == "ext-agent");
+            loaded.Should().NotBeNull("an agent in an additional RConfigs root should load");
+            // The originating file is stamped so its source can be read back / edited even though it lives
+            // outside the app's own RConfigs (the "couldn't load source" fix for external agents).
+            loaded!.SourcePath.Should().Be(Path.GetFullPath(Path.Combine(root, "Agents", "ext.agent")));
+            File.Exists(loaded.SourcePath!).Should().BeTrue();
+        });
+    }
+
+    [Fact]
+    public void LoadDirectory_IgnoresMissingFolders_AndDeduplicatesOnRepeatLoad()
+    {
+        var service = new ProviderManagerService(new RecordingReviLogger<ProviderManagerService>());
+
+        RunInTempDir(root =>
+        {
+            // No standard subfolders yet → LoadDirectory must be a quiet no-op, not throw.
+            Action noop = () => service.LoadDirectory(root);
+            noop.Should().NotThrow("a missing Providers/ subfolder is skipped");
+            service.GetAll().Should().BeEmpty();
+
+            Directory.CreateDirectory(Path.Combine(root, "Providers"));
+            File.WriteAllText(Path.Combine(root, "Providers", "p.rcfg"),
+                "[[general]]\nname = ext-provider\nenabled = true\nprotocol = OpenAI\n" +
+                "api-url = https://example/v1/\ndefault-model = m\n");
+
+            service.LoadDirectory(root);
+            service.LoadDirectory(root); // repeat → CheckAdd dedups by name
+
+            service.GetAll().Count(p => p.Name == "ext-provider").Should().Be(1,
+                "loading is additive and deduplicates by name");
+        });
+    }
+
     // ---- helpers ----
 
     private static void RunInTempDir(Action<string> body)

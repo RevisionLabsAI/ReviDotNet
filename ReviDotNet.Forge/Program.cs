@@ -127,7 +127,53 @@ else
             new NullRlogEventPublisher(),
             sp.GetRequiredService<IWorkshopEventBus>()));
 }
-builder.Services.AddReviDotNet(typeof(Program).Assembly);
+// Additional on-disk RConfig folders loaded INTO Forge IN ADDITION to its own embedded set ("also load":
+// Forge's own configs load first and always win on a name clash; these folders only add what's new). Each
+// is an RConfigs root (Providers/, Models/Inference/, Models/Embedding/, Prompts/, Agents/, Tools/) — handy
+// for testing agents kept in a separate project. Give one or more folders either way (both are combined):
+//   - Semicolon-separated on one line — ';' is a fixed delimiter, the same on every OS (NOT the OS path
+//     separator):   REVI_RCONFIG_PATHS=C:/proj-a/RConfigs;C:/proj-b/RConfigs
+//   - Or one folder per line with a numbered suffix:   REVI_RCONFIG_PATHS=C:/proj-a/RConfigs
+//                                                       REVI_RCONFIG_PATHS_2=C:/proj-b/RConfigs
+// (Also accepted: the .NET config-array form Revi__RConfigPaths__0 / __1, e.g. in appsettings.json.)
+var extraRConfigPaths = ReadAdditionalRConfigPaths(builder.Configuration);
+
+builder.Services.AddReviDotNet(
+    typeof(Program).Assembly,
+    options => options.AdditionalConfigDirectories.AddRange(extraRConfigPaths));
+
+static List<string> ReadAdditionalRConfigPaths(IConfiguration config)
+{
+    // Split one value into folders on ';' (a fixed, OS-agnostic delimiter) or embedded newlines.
+    static string[] Split(string? raw) => string.IsNullOrWhiteSpace(raw)
+        ? Array.Empty<string>()
+        : raw.Split(new[] { ';', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    var paths = new List<string>();
+
+    // (1) .NET config: array (Revi:RConfigPaths:0/1 — e.g. Revi__RConfigPaths__0, or an appsettings.json
+    //     array) or scalar (Revi:RConfigPaths).
+    foreach (var child in config.GetSection("Revi:RConfigPaths").GetChildren())
+        paths.AddRange(Split(child.Value));
+    paths.AddRange(Split(config["Revi:RConfigPaths"]));
+
+    // (2) Plain env vars, one folder per line: REVI_RCONFIG_PATHS plus optional REVI_RCONFIG_PATHS_1, _2, …
+    //     ordered by the numeric suffix. Delimiter-free per line, so it survives any .env parser.
+    var numbered = new List<(int Order, string? Value)>();
+    foreach (System.Collections.DictionaryEntry e in Environment.GetEnvironmentVariables())
+    {
+        var key = (string)e.Key;
+        if (key.Equals("REVI_RCONFIG_PATHS", StringComparison.OrdinalIgnoreCase))
+            numbered.Add((0, e.Value as string));
+        else if (key.StartsWith("REVI_RCONFIG_PATHS_", StringComparison.OrdinalIgnoreCase)
+                 && int.TryParse(key["REVI_RCONFIG_PATHS_".Length..], out int n))
+            numbered.Add((n, e.Value as string));
+    }
+    foreach (var entry in numbered.OrderBy(x => x.Order))
+        paths.AddRange(Split(entry.Value));
+
+    return paths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+}
 
 // Observer services (log viewer)
 if (!string.IsNullOrWhiteSpace(builder.Configuration["Observer:MongoDb:ConnectionString"]))

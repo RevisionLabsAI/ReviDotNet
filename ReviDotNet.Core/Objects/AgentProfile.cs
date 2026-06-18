@@ -81,6 +81,14 @@ public class AgentProfile
     public Dictionary<string, IReadOnlySet<string>> ValidSignalsByState { get; set; }
         = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Absolute path of the <c>.agent</c> file this profile was loaded from on disk, or null when it
+    /// came from an embedded resource or an in-memory edit. Runtime metadata (not a config field): the
+    /// loader stamps it so tools can read back / write the original source even when the file lives
+    /// outside the app's own RConfigs (e.g. an additional RConfig folder).
+    /// </summary>
+    public string? SourcePath { get; set; }
+
     // Stored during ToObject(), consumed by Init()
     private string? _rawLoopDsl;
 

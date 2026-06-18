@@ -59,6 +59,14 @@ public sealed class ToolManagerService : IToolManager
     }
 
     /// <inheritdoc/>
+    public void LoadDirectory(string rootDirectory)
+    {
+        string path = Path.Combine(rootDirectory, "Tools") + Path.DirectorySeparatorChar;
+        if (!Directory.Exists(path)) return;
+        LoadFromFileSystem(path);
+    }
+
+    /// <inheritdoc/>
     public void Register(IBuiltInTool tool)
     {
         if (tool == null) throw new ArgumentNullException(nameof(tool));

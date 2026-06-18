@@ -48,6 +48,14 @@ public sealed class EmbeddingManagerService : IEmbeddingManager
     }
 
     /// <inheritdoc/>
+    public void LoadDirectory(string rootDirectory)
+    {
+        string path = Path.Combine(rootDirectory, "Models", "Embedding") + Path.DirectorySeparatorChar;
+        if (!Directory.Exists(path)) return;
+        LoadFromFileSystem(path);
+    }
+
+    /// <inheritdoc/>
     public EmbeddingProfile? Get(string name)
         => _models.FirstOrDefault(m => m.Name == name);
 

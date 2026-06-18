@@ -14,6 +14,12 @@ public interface IProviderManager
     /// <summary>Loads provider profiles from the application assembly.</summary>
     Task LoadAsync(Assembly assembly, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Additively loads provider profiles from <paramref name="rootDirectory"/>/<c>Providers/</c> on disk
+    /// (an extra <c>RConfigs</c> root). Existing providers are kept on a name clash; a missing folder is a no-op.
+    /// </summary>
+    void LoadDirectory(string rootDirectory);
+
     /// <summary>Returns the provider profile with the given name, or null if not found.</summary>
     ProviderProfile? Get(string name);
 
