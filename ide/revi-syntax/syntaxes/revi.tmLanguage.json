@@ -1,0 +1,134 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "ReviDotNet Config",
+  "scopeName": "source.revi",
+  "fileTypes": ["pmt", "rcfg", "agent", "tool"],
+  "patterns": [
+    { "include": "#loop-section" },
+    { "include": "#example-input-section" },
+    { "include": "#raw-section" },
+    { "include": "#section-header" },
+    { "include": "#comment" },
+    { "include": "#key-value" }
+  ],
+  "repository": {
+    "comment": {
+      "comment": "Full-line comment: '#' as first non-whitespace char (only honored in key-value sections at runtime).",
+      "match": "^\\s*#.*$",
+      "name": "comment.line.number-sign.revi"
+    },
+
+    "placeholder": {
+      "comment": "{Label} substitution token (Filled input + single-item/multi-item templates). Restricted to label-like content so JSON/object braces in prompt text are NOT matched.",
+      "match": "\\{[A-Za-z0-9_][A-Za-z0-9 ._-]*\\}",
+      "name": "variable.parameter.placeholder.revi"
+    },
+
+    "section-header": {
+      "comment": "Key-value section header, e.g. [[general]] [[settings]] [[state.search]] (first char after [[ is NOT underscore).",
+      "match": "^\\s*(\\[\\[)\\s*([^_\\]\\s][^\\]]*?)\\s*(\\]\\])\\s*$",
+      "captures": {
+        "1": { "name": "punctuation.definition.tag.begin.revi" },
+        "2": { "name": "entity.name.section.revi" },
+        "3": { "name": "punctuation.definition.tag.end.revi" }
+      }
+    },
+
+    "raw-header": {
+      "comment": "Header of a raw/underscore section, e.g. [[_system]] [[_instruction]] [[_schema]] [[_exout_1]].",
+      "match": "(\\[\\[)\\s*(_[^\\]]*?)\\s*(\\]\\])",
+      "captures": {
+        "1": { "name": "punctuation.definition.tag.begin.revi" },
+        "2": { "name": "keyword.control.section.raw.revi" },
+        "3": { "name": "punctuation.definition.tag.end.revi" }
+      }
+    },
+
+    "key-value": {
+      "comment": "key = value (split on first '='). Keys are letters/digits/._- ; value is everything after the first '='.",
+      "match": "^\\s*([A-Za-z0-9_][\\w.-]*)\\s*(=)\\s*(.*)$",
+      "captures": {
+        "1": { "name": "variable.other.key.revi" },
+        "2": { "name": "punctuation.separator.key-value.revi" },
+        "3": { "patterns": [ { "include": "#value" } ] }
+      }
+    },
+
+    "value": {
+      "patterns": [
+        { "include": "#placeholder" },
+        { "match": "\\b(true|false)\\b", "name": "constant.language.boolean.revi" },
+        { "match": "\\b(environment|disabled)\\b", "name": "support.constant.revi" },
+        { "match": "(?<![\\w.-])-?\\d+(?:\\.\\d+)?(?![\\w.-])", "name": "constant.numeric.revi" }
+      ]
+    },
+
+    "raw-section": {
+      "comment": "Generic raw section: every line until the next [[...]] header is literal text. Placeholders are still highlighted.",
+      "name": "meta.raw.revi",
+      "begin": "^\\s*(\\[\\[\\s*_[^\\]]*?\\s*\\]\\])\\s*$",
+      "end": "(?=^\\s*\\[\\[)",
+      "beginCaptures": { "1": { "patterns": [ { "include": "#raw-header" } ] } },
+      "patterns": [ { "include": "#placeholder" } ]
+    },
+
+    "example-input-section": {
+      "comment": "[[_exin_N]] example input: highlights [Label] segments and {placeholders}.",
+      "name": "meta.example-input.revi",
+      "begin": "^\\s*(\\[\\[\\s*_exin_[0-9A-Za-z]+\\s*\\]\\])\\s*$",
+      "end": "(?=^\\s*\\[\\[)",
+      "beginCaptures": { "1": { "patterns": [ { "include": "#raw-header" } ] } },
+      "patterns": [
+        {
+          "comment": "Labeled segment header line, e.g. [Context] [Keywords] [Request].",
+          "match": "^\\s*(\\[)([A-Za-z][^\\]]*?)(\\])\\s*$",
+          "captures": {
+            "1": { "name": "punctuation.definition.tag.begin.revi" },
+            "2": { "name": "entity.name.tag.label.revi" },
+            "3": { "name": "punctuation.definition.tag.end.revi" }
+          }
+        },
+        { "include": "#placeholder" }
+      ]
+    },
+
+    "loop-section": {
+      "comment": "[[_loop]] agent transition DSL.",
+      "name": "meta.loop.revi",
+      "begin": "^\\s*(\\[\\[\\s*_loop\\s*\\]\\])\\s*$",
+      "end": "(?=^\\s*\\[\\[)",
+      "beginCaptures": { "1": { "patterns": [ { "include": "#raw-header" } ] } },
+      "patterns": [ { "include": "#loop-dsl" } ]
+    },
+
+    "loop-dsl": {
+      "patterns": [
+        { "include": "#comment" },
+        {
+          "comment": "Transition: -> target  (target may be a state name, self, or [end]).",
+          "match": "(->)\\s*(\\[end\\]|self\\b|[A-Za-z][\\w-]*)?",
+          "captures": {
+            "1": { "name": "keyword.operator.arrow.revi" },
+            "2": { "name": "entity.name.tag.state.revi" }
+          }
+        },
+        {
+          "comment": "Guard: [when: SIGNAL].",
+          "match": "(\\[)\\s*(when)\\s*(:)\\s*([A-Za-z][A-Za-z0-9_]*)?\\s*(\\])",
+          "captures": {
+            "1": { "name": "punctuation.section.brackets.begin.revi" },
+            "2": { "name": "keyword.control.when.revi" },
+            "3": { "name": "punctuation.separator.revi" },
+            "4": { "name": "constant.other.signal.revi" },
+            "5": { "name": "punctuation.section.brackets.end.revi" }
+          }
+        },
+        {
+          "comment": "State declaration line (non-indented bare state name).",
+          "match": "^\\s*([A-Za-z][\\w-]*)\\s*$",
+          "name": "entity.name.function.state.revi"
+        }
+      ]
+    }
+  }
+}

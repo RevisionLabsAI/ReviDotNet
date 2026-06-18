@@ -1,5 +1,6 @@
 @page "/agents/edit"
 @using ReviDotNet.Forge.Services.Workshop
+@using ReviDotNet.Forge.Components.Pages.Workshop
 @inject IAgentManager AgentMgr
 @inject IAgentWorkshopService WorkshopSvc
 @inject ExportService Export
@@ -28,7 +29,7 @@ else
         <MudButton Variant="Variant.Outlined"
                    Color="Color.Primary"
                    StartIcon="@Icons.Material.Filled.SmartToy"
-                   Href="@($"/workshop?agent={Uri.EscapeDataString(_agent.Name ?? string.Empty)}")">
+                   Href="/workshop">
             Open in Workshop
         </MudButton>
         <MudButton Class="ml-2"
@@ -130,6 +131,12 @@ else
                             </MudExpansionPanel>
                         }
                     </MudExpansionPanels>
+                </div>
+            </MudTabPanel>
+
+            <MudTabPanel Text="Version History" Icon="@Icons.Material.Filled.History">
+                <div class="pa-2">
+                    <VersionsHub AgentName="@(_agent.Name ?? string.Empty)" />
                 </div>
             </MudTabPanel>
 

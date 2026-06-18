@@ -57,11 +57,8 @@ namespace ReviDotNet.Analyzers
             if (resolved is not IMethodSymbol methodSymbol)
                 return;
 
-            if (methodSymbol.ContainingType.Name != "Agent")
-                return;
-
-            string? nsName = methodSymbol.ContainingType.ContainingNamespace?.Name;
-            if (nsName != "Revi" && nsName != "ReviDotNet")
+            // Match the static Agent class AND the injected IAgentService/AgentService surface.
+            if (!ReviApiRecognizer.IsAgentSurface(methodSymbol))
                 return;
 
             string[] targetMethods = { "Run", "ToString", "FindAgent" };

@@ -18,29 +18,39 @@ namespace ReviDotNet.Forge.Services.Workshop;
 /// </summary>
 public sealed class WorkshopStore : IWorkshopStore
 {
-    private readonly ConcurrentDictionary<string, WorkshopInstance> _instances = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, WorkshopSession> _sessions = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, WorkshopEvaluation> _evaluations = new(StringComparer.Ordinal);
 
     public event Action? Changed;
 
-    // ── Instances ───────────────────────────────────────────────────────────
+    // ── Sessions ────────────────────────────────────────────────────────────
 
-    public IReadOnlyList<WorkshopInstance> GetInstances(string agentName)
-        => _instances.Values
-            .Where(i => string.Equals(i.AgentName, agentName, StringComparison.Ordinal))
-            .OrderByDescending(i => i.CreatedAt)
+    public IReadOnlyList<WorkshopSession> GetAllSessions()
+        => _sessions.Values
+            .OrderByDescending(s => s.CreatedAt)
             .ToList();
 
-    public WorkshopInstance? GetInstance(string id)
-        => _instances.TryGetValue(id, out var i) ? i : null;
+    public IReadOnlyList<WorkshopSession> GetSessions(string agentName)
+        => _sessions.Values
+            .Where(s => string.Equals(s.AgentName, agentName, StringComparison.Ordinal))
+            .OrderByDescending(s => s.CreatedAt)
+            .ToList();
 
-    public void AddInstance(WorkshopInstance instance)
+    public WorkshopSession? GetSession(string id)
+        => _sessions.TryGetValue(id, out var s) ? s : null;
+
+    public void AddSession(WorkshopSession session)
     {
-        _instances[instance.Id] = instance;
+        _sessions[session.Id] = session;
         Changed?.Invoke();
     }
 
     // ── Evaluations ─────────────────────────────────────────────────────────
+
+    public IReadOnlyList<WorkshopEvaluation> GetAllEvaluations()
+        => _evaluations.Values
+            .OrderByDescending(e => e.CreatedAt)
+            .ToList();
 
     public IReadOnlyList<WorkshopEvaluation> GetEvaluations(string agentName)
         => _evaluations.Values

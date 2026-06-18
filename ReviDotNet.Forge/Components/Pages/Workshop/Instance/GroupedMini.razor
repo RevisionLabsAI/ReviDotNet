@@ -1,0 +1,26 @@
+@* A spawned sub-agent rendered as a mini-instance: its own header (which IS the detail header —
+   no second wrapper) followed by its numbered steps. Steps are numbered parent.child, e.g. 4.1. *@
+<div class="mini">
+    <div class="mini-h">
+        <span class="ava"><Ic Id="i-agent" /></span>
+        <div style="flex:1 1 auto;min-width:0">
+            <div class="n">@Call.Name <span class="pill pill-soft pill-mono">@(Call.Version ?? "v1")</span></div>
+            <div class="s">@Call.Summary</div>
+        </div>
+        <StPill Status="Call.Status" />
+    </div>
+    <div class="mini-stream">
+        @{
+            var childPrefix = OwnerDisplay + ".";
+        }
+        @foreach (var s in Call.Steps ?? [])
+        {
+            <GroupedStep Step="s" Prefix="@childPrefix" />
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CallView Call { get; set; } = default!;
+    [Parameter] public string OwnerDisplay { get; set; } = "";
+}

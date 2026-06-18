@@ -11,9 +11,19 @@ See also:
 
 The analyzers run during compilation and inside the IDE to catch configuration issues early. The initial rule verifies that all prompt names you pass to Revi/Infer APIs actually exist in your repository’s prompt files.
 
-- REVI001 — Prompt not found
+> The analyzers fire on calls to both the static `Infer`/`Agent` classes **and** the injected `IInferService`/`IAgentService` (e.g. `infer.ToString(...)`, `agent.Run(...)`, `ReviClient.Infer/.Agent`). Name parsing mirrors the runtime exactly — values are split on `=` only (not `:`) and quotes are **not** stripped, so write `name = my-prompt` (unquoted).
+
+This is the full set of rules (most are on by default):
+
+- REVI001 — Prompt not found (Error)
   - Ensures a referenced prompt name exists among your `.pmt` files under `RConfigs/Prompts` (any depth).
   - Mirrors the same name resolution that Revi uses at runtime: lower-cased folder prefix + the prompt’s `information.name` declared inside the `.pmt` file. The physical filename is not used for matching.
+- REVI002 — Non-constant prompt name (Warning)
+  - Warns when a prompt-name argument to an inference method isn't a compile-time constant, so REVI001 can't validate it.
+- REVI003 — Prompt input/placeholder mismatch (Error for a missing required input; Warning for an unused input)
+  - Cross-checks the `Input` labels you pass against the `{placeholders}` declared in the prompt's `[[_system]]`/`[[_instruction]]`. A missing required placeholder is an **Error**; an input with no matching placeholder is a **Warning**.
+- REVI004 — Duplicate prompt name (Warning)
+  - Reports when multiple `.pmt` files resolve to the same effective prompt name.
 - REVI006 — Agent not found
   - Ensures a referenced agent name exists among your `.agent` files under `RConfigs/Agents` (any depth).
   - Uses runtime-equivalent name resolution: lower-cased folder prefix + `[[information]] name` from the `.agent` file.
@@ -21,29 +31,33 @@ The analyzers run during compilation and inside the IDE to catch configuration i
   - Reports when multiple `.agent` files resolve to the same effective name.
 - REVI008 — Non-constant agent name
   - Warns when `Agent.Run`, `Agent.ToString`, or `Agent.FindAgent` receives a non-constant first argument, which prevents static existence validation.
+- REVI040 — Model profile schema (Error/Warning)
+  - Validates model `.rcfg` files under `RConfigs/Models` (required `[[general]]` keys; `tier` in A/B/C; numeric `token-limit`; booleans; numeric override-tuning). Also **warns** when an `[[input]]` input type is `listed`/`both` but the `single-item`/`multi-item` templates are missing (which throws at inference).
+- REVI041 — Provider profile schema (Error/Warning)
+  - Validates provider `.rcfg` files under `RConfigs/Providers` (allowed `protocol` — `OpenAI`, `vLLM`, `Gemini`, `Perplexity`, `LLamaAPI`, `Claude`; required name/api-url; booleans; allowed `default-guidance-type` including the `defer` and bare `json`/`regex`/`gbnf` aliases; non-negative `[[limiting]]` integers).
 
-## Installation
-
-Add the analyzer package to every project where you call `Revi.Infer.*` methods (or reference a common Directory.Build.props as shown below).
-
-Option A — Per-project reference in your .csproj:
+To enable the schema rules, include your model/provider `.rcfg` files as `AdditionalFiles` (alongside `.pmt`/`.agent`):
 
 ```xml
 <ItemGroup>
-  <!-- Keep analyzers as PrivateAssets so they don't flow transitively -->
-  <PackageReference Include="ReviDotNet.Analyzers" Version="1.*" PrivateAssets="all" />
+  <AdditionalFiles Include="RConfigs\Models\**\*.rcfg" />
+  <AdditionalFiles Include="RConfigs\Providers\**\*.rcfg" />
 </ItemGroup>
 ```
 
-Option B — Centralized reference via Directory.Build.props at your solution root:
+## Installation
+
+The analyzers ship **inside** the `ReviDotNet` package — they are bundled as a Roslyn component and applied automatically to every project that references `ReviDotNet`. There is no separate `ReviDotNet.Analyzers` package to install (the analyzer project is `IsPackable=false`).
 
 ```xml
-<Project>
-  <ItemGroup>
-    <PackageReference Include="ReviDotNet.Analyzers" Version="1.*" PrivateAssets="all" />
-  </ItemGroup>
-</Project>
+<ItemGroup>
+  <PackageReference Include="ReviDotNet" Version="0.1.0" />
+</ItemGroup>
 ```
+
+If you reference `ReviDotNet.Core` as a project reference instead, the analyzer is wired in through Core's `ProjectReference ... OutputItemType="Analyzer"`, so it still runs automatically.
+
+The remaining requirement is to expose your `.pmt`/`.agent` files as `AdditionalFiles` (see below) so the analyzers can read them.
 
 ## Required build configuration (AdditionalFiles)
 

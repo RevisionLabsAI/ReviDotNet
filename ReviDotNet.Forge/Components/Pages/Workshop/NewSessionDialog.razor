@@ -1,0 +1,250 @@
+@using System.IO
+@using Revi
+@using ReviDotNet.Forge.Services.Workshop.Models
+@inject IAgentManager Agents
+
+@*
+    Composer for a new run Session. Collects the agent, the interaction mode (Fixed Run vs Chat,
+    offered only where the chosen agent's interaction-mode allows), the task / first message, the
+    parallel run count (fixed only), any additional inputs, and attached files. Returns a
+    NewSessionSpec; the Sessions hub owns the actual run + live streaming.
+*@
+
+<MudDialog>
+    <DialogContent>
+        <MudSelect @bind-Value="_agentName"
+                   Label="Agent"
+                   Variant="Variant.Outlined"
+                   FullWidth="true"
+                   Class="mb-4"
+                   T="string"
+                   @bind-Value:after="ApplyAgentMode">
+            @foreach (var a in Agents.GetAll().OrderBy(a => a.Name))
+            {
+                <MudSelectItem Value="@(a.Name ?? string.Empty)">@a.Name (@ModeLabel(a.EffectiveInteractionMode))</MudSelectItem>
+            }
+        </MudSelect>
+
+        @if (_agentMode == InteractionMode.Both)
+        {
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Mode</MudText>
+            <MudToggleGroup T="InteractionMode" @bind-Value="_mode" Color="Color.Primary" Class="mb-4" CheckMark="true">
+                <MudToggleItem Value="InteractionMode.Fixed">Fixed Run</MudToggleItem>
+                <MudToggleItem Value="InteractionMode.Chat">Chat Mode</MudToggleItem>
+            </MudToggleGroup>
+        }
+        else
+        {
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" Class="mb-4">
+                @(_mode == InteractionMode.Chat ? "Chat Mode" : "Fixed Run")
+            </MudChip>
+        }
+
+        @if (_mode == InteractionMode.Chat)
+        {
+            <MudTextField @bind-Value="_task"
+                          Label="First message (optional)"
+                          Variant="Variant.Outlined"
+                          FullWidth="true"
+                          Lines="3"
+                          Immediate="true"
+                          Class="mb-3"
+                          Placeholder="Leave blank to start an empty chat, or type the first message to the agent." />
+        }
+        else
+        {
+            <MudTextField @bind-Value="_task"
+                          Label="Task"
+                          Variant="Variant.Outlined"
+                          FullWidth="true"
+                          Lines="4"
+                          Immediate="true"
+                          Class="mb-3"
+                          Placeholder="What should the agent do?" />
+
+            <MudNumericField @bind-Value="_runs"
+                             Label="Runs (parallel)"
+                             Min="1" Max="20"
+                             Variant="Variant.Outlined"
+                             FullWidth="true"
+                             Class="mb-3" />
+
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">Additional inputs (optional)</MudText>
+            @for (int i = 0; i < _inputs.Count; i++)
+            {
+                int idx = i;
+                <div class="d-flex gap-2 mb-2">
+                    <MudTextField @bind-Value="_inputs[idx].Key" Label="Key" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width: 140px;" />
+                    <MudTextField @bind-Value="_inputs[idx].Value" Label="Value" Variant="Variant.Outlined" Margin="Margin.Dense" FullWidth="true" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Remove" Size="Size.Small" OnClick="@(() => _inputs.RemoveAt(idx))" />
+                </div>
+            }
+            <MudButton Variant="Variant.Text"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="@(() => _inputs.Add(new KvPair()))">
+                Add Input
+            </MudButton>
+        }
+
+        <MudDivider Class="my-3" />
+
+        <div class="d-flex align-center mb-2">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                Attachments (optional) — the agent reads these on demand via tools (text &amp; images)
+            </MudText>
+            <MudSpacer />
+            <MudFileUpload T="IReadOnlyList<IBrowserFile>" OnFilesChanged="OnFilesChanged" MaximumFileCount="20" Class="ma-0">
+                <ActivatorContent>
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.AttachFile">
+                        Attach files
+                    </MudButton>
+                </ActivatorContent>
+            </MudFileUpload>
+        </div>
+        @if (_uploadError is { } err)
+        {
+            <MudText Typo="Typo.caption" Color="Color.Error" Class="mb-1">@err</MudText>
+        }
+        <div class="d-flex flex-wrap gap-2">
+            @foreach (var att in _attachments)
+            {
+                <MudChip T="string"
+                         Size="Size.Small"
+                         Icon="@(att.IsImage ? Icons.Material.Filled.Image : Icons.Material.Filled.Description)"
+                         OnClose="@(() => _attachments.Remove(att))">
+                    @att.Name (@FormatSize(att.Size))
+                </MudChip>
+            }
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@(_mode == InteractionMode.Chat ? Icons.Material.Filled.Chat : Icons.Material.Filled.PlayArrow)"
+                   OnClick="Confirm"
+                   Disabled="@(!CanConfirm)">
+            @(_mode == InteractionMode.Chat ? "Start Chat" : "Create & Run")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    /// <summary>Agent to preselect, if any (e.g. the Sessions tab's active filter).</summary>
+    [Parameter] public string? AgentName { get; set; }
+
+    private string _agentName = string.Empty;
+    private InteractionMode _agentMode = InteractionMode.Fixed;
+    private InteractionMode _mode = InteractionMode.Fixed;
+    private string _task = string.Empty;
+    private int _runs = 1;
+    private readonly List<KvPair> _inputs = new();
+    private readonly List<SessionAttachment> _attachments = new();
+    private string? _uploadError;
+
+    private sealed class KvPair { public string Key { get; set; } = ""; public string Value { get; set; } = ""; }
+
+    // Chat may start blank; a fixed run needs a task. An agent must be chosen either way.
+    private bool CanConfirm => !string.IsNullOrWhiteSpace(_agentName)
+        && (_mode == InteractionMode.Chat || !string.IsNullOrWhiteSpace(_task));
+
+    protected override void OnInitialized()
+    {
+        _agentName = !string.IsNullOrWhiteSpace(AgentName)
+            ? AgentName!
+            : Agents.GetAll().OrderBy(a => a.Name).FirstOrDefault()?.Name ?? string.Empty;
+        ApplyAgentMode();
+    }
+
+    // Resolve the chosen agent's supported modes and pick a sensible default.
+    private void ApplyAgentMode()
+    {
+        _agentMode = Agents.Get(_agentName)?.EffectiveInteractionMode ?? InteractionMode.Fixed;
+        _mode = _agentMode switch
+        {
+            InteractionMode.Chat => InteractionMode.Chat,
+            InteractionMode.Fixed => InteractionMode.Fixed,
+            _ => _mode == InteractionMode.Chat ? InteractionMode.Chat : InteractionMode.Fixed, // Both: keep current
+        };
+    }
+
+    private async Task OnFilesChanged(InputFileChangeEventArgs e)
+    {
+        _uploadError = null;
+        const long maxSize = 20L * 1024 * 1024; // 20 MB per file
+        try
+        {
+            foreach (var file in e.GetMultipleFiles(maximumFileCount: 20))
+            {
+                using var ms = new MemoryStream();
+                await file.OpenReadStream(maxSize).CopyToAsync(ms);
+                _attachments.Add(new SessionAttachment
+                {
+                    Name = file.Name,
+                    MediaType = GuessMediaType(file.Name, file.ContentType),
+                    Bytes = ms.ToArray()
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _uploadError = $"Some files could not be attached: {ex.Message}";
+        }
+    }
+
+    private void Confirm()
+    {
+        if (!CanConfirm) return;
+        var spec = new NewSessionSpec
+        {
+            AgentName = _agentName,
+            Mode = _mode,
+            Task = _task,
+            Runs = _mode == InteractionMode.Chat ? 1 : Math.Max(1, _runs),
+            Inputs = _inputs
+                .Where(kv => !string.IsNullOrWhiteSpace(kv.Key))
+                .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
+            Attachments = _attachments.ToList()
+        };
+        MudDialog.Close(DialogResult.Ok(spec));
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private static string ModeLabel(InteractionMode m) => m switch
+    {
+        InteractionMode.Chat => "chat",
+        InteractionMode.Both => "fixed · chat",
+        _ => "fixed"
+    };
+
+    // Browsers often omit a content type for .md/.txt/code files — infer a sensible one so the
+    // reader treats text as text and images as images.
+    private static string GuessMediaType(string name, string? provided)
+    {
+        if (!string.IsNullOrWhiteSpace(provided)) return provided!;
+        string ext = Path.GetExtension(name).ToLowerInvariant();
+        return ext switch
+        {
+            ".png" => "image/png",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".gif" => "image/gif",
+            ".webp" => "image/webp",
+            ".bmp" => "image/bmp",
+            ".svg" => "image/svg+xml",
+            ".json" => "application/json",
+            ".csv" => "text/csv",
+            ".md" or ".txt" or ".log" or ".yaml" or ".yml" or ".xml" or ".html" or ".cs" or ".js" or ".ts" or ".py" or ".java" or ".go" or ".rs" or ".sql" => "text/plain",
+            _ => "text/plain"
+        };
+    }
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:0.#} KB";
+        return $"{bytes / (1024.0 * 1024.0):0.#} MB";
+    }
+}

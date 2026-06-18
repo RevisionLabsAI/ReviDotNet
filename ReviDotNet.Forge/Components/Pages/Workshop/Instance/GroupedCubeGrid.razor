@@ -1,0 +1,86 @@
+@* Status-cube fan-out for a step that dispatched more than 5 calls. Each call is a cube coloured
+   by status; clicking one (radio-style, one at a time) expands its detail below the grid. *@
+<div class="cubewrap">
+    @if (MaxParallel is { } mp)
+    {
+        <div class="cube-sum"><span class="s faint">max @mp parallel</span></div>
+    }
+    <div class="cubes" role="radiogroup">
+        @for (int i = 0; i < Calls.Count; i++)
+        {
+            var idx = i;
+            var c = Calls[i];
+            <button type="button"
+                    class="cube @GroupedFormat.StatusKey(c.Status) @(_sel == idx ? "sel" : "")"
+                    aria-checked="@(_sel == idx ? "true" : "false")"
+                    title="@CubeTip(c)"
+                    @onclick="() => Toggle(idx)">
+                @switch (c.Status)
+                {
+                    case CallStatus.Done:
+                        <span class="cmark"><Ic Class="cm-ic cm-check" Id="i-check" /></span>
+                        break;
+                    case CallStatus.Failed:
+                        <span class="cmark cx"></span>
+                        break;
+                    case CallStatus.Running:
+                        <span class="cmark cm-bars"><i></i><i></i><i></i></span>
+                        break;
+                    case CallStatus.Dropped:
+                        <span class="cmark"><Ic Class="cm-ic cm-drop" Id="i-ban" /></span>
+                        break;
+                    default:
+                        <span class="cmark"><Ic Class="cm-ic cm-watch" Id="i-stopwatch" /></span>
+                        break;
+                }
+            </button>
+        }
+    </div>
+    @if (_sel >= 0 && _sel < Calls.Count)
+    {
+        var c = Calls[_sel];
+        if (c.Kind == CallKind.SubAgent)
+        {
+            <div class="cube-detail sub">
+                <GroupedMini Call="c" OwnerDisplay="@OwnerDisplay" />
+            </div>
+        }
+        else
+        {
+            <div class="cube-detail">
+                <div class="cd-head" style="--accent:var(--ev-tool);--accent-rgb:var(--ev-tool-rgb)">
+                    <span class="tile"><Ic Id="@c.Icon" /></span>
+                    <span class="cd-t"><span class="kind">@c.Name</span> @c.Title</span>
+                    <StPill Status="c.Status" Ms="c.DurationMs" />
+                </div>
+                <div class="cd-body"><GroupedCallDetail Call="c" OwnerDisplay="@OwnerDisplay" /></div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<CallView> Calls { get; set; } = [];
+
+    /// <summary>1-based index of a call to expand on first render (e.g. the dropped or running one).</summary>
+    [Parameter] public int? Preselect { get; set; }
+
+    [Parameter] public string OwnerDisplay { get; set; } = "";
+    [Parameter] public int? MaxParallel { get; set; }
+
+    private int _sel = -1;
+
+    protected override void OnInitialized()
+    {
+        if (Preselect is { } p && p >= 1 && p <= Calls.Count) _sel = p - 1;
+    }
+
+    private void Toggle(int idx) => _sel = _sel == idx ? -1 : idx;
+
+    private string CubeTip(CallView c)
+    {
+        var ran = GroupedFormat.StatusLabel(c.Status, c.DurationMs);
+        var dur = c.DurationMs is { } d ? " · " + GroupedFormat.Dur(d) : "";
+        return $"{c.Title} — {c.Summary}\n{ran}{dur}";
+    }
+}

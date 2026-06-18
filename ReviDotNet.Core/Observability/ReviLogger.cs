@@ -404,6 +404,10 @@ public class ReviLogger : IReviLogger
 		string? member = "",
 		int? line = 0)
 	{
+		// Redact secrets (API keys in URLs / Authorization headers) before the message reaches ANY sink:
+		// parent builders, the console, the in-memory Rlog record, and the event publisher (e.g. Mongo).
+		message = Util.RedactSecrets(message);
+
 		// Traverse through all parents and append to StringBuilder as appropriate
 		// Optimized to avoid unnecessary traversal if no parent has a builder
 		if (parent?.Builder != null || parent?.Parent != null)
@@ -521,9 +525,9 @@ public class ReviLogger : IReviLogger
         Identifier = identifier,
         Cycle = cycle,
         Tags = tags,
-        Object1 = object1 != null ? JsonConvert.SerializeObject(object1, Formatting.Indented, new StringEnumConverter()) : null,
+        Object1 = object1 != null ? Util.RedactSecrets(JsonConvert.SerializeObject(object1, Formatting.Indented, new StringEnumConverter())) : null,
         Object1Name = object1Name,
-        Object2 = object2 != null ? JsonConvert.SerializeObject(object2, Formatting.Indented, new StringEnumConverter()) : null,
+        Object2 = object2 != null ? Util.RedactSecrets(JsonConvert.SerializeObject(object2, Formatting.Indented, new StringEnumConverter())) : null,
         Object2Name = object2Name,
         File = file,
         Member = NormalizeMember(member),
@@ -977,7 +981,10 @@ public class ReviLogger : IReviLogger
 
 			// Prepend stack trace to the text
 			textToDump = stackTraceString + "\n\n" + textToDump;
-			
+
+			// Scrub secrets before this reaches the event sink or the on-disk dump file.
+			textToDump = Util.RedactSecrets(textToDump);
+
 			// Publish log event with "dump" tag containing the entire string message
 			if (_eventPublisher != null)
 			{
@@ -1000,8 +1007,8 @@ public class ReviLogger : IReviLogger
 							Identifier = record.Identifier,
 							Cycle = record.Cycle,
 							Tags = tags,
-							Object1 = record.Object1 != null ? JsonConvert.SerializeObject(record.Object1, Formatting.Indented, new StringEnumConverter()) : null,
-							Object2 = record.Object2 != null ? JsonConvert.SerializeObject(record.Object2, Formatting.Indented, new StringEnumConverter()) : null,
+							Object1 = record.Object1 != null ? Util.RedactSecrets(JsonConvert.SerializeObject(record.Object1, Formatting.Indented, new StringEnumConverter())) : null,
+							Object2 = record.Object2 != null ? Util.RedactSecrets(JsonConvert.SerializeObject(record.Object2, Formatting.Indented, new StringEnumConverter())) : null,
 							File = record.File,
 							Member = record.Member,
 							Line = record.Line

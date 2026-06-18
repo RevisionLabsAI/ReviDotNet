@@ -1,0 +1,7 @@
+@* Inline SVG icon — references a symbol from the grouped-view sprite (see GroupedIcons). *@
+<svg class="@Class"><use href="#@Id"></use></svg>
+
+@code {
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+    [Parameter] public string Class { get; set; } = "ic";
+}

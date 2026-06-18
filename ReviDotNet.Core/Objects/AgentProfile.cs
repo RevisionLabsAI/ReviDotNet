@@ -56,6 +56,17 @@ public class AgentProfile
     [RConfigProperty("settings_cost-budget")]
     public decimal? RunCostBudget { get; set; }
 
+    /// <summary>
+    /// How the agent may be driven from the workshop: <c>fixed</c> (autonomous run), <c>chat</c>
+    /// (interactive), or <c>both</c>. Null when unspecified — see <see cref="EffectiveInteractionMode"/>,
+    /// which defaults to <see cref="Revi.InteractionMode.Fixed"/> for backward compatibility.
+    /// </summary>
+    [RConfigProperty("settings_interaction-mode")]
+    public InteractionMode? InteractionMode { get; set; }
+
+    /// <summary>The resolved interaction mode — <see cref="Revi.InteractionMode.Fixed"/> when unset.</summary>
+    public InteractionMode EffectiveInteractionMode => InteractionMode ?? Revi.InteractionMode.Fixed;
+
     /// <summary>All declared states, populated by ToObject().</summary>
     public List<AgentState> States { get; set; } = new();
 
@@ -255,7 +266,13 @@ public class AgentProfile
             string key = line[..eq].Trim();
             string val = line[(eq + 1)..].Trim();
             if (!string.IsNullOrEmpty(key))
+            {
+                // A .pmt key maps to EITHER a settings_* or a tuning_* property on Prompt, and the two key
+                // namespaces don't overlap. Register both prefixes so tuning keys (temperature, top-p,
+                // penalties, …) bind here too — not just the settings_* keys (max-tokens/best-of/use-search-grounding).
                 dict[$"settings_{key}"] = val;
+                dict[$"tuning_{key}"] = val;
+            }
         }
 
         var settings = new Prompt();

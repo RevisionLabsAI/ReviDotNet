@@ -24,7 +24,7 @@ public sealed class PromptInputPlaceholderMismatchAnalyzerTests
         string src = "using Revi; class C { void M(){ _ = Infer.ToString(\"p\", new System.Collections.Generic.List<Input>{ new Input(\"city\", \"LA\") }); } }";
         (string, string)[] files =
         [
-            ("C:/proj/RConfigs/Prompts/p.pmt", "[[information]]\nname = p\n\n[_instruction]\nHello ${user} in ${city}!")
+            ("C:/proj/RConfigs/Prompts/p.pmt", "[[information]]\nname = p\n\n[[_instruction]]\nHello {user} in {city}!")
         ];
 
         DiagnosticResult expected = new DiagnosticResult(PromptInputPlaceholderMismatchAnalyzer.DiagnosticId, DiagnosticSeverity.Error)
@@ -40,7 +40,7 @@ public sealed class PromptInputPlaceholderMismatchAnalyzerTests
         string src = "using Revi; using System.Collections.Generic; class C { void M(){ _ = Infer.ToString(\"p\", new List<Input>{ new Input(\"user\", \"A\"), new Input(\"extra\", \"B\") }); } }";
         (string, string)[] files =
         [
-            ("C:/proj/RConfigs/Prompts/p.pmt", "[[information]]\nname = p\n\n[_instruction]\nHello ${user}!")
+            ("C:/proj/RConfigs/Prompts/p.pmt", "[[information]]\nname = p\n\n[[_instruction]]\nHello {user}!")
         ];
 
         DiagnosticResult expected = new DiagnosticResult(PromptInputPlaceholderMismatchAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
@@ -56,7 +56,7 @@ public sealed class PromptInputPlaceholderMismatchAnalyzerTests
         string src = @"using Revi; using System.Collections.Generic; class C { void M(){ List<Input> list = Get(); _ = Infer.ToString(""p"", list); } List<Input> Get()=> new List<Input>(); }";
         (string, string)[] files =
         [
-            ("C:/proj/RConfigs/Prompts/p.pmt", "[[information]]\nname = p\n\n[_instruction]\nHello ${user}!")
+            ("C:/proj/RConfigs/Prompts/p.pmt", "[[information]]\nname = p\n\n[[_instruction]]\nHello {user}!")
         ];
 
         DiagnosticResult expected = new DiagnosticResult(PromptInputPlaceholderMismatchAnalyzer.DiagnosticId, DiagnosticSeverity.Error)
@@ -72,9 +72,26 @@ public sealed class PromptInputPlaceholderMismatchAnalyzerTests
         string src = "using Revi; using System.Collections.Generic; class C { void M(){ _ = Infer.ToString(\"p\", new List<Input>{ new Input(\"user\", \"A\"), new Input(\"city\", \"LA\") }); } }";
         (string, string)[] files =
         [
-            ("C:/proj/RConfigs/Prompts/p.pmt", "[[information]]\nname = p\n\n[_instruction]\nHello ${user} in ${city}!")
+            ("C:/proj/RConfigs/Prompts/p.pmt", "[[information]]\nname = p\n\n[[_instruction]]\nHello {user} in {city}!")
         ];
 
         await AnalyzerTestHelper.RunAsync<PromptInputPlaceholderMismatchAnalyzer>(src, files);
+    }
+
+    // D15: also validate inputs passed through the injected IInferService surface.
+    [Fact]
+    public async Task Error_WhenRequiredPlaceholderMissing_ViaInjectedService()
+    {
+        string src = "using Revi; using System.Collections.Generic; class C { void M(IInferService infer){ _ = infer.ToString(\"p\", new List<Input>{ new Input(\"city\", \"LA\") }); } }";
+        (string, string)[] files =
+        [
+            ("C:/proj/RConfigs/Prompts/p.pmt", "[[information]]\nname = p\n\n[[_instruction]]\nHello {user} in {city}!")
+        ];
+
+        DiagnosticResult expected = new DiagnosticResult(PromptInputPlaceholderMismatchAnalyzer.DiagnosticId, DiagnosticSeverity.Error)
+            .WithSpan("/0/Test1.cs", 1, 105, 1, 108)
+            .WithArguments("p", "user");
+
+        await AnalyzerTestHelper.RunAsync<PromptInputPlaceholderMismatchAnalyzer>(src, files, expected);
     }
 }

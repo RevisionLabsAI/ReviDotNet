@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Forge · Agent Instance — Grouped / Paper</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="grouped.css?v=2" />
+<style>
+  /* ── Paper: calm & editorial. No gradients, no glow, muted palette, typographic steps. ── */
+  .wrap { max-width: 840px; margin: 0 auto; padding: 30px 24px 110px; }
+
+  /* status: plain coloured text + dot, never a filled pill */
+  .st { background: none; padding: 0; }
+
+  /* Header */
+  .inst { padding: 2px 0 22px; border-bottom: 1px solid var(--border); }
+  .inst-top { display: flex; align-items: center; gap: 14px; }
+  .inst-ava { width: 40px; height: 40px; border-radius: 10px; flex: 0 0 auto; color: var(--text-2); background: var(--bg-soft); display: flex; align-items: center; justify-content: center; }
+  .inst-ava svg { width: 21px; height: 21px; }
+  .inst-name { font-size: 1.22rem; font-weight: 700; letter-spacing: -.02em; }
+  .inst-sub { font-size: .78rem; color: var(--text-2); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 3px; }
+  .inst-sub .pill { background: none; padding: 0; color: var(--text-2); }
+  .inst-sub .pill svg { display: none; }
+  .inst-status { margin-left: auto; font-weight: 600; }
+  .inst-task { margin-top: 18px; font-size: .95rem; line-height: 1.65; }
+  .inst-task .lbl { font-size: .64rem; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--text-3); margin-right: 8px; }
+
+  /* Stats — plain typographic row (no icon tiles) */
+  .tiles { display: flex; gap: 30px; flex-wrap: wrap; margin-top: 20px; }
+  .tile-stat { display: flex; align-items: baseline; gap: 7px; padding: 0; border: none; background: none; }
+  .tile-stat .ti { display: none; }
+  .tile-body { display: flex; align-items: baseline; gap: 7px; }
+  .tile-stat .v { font-weight: 700; font-size: 1.1rem; letter-spacing: -.01em; }
+  .tile-stat .l { font-size: .82rem; color: var(--text-2); font-weight: 500; }
+  .meters { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 20px; }
+  @media (max-width: 600px) { .meters { grid-template-columns: 1fr; } }
+  .meter-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+  .meter-l { font-size: .76rem; font-weight: 600; color: var(--text-2); }
+  .meter-v { font-family: var(--font-mono); font-size: .74rem; color: var(--text); }
+  .meter-bar { height: 5px; border-radius: 999px; background: var(--bg-soft); overflow: hidden; }
+  .meter-bar > span { display: block; height: 100%; background: var(--text-3); }
+  .meter-bar.warn > span { background: var(--warning); }
+  .meter-bar.over > span { background: var(--error); }
+
+  /* Stream */
+  .stream { display: flex; flex-direction: column; gap: 34px; margin-top: 30px; }
+
+  /* Activation — a plain heading with a rule, no band */
+  .activation > summary { display: flex; align-items: center; gap: 10px; padding: 0 0 10px; border-bottom: 1px solid var(--border); }
+  .activation > summary:hover .act-state { color: var(--primary); }
+  .act-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: var(--text-3); }
+  .act--done .act-dot { background: var(--success); } .act--running .act-dot { background: var(--info); } .act--queued .act-dot { background: var(--text-3); }
+  .act-state { font-weight: 700; font-size: 1rem; letter-spacing: -.01em; text-transform: capitalize; transition: color .12s ease; }
+  .act-cycle { font-size: .74rem; color: var(--text-3); }
+  .act-sp { flex: 1 1 auto; }
+  .act-r { display: flex; align-items: center; gap: 13px; flex: 0 0 auto; }
+  .act-steps { font-size: .74rem; color: var(--text-3); }
+  .act-body { display: flex; flex-direction: column; padding-top: 4px; }
+
+  /* Steps — typographic rows, no cards, hairline separators */
+  .step { border: none; background: none; box-shadow: none; border-radius: 0; }
+  .step + .step { border-top: 1px solid var(--border); }
+  .step > summary { display: flex; align-items: baseline; gap: 13px; padding: 15px 2px; }
+  .step > summary:hover .step-t { color: var(--primary); }
+  .stepno { font-family: var(--font-mono); font-weight: 600; font-size: .74rem; color: var(--text-3); flex: 0 0 auto; }
+  .step-h { flex: 1 1 auto; min-width: 0; }
+  .step-t { font-weight: 600; font-size: .95rem; transition: color .12s ease; }
+  .step-r { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
+  .step .body { padding: 0 2px 18px; }
+  .thinking { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; color: var(--text-2); font-size: .86rem; font-style: italic; }
+  .thinking .ic { width: 15px; height: 15px; color: var(--text-3); flex: 0 0 auto; margin-top: 2px; }
+  .stepmsg { margin-top: 12px; font-size: .95rem; line-height: 1.65; }
+
+  /* Call list (≤5) — plain rows, lead with the mono name */
+  .calllist { display: flex; flex-direction: column; margin-top: 12px; }
+  .call { border: none; background: none; border-radius: 0; }
+  .call + .call { border-top: 1px solid var(--border); }
+  .call > summary { display: flex; align-items: center; gap: 11px; padding: 11px 2px; }
+  .call .tile { display: none; }
+  .call-h { flex: 1 1 auto; min-width: 0; }
+  .call-t { font-weight: 600; font-size: .86rem; display: flex; gap: 8px; align-items: center; }
+  .call .kind { font-family: var(--font-mono); font-size: .78rem; color: var(--text-2); }
+  .call-s { font-size: .82rem; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .call-r { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+  .call-b { padding: 2px 2px 14px; }
+
+  /* Transition — plain text */
+  .tmark { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .tmark .tline { flex: 1 1 auto; height: 1px; background: var(--border); }
+  .tmark .sig { display: inline-flex; align-items: center; gap: 6px; font-size: .76rem; font-weight: 600; color: var(--text-2); background: none; border: none; padding: 0; }
+  .tmark .sig svg { width: 13px; height: 13px; color: var(--text-3); }
+
+  /* Segmented badge — plain muted counts */
+  .segbadge { border: none; background: none; gap: 13px; }
+  .seg { padding: 0; background: none; font-weight: 600; }
+  .seg + .seg { border-left: none; }
+
+  /* Sub-agent — minimal, with a left rule for its trace */
+  .mini { border: none; background: none; padding: 12px 0 2px; }
+  .mini-h { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+  .mini-h .ava { width: 26px; height: 26px; border-radius: 7px; flex: 0 0 auto; color: var(--text-2); background: var(--bg-soft); display: flex; align-items: center; justify-content: center; }
+  .mini-h .ava svg { width: 14px; height: 14px; }
+  .mini-h .n { font-weight: 700; font-size: .88rem; }
+  .mini-h .s { font-size: .78rem; color: var(--text-2); }
+  .mini-stream { display: flex; flex-direction: column; padding-left: 16px; border-left: 1px solid var(--border); }
+
+  /* Calm cubes — light-tint chips with status-coloured glyphs, no glow */
+  .cubes { grid-template-columns: repeat(auto-fill, 22px); gap: 6px; }
+  .cube { width: 22px; height: 22px; border-radius: 5px; }
+  .cube.done { background: rgba(var(--success-rgb), .18); }
+  .cube.failed { background: rgba(var(--error-rgb), .16); }
+  .cube.running { background: rgba(var(--info-rgb), .16); }
+  .cube.queued { background: transparent; border: 1.5px dashed var(--border-2); }
+  .cube.dropped { background: var(--hover); border: 1px solid var(--border-2); }
+  .cube:hover { transform: scale(1.12); box-shadow: none; }
+  .cube.sel { outline: 2px solid var(--text-2); outline-offset: 2px; transform: none; }
+  .cm-check { stroke: var(--success); }
+  .cmark.cx::before, .cmark.cx::after { background: var(--error); }
+  .cm-bars i { background: var(--info); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a class="brand" href="index.html" title="Back to gallery">
+    <span class="mark"><svg class="ic"><use href="#i-agent"/></svg></span>
+    <span style="display:flex;flex-direction:column;line-height:1.1">
+      <span class="eyebrow">Forge mockup · Grouped</span><span class="name">Paper</span>
+    </span>
+  </a>
+  <span class="spacer"></span>
+  <button class="btn btn-ghost" onclick="setAllOpen(true)"><svg class="ic"><use href="#i-expand"/></svg>Expand all</button>
+  <button class="btn btn-ghost" onclick="setAllOpen(false)">Collapse all</button>
+  <button class="btn" onclick="toggleTheme()"><svg class="ic"><use href="#i-theme"/></svg><span data-theme-label>Dark</span></button>
+  <a class="btn" href="index.html"><svg class="ic"><use href="#i-arrow"/></svg>Gallery</a>
+</div>
+
+<div class="wrap"><div id="app"></div></div>
+
+<script src="mockup.js?v=2"></script>
+<script src="grouped-core.js?v=3"></script>
+</body>
+</html>

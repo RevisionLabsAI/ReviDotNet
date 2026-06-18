@@ -24,7 +24,10 @@ public static class AgentReviLogger
         public const string LlmResponse = "llm-response";
         public const string Thinking = "thinking";
         public const string ToolCall = "tool-call";
+        public const string ToolStart = "tool-start";
         public const string ToolResult = "tool-result";
+        public const string ToolDropped = "tool-dropped";
+        public const string Content = "content";
         public const string StateTransition = "state-transition";
         public const string End = "end";
         public const string GuardrailViolation = "guardrail-violation";

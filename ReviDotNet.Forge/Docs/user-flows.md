@@ -232,8 +232,12 @@ environment variable is set on the Forge container so it can call upstream APIs.
      (e.g., `BetterNamer-Prod`, `Search-Staging`).
    - Copy the raw key (`forge_…`) from the modal *immediately* — it is only shown once.
    - The grid will show the new key disabled-toggleable, with prefix and creation time.
-2. **Configure the client app.** The client adds the `X-Forge-ApiKey` header to every
-   request and points its inference base URL at Forge's `/api/v1`.
+2. **Configure the client app.** If the client is a **ReviDotNet.Core** consumer, you don't need
+   to hand-roll HTTP at all — drop a `RConfigs/forge.rcfg` into the app and `ForgeManager` will
+   auto-route `IInferService.Completion`/`CompletionStream` through the gateway (see the
+   "Client configuration (`forge.rcfg`)" section in [configuration.md](configuration.md)). For
+   non-Core clients, add the `X-Forge-ApiKey` header to every request and point the inference base
+   URL at Forge's `/api/v1`, as below.
 3. **Make a request.** From the client:
    ```http
    POST /api/v1/infer HTTP/1.1
@@ -272,9 +276,9 @@ environment variable is set on the Forge container so it can call upstream APIs.
 
 ### Failure-mode reading
 
-- HTTP **401** — bad / disabled / missing `X-Forge-ApiKey`, or missing `ClientId` in
-  the body.
-- HTTP **400** — malformed JSON body.
+- HTTP **401** — bad / disabled / missing `X-Forge-ApiKey` (authentication only).
+- HTTP **400** — malformed JSON body, or a missing `ClientId` in the body (this check runs
+  *after* authentication succeeds, so it's a 400, not a 401).
 - HTTP **502** — every candidate model failed or is in cooldown. The 60-second cooldown
   is per-model; check Observer for the underlying provider errors and Usage for the
   failover pattern.

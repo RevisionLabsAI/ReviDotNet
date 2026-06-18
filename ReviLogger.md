@@ -15,7 +15,12 @@ This guide covers configuration, DI setup, usage patterns, and tips.
 
 ## 1) Installation and DI registration
 
-ReviLogger lives in the ReviDotNet.Core package within this repository. Register it in your DI container and inject IReviLogger where needed.
+ReviLogger lives in the ReviDotNet.Core package. **The canonical way to register it is `AddReviDotNet(...)`**, which wires `IReviLogger`/`IReviLogger<T>` (via `TryAddSingleton`) along with the rest of the library. Don't register `ReviLogger` by hand unless you know you need to — its constructor **requires a non-null `IRlogEventPublisher`**, which `AddReviDotNet` does not register, so a bare `AddSingleton<IReviLogger, ReviLogger>()` fails to resolve unless you also register a publisher.
+
+Two startup steps matter:
+
+1. **Register an `IRlogEventPublisher`.** If you don't have a real sink, register a no-op so the logger can construct (and optionally plug in a Mongo/live-viewer publisher later).
+2. **Call `ReviServiceLocator.SetProvider(app.Services)` after building the host.** Static `Util.Log` and `AgentReviLogger` resolve their logger through `ReviServiceLocator.TryGetLogger`; without `SetProvider`, those calls can't find the logger and agent/log correlation is silently lost.
 
 Example for ASP.NET Core / generic host:
 
@@ -26,24 +31,27 @@ using Revi;
 
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
 
-// Add configuration (appsettings.json etc.)
-// builder.Configuration.AddJsonFile("appsettings.json", optional: false);
+// Register the whole library, including IReviLogger / IReviLogger<T>.
+builder.Services.AddReviDotNet(typeof(Program).Assembly);
 
-// Register ReviLogger and its dependencies
-builder.Services.AddSingleton<IReviLogger, ReviLogger>();
-
-// Optional: if you have an IRlogEventPublisher implementation
-// builder.Services.AddSingleton<IRlogEventPublisher, YourEventPublisher>();
+// Provide an event publisher (a no-op is fine if you have no external sink yet).
+builder.Services.AddSingleton<IRlogEventPublisher, NoOpRlogEventPublisher>();
 
 IHost app = builder.Build();
+
+// Required so Util.Log / AgentReviLogger can resolve the logger via the service locator.
+ReviServiceLocator.SetProvider(app.Services);
 
 IReviLogger logger = app.Services.GetRequiredService<IReviLogger>();
 logger.LogInfo("ReviLogger is ready");
 
+// Typed logger (category = T's name) is also available:
+IReviLogger<MyService> typed = app.Services.GetRequiredService<IReviLogger<MyService>>();
+
 await app.RunAsync();
 ```
 
-In minimal APIs or Blazor Server you can register in Program.cs similarly, then inject IReviLogger into your components/services/controllers.
+Inject `IReviLogger` (or `IReviLogger<T>` for an automatic category) into your components/services/controllers as usual.
 
 ---
 
@@ -71,7 +79,7 @@ Example appsettings.json:
 }
 ```
 
-Color names map to System.ConsoleColor (e.g., Gray, DarkGray, Blue, Cyan, Yellow, Red, DarkYellow, Green). If a color is invalid, ReviLogger will default to Gray/White.
+Color names map to System.ConsoleColor (e.g., Gray, DarkGray, Blue, Cyan, Yellow, Red, DarkYellow, Green). If a color is missing or invalid, ReviLogger falls back to **Gray** (for both prefix and text — never White). Parsing is case-insensitive.
 
 ---
 
@@ -92,9 +100,21 @@ IReviLogger exposes methods per level and a general Log method. All logging meth
 - LogFatal(parent, message, identifier?, cycle?, tags?, object1?, object2?)
 - Log(parent?, level, message, identifier?, cycle?, tags?, object1?, object2?)
 
+Each method has the full signature `(... object1?, object1Name?, object2?, object2Name?, file?, member?, line?)`. You normally only pass `message` and optionally `object1`/`object2`:
+
+- `object1Name`/`object2Name` are `[CallerArgumentExpression]` parameters — they **auto-capture the source text of the expression** you passed as `object1`/`object2`. So `LogDebug("Config", object1: cfg)` records the object under the name `"cfg"` automatically; you rarely set these explicitly.
+- `file`/`member`/`line` are `[CallerFilePath]`/`[CallerMemberName]`/`[CallerLineNumber]` — caller info is auto-captured; you don't pass them.
+
 Note: parent is an Rlog returned by a previous call; pass it to correlate child log entries.
 
-Caller info (file, member, line) is auto-captured via Caller* attributes; you normally don’t pass those.
+### `IsEnabled(LogLevel)`
+
+`IReviLogger` also declares `bool IsEnabled(LogLevel level)`. It returns whether that level's **console printing** is on (the level's `ConsolePrint` flag — see configuration), **not** a min-level threshold. Use it to guard expensive message construction:
+
+```csharp
+if (_log.IsEnabled(LogLevel.Debug))
+    _log.LogDebug(BuildExpensiveDiagnostic());
+```
 
 ### Examples
 
@@ -135,6 +155,10 @@ public class MyService
 - tags: free-form comma/space-separated labels for filtering
 - object1/object2: any objects to serialize/print alongside the message
 
+> **Normalization — match the stored form when filtering downstream.** Identifiers and tags are normalized on the `Rlog` record, so a sink/query must match the normalized form, not what you typed:
+> - **Identifier** is lower-cased and spaces become hyphens: `"Begin Loop"` → `"begin-loop"`. (If you pass no identifier, it defaults to the caller member name, or the level name.)
+> - **Tags** are split on **space *or* comma**, empty entries dropped, and each tag is lower-cased and trimmed: `"Parse, IO"` and `"parse io"` both yield `["parse", "io"]`. Tag matching is therefore effectively case-insensitive.
+
 ---
 
 ## 4) Parent/child correlation with Rlog
@@ -162,14 +186,18 @@ for (int i = 0; i < files.Count; i++)
 
 Parent/child usage keeps correlation ids, identifiers, and other metadata coherent across related operations.
 
+> **Memory note:** passing a `parent` does more than set a correlation id. Each child's message is `AppendLine`-d into the parent's `StringBuilder` **and every ancestor's** builder, so a root `Rlog` accumulates the full text of its entire subtree (this is what enables a later `DumpLog(root)` of the whole tree). For short-lived scopes this is fine, but a **long-lived root** (e.g. one held for the lifetime of the process and chained under continuously) grows that text in memory without bound. Keep parent chains scoped to a unit of work, or dump-and-drop the root periodically.
+
 ---
 
 ## 5) Attaching contextual objects
 
-You can attach up to two arbitrary objects per log call via object1 and object2. ReviLogger will serialize and render them:
-- Complex objects via System.Text.Json (with safe options) and/or simple property printing
-- Strings are printed as-is
-- Exceptions can be attached to capture stack details
+You can attach up to two arbitrary objects per log call via object1 and object2. When the Rlog event is published, each attached object is serialized as follows:
+- **Serializer:** Newtonsoft.Json (`JsonConvert.SerializeObject`) with `Formatting.Indented` and a `StringEnumConverter`, so **enums are emitted as their string names**, not numbers. (System.Text.Json is *not* used in the logging path.) Because Newtonsoft is used, beware of cyclic object graphs.
+- **Secret redaction:** the serialized text is passed through `Util.RedactSecrets` before it reaches any sink, so API keys in URLs / `Authorization` headers are scrubbed.
+- Exceptions can be attached to capture message/stack details.
+
+Note: object payloads are **published only** (to the `IRlogEventPublisher` sink / live viewer) — they are **not** written to the colorized console output. Only the message line is printed to the console.
 
 Tip: Favor small, relevant payloads to keep logs readable; large objects are better dumped using DumpLog below.
 
@@ -177,7 +205,7 @@ Tip: Favor small, relevant payloads to keep logs readable; large objects are bet
 
 ## 6) Dumping text and images
 
-When you need to persist larger artifacts, use the dump helpers. These write files using a consistent naming scheme (prefix + timestamp + session/instance identifiers) to the default dump location resolved by ReviLogger.
+When you need to persist larger artifacts, use the dump helpers. They write to a **fixed, non-configurable** location: `<UserProfile>/ResenLogs/session_<yyyy-MMM-dd_HH-mm-ss>/<prefix>_<n>.<ext>`. The timestamp is the **folder** name (per process session); the file name is just your `fileNamePrefix` plus a numeric counter (`_1`, `_2`, …) and the extension (`.txt` for text, the image extension for images). There is no setting to change the directory.
 
 ### Dump large text or builders
 ```csharp
@@ -205,18 +233,60 @@ Notes:
 
 ## 7) Console output and colors
 
-ReviLogger colorizes console output per level. You can control:
-- PrefixColor: color for the leading structured prefix (level, timestamp, type)
-- TextColor: color for the message line and payload
-- ConsolePrint: whether a given level should be printed to console
+ReviLogger colorizes console output per level. A console line is exactly two parts: the **level tag** then the **message line**. You can control:
+- **PrefixColor**: color for the leading level tag **only** — i.e. `[DEBUG]` / `[INFO]` / `[WARN]` / `[ERROR]` / `[FATAL]`. **No timestamp is printed** to the console, and the type/caller is *not* part of this prefix.
+- **TextColor**: color for the **message line**, which is everything after the tag. When `IncludeTypeInPrefix` / `IncludeCallerInPrefix` are enabled, the type and `caller:line` are formatted *into the message line* (e.g. `MyService.DoWork:42 - <message>`) and therefore take **TextColor**, not PrefixColor. Object payloads are not rendered to the console at all (see §5).
+- **ConsolePrint**: whether a given level should be printed to console
 
 Colorization can be disabled per level by setting ConsolePrint to false, or globally by setting all levels to ConsolePrint=false.
+
+### Console limiter file (per-site verbosity, hot-reloaded)
+
+Beyond the global per-level flags, ReviLogger reads a **limiter file** that lets you tune console verbosity per call-site **without redeploying** — it is watched with a `FileSystemWatcher` and reloaded live on change. It affects **console output only**; events are still published to any `IRlogEventPublisher` sink regardless.
+
+**File location** (first match wins):
+1. The path in the `REVILOGGER_LIMITER_PATH` environment variable.
+2. `revilogger_limiter.txt` in the app base directory.
+3. Legacy fallbacks (`revilogger_limiter.rcfg` under `RConfigs/`).
+
+**Entry formats** (one per line):
+- `Class.Method = Level` — sets the **minimum** console level for that call site (messages below it aren't printed). The `Class.Method` key is **case-sensitive**; the level (`Debug`/`Info`/`Warning`/`Error`/`Fatal`) is case-insensitive.
+- `Class.Method:Line` — a bare entry (no `=`) **suppresses** that exact call site (by line).
+
+Lines starting with `#` or `//` are comments. Example:
+
+```
+# quiet a chatty importer, but keep its errors
+DataImporter.Run = Error
+# silence one specific noisy call site
+DataImporter.Poll:128
+```
 
 ---
 
 ## 8) Environment-based defaults
 
 ReviLogger detects environment via DOTNET_ENVIRONMENT or ASPNETCORE_ENVIRONMENT. In Development/Dev/Local it enables ResolveLegacyTypeFromStack, which attempts to infer legacy caller type names from the stack for nicer prefixes. In other environments this is disabled by default for performance reasons.
+
+### Legacy `Util.Log` and the `legacyutil` tag (level is inferred from the message)
+
+The static `Util.Log(...)` shim is meant for migrating old call sites. It always stamps the tag `legacyutil <file>:<member>:<line>` onto the event. The `legacyutil` tag triggers **two special behaviors** in the logger:
+
+1. **Level is inferred from the message text — not from the call.** When a log's tags contain `legacyutil` (case-insensitive), ReviLogger scans the **message** for the *earliest-occurring* keyword and overrides the level accordingly:
+
+   | Inferred level | Keywords (case-insensitive, substring match) |
+   |---|---|
+   | Fatal | `fatal`, `critical`, `crit`, `severe` |
+   | Error | `error`, `err`, `exception`, `failed`, `fail`, `failure` |
+   | Warning | `warn`, `warning` |
+   | Info | `info`, `information` |
+   | Debug | `debug`, `trace` |
+
+   The keyword nearest the **start** of the message wins; if none match, the level is left as passed. This means a call like `Util.Log("Connection failed, retrying...")` silently becomes an **Error**-level event — convenient for legacy logs, surprising if you don't expect it. (Note the substring match: a message mentioning "no warnings found" still matches `warn`.) Prefer the typed `IReviLogger.LogXxx` methods, which set the level explicitly and are not subject to this inference.
+
+2. **Type resolution falls back to the stack.** When `IncludeTypeInPrefix` is on but no `CategoryName` is set, a `legacyutil` event resolves its originating class from the stack trace (when `ResolveLegacyTypeFromStack` is enabled, see above), otherwise it labels the type `UtilLog`.
+
+To opt a non-`Util.Log` call into this behavior, include `legacyutil` in its `tags`; to keep an explicit level, leave the tag off and use the typed methods.
 
 ---
 

@@ -17,6 +17,25 @@ When embedding structured content inside `.pmt` files (for example in `[[_exout_
 - Keep example payloads in YAML even when you ultimately want JSON from the model; set `[[settings]] -> request-json = true` and ReviDotNet will request/validate JSON while your examples can remain YAML.
 - Use JSON only when an exact JSON byte structure is required or when demonstrating a precise JSON schema/output.
 
+## Parsing Rules
+
+The INI-like parser has a few behaviors worth knowing:
+
+- **Comments**: `#` starts a comment only when it is the **first non-whitespace character** of a line, and only in key-value sections (`[[information]]`, `[[settings]]`, `[[tuning]]`). An inline `#` (e.g. `name = a # b`) is preserved as part of the value. Inside raw sections (`[[_system]]`, `[[_instruction]]`, `[[_exout_N]]`, …) `#` is never a comment.
+- **Blank lines are dropped everywhere**, including inside raw sections. A whitespace-only line in `[[_system]]`/`[[_exout_N]]` is removed — you can't use blank lines to separate paragraphs in system text or to format multi-line examples.
+- **Section headers** must be a line of the exact form `[[name]]` with nothing after the closing `]]`. Trailing text on a header line breaks header recognition.
+- **Literal `[[…]]` inside a raw section**: prefix the line with a backslash — `\[[not a header]]` — and the parser emits the literal `[[not a header]]` without ending the raw block (the backslash is stripped).
+
+## Effective Name and Versioning
+
+A prompt's **effective name** — the string you pass to `ToObject`/`ToString`/etc. — is:
+
+> `<lower-cased subfolder path under RConfigs/Prompts/>` + `/` (when non-empty) + the `[[information]] name` value.
+
+The physical filename is **ignored**. For example, a file at `RConfigs/Prompts/Search/anything.pmt` with `name = analyze-specs` resolves to `search/analyze-specs`. Lookups (`Get`) match this effective name **exactly and case-sensitively**, so `Get("analyze-specs")` for a prompt in a subfolder returns null — use `"search/analyze-specs"`.
+
+**Versioning / duplicates:** when two loaded prompts resolve to the same effective name, a later one replaces an earlier one **only if its `version` is strictly greater**; a reload at an equal or lower version does not win. (This is how your own same-named prompt overrides a built-in embedded default.)
+
 ## Sections and Options
 
 ### `[[information]]` (Required)
@@ -32,11 +51,13 @@ Operational settings that govern how the prompt is executed. All items in this s
 
 | Option | Type | Default | Description                                                                                                                                                                                                                                                                                            |
 | :--- | :--- | :--- |:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `filter` | string | `null` | Optional filter criteria for the prompt.                                                                                                                                                                                                                                                               |
+| `filter` | string | `null` | The **name of another prompt** used as a prompt-injection screen. When set, that filter prompt is run over the same inputs *before* the main request; it must output exactly `foobar` for the input to be considered safe — any other output throws a `SecurityException` (and adds an extra inference call). Set to `false` (any case) or omit to disable. A filter prompt may not itself declare a `filter`. See "Prompt Filtering" in inference.md. |
+| `filter-canary` | string | `safeword` | The exact word the `filter` prompt must emit for input to be considered safe. See "Prompt Filtering" in inference.md. |
+| `filter-matching` | string | `lenient` | How the filter output is compared to the canary: `lenient` (trim, strip surrounding quotes/punctuation, case-insensitive) or `strict` (exact, case-sensitive). |
 | `chain-of-thought` | boolean | `false` | If `true`, encourages the model to reason step-by-step.                                                                                                                                                                                                                                                |
-| `request-json` | boolean | `false` | If `true`, requests the model to output in JSON format.                                                                                                                                                                                                                                                |
-| `guidance-schema-type` | enum | `disabled` | Specifies the schema type for guided output. Options are described in more detail in a section below, but here are the options at a glance: `disabled`, `default`, `regex-manual`, `regex-auto`, `json-manual`, `json-auto`, `gnbf-manual`, `gnbf-auto`.                                               |
-| `require-valid-output` | boolean | `false` | If `true`, validates output against the provided schema.                                                                                                                                                                                                                                               |
+| `request-json` | boolean | `false` | **Does NOT constrain the model.** It (a) enables `ToObject<T>()` — which throws if `request-json` is false — and (b) converts YAML example outputs to JSON in the prompt context. It adds no payload key and does not ask the provider for JSON. For actual on-wire JSON enforcement use `guidance-schema-type`. Note `ToObject` returns `null` (no fixer) if the extracted JSON is empty.                                                                                                                                                                              |
+| `guidance-schema-type` | enum | `disabled` | Specifies the schema type for guided output. Options are described in more detail in a section below, but here are the options at a glance: `disabled`, `defer`, `regex-manual`, `regex-auto`, `json-manual`, `json-auto`, `gnbf-manual`, `gnbf-auto`. (Note: the bare value `default` is treated as "unset/skip" — it applies **no** guidance. To inherit the provider's default strategy use `defer`.)                                               |
+| `require-valid-output` | boolean | `false` | If `true`, validates the **deserialized object** (in `ToObject<T>`) via reflection — it checks `[Required]` members (non-null / non-empty) and Min/Max Items/Length attributes on collections. This is **not** JSON-Schema validation and does not check the `[[_schema]]`. A validation failure triggers the app-level retry (see `retry-attempts`).                                                                                                                                                                                |
 | `retry-attempts` | integer | `0` | Number of times to retry on failure.                                                                                                                                                                                                                                                                   |
 | `retry-prompt` | string | `default` | Custom instruction used during retries.                                                                                                                                                                                                                                                                |
 | `few-shot-examples` | integer | `all` | Number of examples to include in the prompt context.                                                                                                                                                                                                                                                   |
@@ -46,10 +67,10 @@ Operational settings that govern how the prompt is executed. All items in this s
 | `use-search-grounding`| boolean | `false` | If `true`, enables search-based grounding (if supported by model).                                                                                                                                                                                                                                     |
 | `preferred-models` | list | `null` | Comma/space-separated list of preferred models (e.g., `gpt-4o, groq-llama-3`).                                                                                                                                                                                                                         |
 | `blocked-models` | list | `null` | List of models that should never be used.                                                                                                                                                                                                                                                              |
-| `min-tier` | string | `C` | Minimum model tier required. Options: `A` (Highest), `B` (Mid), `C` (Lowest).                                                                                                                                                                                                                          |
-| `completion-type` | string | `auto` | The type of completion interface to use. Options: `chat-only`, `prompt-only`, `prompt-chat-one`, `prompt-chat-multi`.                                                                                                                                                                                  |
-| `system-input-type-override` | enum | `null` | Overrides the model's `system-input-type`. Options: `None`, `Listed`, `Filled`.                                                                                                                                                                                                                       |
-| `instruction-input-type-override` | enum | `null` | Overrides the model's `instruction-input-type`. Options: `None`, `Listed`, `Filled`.                                                                                                                                                                                                                  |
+| `min-tier` | string | `C` | Minimum model tier required: `A` (Highest), `B` (Mid), `C` (Lowest). On the prompt this is stored as a **raw string** (no enum validation or default at parse time) and interpreted by `ModelManager.Find` — **case-insensitively** (`a`/`A` both work); an unrecognized/typo value means "no minimum", i.e. effectively `C`. Selection returns the lowest-tier enabled model whose tier ≥ this minimum. |
+| `completion-type` | string | `auto` | The completion interface to use. Options: `chat-only`, `prompt-only`, `prompt-chat-one`, `prompt-chat-multi`, or `auto` (unset → `chat-only`). These kebab values are normalized at runtime. A model profile's `[[override-settings]] completion-type` (a strict `CompletionType` enum) overrides this when set. Note: the separate `Prompt.IsChat()`/`IsCompletion()` helpers are a legacy convention that only recognize the literal strings `chat`/`completion`, distinct from this setting. |
+| `system-input-type-override` | enum | `null` | Overrides the model's `system-input-type`. Options: `None`, `Listed`, `Filled`, `Both`. (`Both` = fill matching `{placeholders}` first, then list any inputs that weren't used for a placeholder.) |
+| `instruction-input-type-override` | enum | `null` | Overrides the model's `instruction-input-type`. Options: `None`, `Listed`, `Filled`, `Both`. (`Both` = fill matching `{placeholders}` first, then list the remainder.) |
 
 ### `[[tuning]]` (Optional)
 Parameters to control the model's sampling behavior. All items in this section are optional.
@@ -64,11 +85,15 @@ Parameters to control the model's sampling behavior. All items in this section a
 | `frequency-penalty` | float | `0.0` | Penalizes tokens based on their frequency in the text so far. |
 | `repetition-penalty` | float | `1.0` | Penalizes tokens that have already appeared. |
 
+> **Special values (`default` / `prompt`).** In any `[[settings]]`/`[[tuning]]` key, a value whose lowercase form is `default` (or `prompt`) is a reserved **skip sentinel** — the property is left **unset** (null), not assigned that literal string. This is how you clear/omit a setting. Notably, `retry-prompt = default` does **not** set a retry prompt named "default" — it disables the retry-prompt override (leaves it null). To use a literal value, don't use these reserved words.
+
 ### Raw Content Sections
 These sections capture the core text of the prompt.
 
-*   `[[_system]]` (**Required**): Defines the system instructions/persona for the AI.
-*   `[[_instruction]]` (**Required**): The main task or instruction for the AI.
+> **At least one** of `[[_system]]` or `[[_instruction]]` is required (not both). Loading fails only if *both* are empty/absent; either one alone is valid.
+
+*   `[[_system]]`: Defines the system instructions/persona for the AI.
+*   `[[_instruction]]`: The main task or instruction for the AI.
 *   `[[_schema]]` (Optional): A JSON, Regex, or GBNF schema defining the expected output structure. Used when `guidance-schema-type` is set to a `Manual` variant.
 
 ### Examples in .pmt Files
@@ -86,7 +111,7 @@ The input section often uses a labeled format to organize multiple pieces of inf
 
 **Note on Brackets:**
 - **Square Brackets `[]`**: Used for labels in listed input (e.g., `[Context]`).
-- **Curly Brackets `{}`**: Used for placeholders that are inserted into the prompt (e.g., `{Total Names}`).
+- **Curly Brackets `{}`**: Used for placeholders that are inserted into the prompt. The placeholder name is the **identifierized** form of the input label: spaces become hyphens and characters outside `[A-Za-z0-9 -]` are stripped (matching is case-insensitive). So an input labeled `[Total Names]` is filled via the placeholder `{Total-Names}` — **not** `{Total Names}`. Single-word labels like `[Context]` are unchanged (`{Context}`).
 
 **Example:**
 ```ini
@@ -161,12 +186,17 @@ The `guidance-schema-type` in `[[settings]]` determines how the output is constr
 | Type | Description |
 | :--- | :--- |
 | `disabled` | No output guidance is enforced. |
+| `defer` | Defers to the provider's configured default guidance strategy (`[[guidance]] default-guidance-type` / `_default-guidance-string` in the provider `.rcfg`). Use this to inherit a provider-wide default instead of choosing a strategy per prompt. The bare value `default` does **not** do this — it is parsed as "unset/skip" and applies no guidance. |
 | `json-manual` | Uses the JSON Schema provided in the `[[_schema]]` section. |
-| `json-auto` (Preferred) | Automatically generates a JSON Schema based on the C# return type of the function calling the prompt. Best paired with `ToObject<T>()` to deserialize the validated JSON directly into your C# type. |
+| `json-auto` (Preferred) | Automatically generates a JSON Schema from the C# return type. See the note below on the **generated-schema shape** (kebab-case names, nullability disabled, strict-mode constraints). Best paired with `ToObject<T>()`. |
 | `regex-manual` | Uses the regular expression provided in the `[[_schema]]` section to guide output. |
 | `regex-auto` | Automatically generates a regex based on the C# return type. If `chain-of-thought` is enabled, it includes a "Reasoning: ... Output: ..." wrapper. |
-| `gnbf-manual` | Uses a GBNF (Grammar-Based Next-token Filtering) grammar provided in `[[_schema]]`. |
-| `gnbf-auto` | Automatically generates a GBNF grammar based on the C# return type. |
+| `gnbf-manual` | **Not yet implemented (no-op).** GBNF/grammar guidance has no producer wired in — selecting this currently applies **no** guidance. |
+| `gnbf-auto` | **Not yet implemented (no-op).** No GBNF grammar is generated — selecting this currently applies **no** guidance. |
+
+> **`json-auto` generated-schema shape.** The auto-generated JSON Schema (`Util.JsonStringFromType`) forces **kebab-case** property names and **disables nullability**. Under OpenAI strict mode it additionally forces an object root, `additionalProperties: false`, and marks **all** properties `required` (recursively). When deserializing with `ToObject<T>()`, account for this: expect kebab-case keys (use matching JSON property attributes / naming) and don't rely on optional fields.
+
+> **Value parsing & aliases.** `guidance-schema-type` values are case-insensitive and ignore `-`/`_` (so `json-auto`, `json_auto`, and `JsonAuto` are equivalent). The parser also accepts bare aliases that map to the **manual** variants: `json` → `json-manual`, `regex` → `regex-manual`, and `gbnf` → `gnbf-manual`. Note the spelling: the bare alias is `gbnf` (transposed) while the full kebab forms are `gnbf-manual`/`gnbf-auto` (matching the `GNBF…` enum members).
 
 ##### Recommendation: Prefer `json-auto` with `ToObject<T>()`
 

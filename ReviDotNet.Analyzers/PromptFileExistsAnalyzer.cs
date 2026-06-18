@@ -80,11 +80,12 @@ namespace ReviDotNet.Analyzers
             if (symbol == null)
                 return;
 
-            if (symbol.ContainingType.Name != "Infer" || (symbol.ContainingType.ContainingNamespace?.Name != "Revi" && symbol.ContainingType.ContainingNamespace?.Name != "ReviDotNet"))
+            // Match the static Infer class AND the injected IInferService/InferService surface.
+            if (!ReviApiRecognizer.IsInferSurface(symbol))
                 return;
 
             // List of methods that take a promptName as the first argument
-            string[] targetMethods = { "ToObject", "ToEnum", "ToString", "ToStringList", "ToStringListLimited", "ToBool", "ToJObject", "Completion" };
+            string[] targetMethods = { "ToObject", "ToEnum", "ToString", "ToStringList", "ToStringListClean", "ToStringListLimited", "ToBool", "ToJObject", "Completion" };
             if (!targetMethods.Contains(symbol.Name))
                 return;
 
@@ -180,38 +181,22 @@ namespace ReviDotNet.Analyzers
         /// <returns>The trimmed value if found; otherwise null.</returns>
         private static string? TryParseInformationName(string content)
         {
-            // Regex: start of line, key, separator, capture the value until EOL
-            Regex rx = new Regex(@"^\s*information_name\s*[:=]\s*(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+            // Mirror the runtime RConfigParser exactly: values are split on '=' only (not ':') and quotes
+            // are NOT stripped. Being stricter than this would falsely report a prompt as valid.
+            Regex rx = new Regex(@"^\s*information_name\s*=\s*(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
             Match m = rx.Match(content);
-            string? value;
             if (m.Success)
-            {
-                value = m.Groups[1].Value.Trim();
-            }
-            else
-            {
-                // Support RConfig section syntax: [[information]] then a line like: name = <value>
-                Regex sectionRx = new Regex(@"\[\[\s*information\s*\]\](?<body>.*?)(?:\n\s*\[\[|\z)", RegexOptions.Singleline | RegexOptions.IgnoreCase);
-                Match s = sectionRx.Match(content);
-                if (!s.Success)
-                    return null;
+                return m.Groups[1].Value.Trim();
 
-                string body = s.Groups["body"].Value;
-                Regex nameRx = new Regex(@"^\s*name\s*[:=]\s*(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
-                Match nm = nameRx.Match(body);
-                if (!nm.Success)
-                    return null;
-                value = nm.Groups[1].Value.Trim();
-            }
+            // Support RConfig section syntax: [[information]] then a line like: name = <value>
+            Regex sectionRx = new Regex(@"\[\[\s*information\s*\]\](?<body>.*?)(?:\n\s*\[\[|\z)", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            Match s = sectionRx.Match(content);
+            if (!s.Success)
+                return null;
 
-            // Strip surrounding quotes if present
-            if ((value.StartsWith("\"", StringComparison.Ordinal) && value.EndsWith("\"", StringComparison.Ordinal)) ||
-                (value.StartsWith("'", StringComparison.Ordinal) && value.EndsWith("'", StringComparison.Ordinal)))
-            {
-                value = value.Substring(1, value.Length - 2);
-            }
-
-            return value;
+            Regex nameRx = new Regex(@"^\s*name\s*=\s*(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+            Match nm = nameRx.Match(s.Groups["body"].Value);
+            return nm.Success ? nm.Groups[1].Value.Trim() : null;
         }
     }
 }

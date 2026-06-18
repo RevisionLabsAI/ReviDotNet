@@ -32,9 +32,30 @@ api-url = https://example/
 
             DiagnosticResult expected = DiagnosticResult.CompilerError(ProviderProfileSchemaAnalyzer.DiagnosticId)
                 .WithSpan("RConfigs/Providers/bad.rcfg", 3, 1, 3, 1)
-                .WithArguments("Nope", "general.protocol", " (allowed: OpenAI, vLLM, Gemini, LLamaAPI, Claude)");
+                .WithArguments("Nope", "general.protocol", " (allowed: OpenAI, vLLM, Gemini, Perplexity, LLamaAPI, Claude)");
 
             await AnalyzerTestHelper.RunAsync<ProviderProfileSchemaAnalyzer>(code, files, expected);
+        }
+
+        // D67: protocol Perplexity and `defer` guidance are runtime-valid and must NOT be flagged.
+        [Fact]
+        public async Task NoDiagnostic_OnPerplexityProtocolAndDeferGuidance()
+        {
+            string code = "class C { void M() {} }";
+            (string path, string content)[] files =
+            {
+                ("RConfigs/Providers/pplx.rcfg", @"[[general]]
+name = pplx
+protocol = Perplexity
+api-url = https://api.perplexity.ai/
+
+[[guidance]]
+supports-guidance = true
+default-guidance-type = defer
+")
+            };
+
+            await AnalyzerTestHelper.RunAsync<ProviderProfileSchemaAnalyzer>(code, files);
         }
 
         [Fact]

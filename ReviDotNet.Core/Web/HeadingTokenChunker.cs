@@ -57,7 +57,75 @@ public sealed class HeadingTokenChunker : IContentChunker
             }
         }
 
-        return chunks;
+        return MergeSmallChunks(chunks, options.MinChunkTokens, options.MaxTokens);
+    }
+
+    /// <summary>
+    /// Forward-merges chunks smaller than <paramref name="minTokens"/> into the following chunk, as long
+    /// as the combined size stays within <paramref name="maxTokens"/>. A too-small final chunk that cannot
+    /// merge forward is kept as-is. Chunks are re-indexed.
+    /// </summary>
+    private static List<WebChunk> MergeSmallChunks(List<WebChunk> chunks, int minTokens, int maxTokens)
+    {
+        if (minTokens <= 0 || chunks.Count < 2)
+            return chunks;
+
+        List<WebChunk> result = [];
+
+        void Emit(string text, string? trail, int tokens) => result.Add(new WebChunk
+        {
+            Index = result.Count,
+            HeadingTrail = trail,
+            Text = text,
+            EstimatedTokens = tokens,
+        });
+
+        string? carryText = null;
+        string? carryTrail = null;
+        int carryTokens = 0;
+
+        foreach (WebChunk c in chunks)
+        {
+            if (carryText is null)
+            {
+                if (c.EstimatedTokens < minTokens)
+                    (carryText, carryTrail, carryTokens) = (c.Text, c.HeadingTrail, c.EstimatedTokens);
+                else
+                    Emit(c.Text, c.HeadingTrail, c.EstimatedTokens);
+                continue;
+            }
+
+            // A too-small chunk is pending: try to merge it forward into the current chunk.
+            string combined = carryText + "\n\n" + c.Text;
+            int combinedTokens = Util.EstTokenCountFromCharCount(combined.Length);
+            if (combinedTokens <= maxTokens)
+            {
+                if (combinedTokens < minTokens)
+                    (carryText, carryTokens) = (combined, combinedTokens); // still small — keep merging forward
+                else
+                {
+                    Emit(combined, carryTrail, combinedTokens);
+                    carryText = null;
+                }
+            }
+            else
+            {
+                // Can't merge without exceeding the budget — emit the small chunk as-is.
+                Emit(carryText, carryTrail, carryTokens);
+                if (c.EstimatedTokens < minTokens)
+                    (carryText, carryTrail, carryTokens) = (c.Text, c.HeadingTrail, c.EstimatedTokens);
+                else
+                {
+                    Emit(c.Text, c.HeadingTrail, c.EstimatedTokens);
+                    carryText = null;
+                }
+            }
+        }
+
+        if (carryText is not null)
+            Emit(carryText, carryTrail, carryTokens);
+
+        return result;
     }
 
     /// <summary>

@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Forge · Agent Instance — Grouped / Soft</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="grouped.css?v=2" />
+<style>
+  /* ── Soft: rounded, borderless, gently tinted; calm and friendly ── */
+  .wrap { max-width: 920px; margin: 0 auto; padding: 26px 22px 110px; }
+
+  /* Header — soft card */
+  .inst { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-2); padding: 24px 24px 20px; margin-bottom: 22px; }
+  .inst-top { display: flex; align-items: center; gap: 15px; }
+  .inst-ava { width: 48px; height: 48px; border-radius: 15px; flex: 0 0 auto; color: #fff; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--primary), var(--tertiary)); box-shadow: 0 6px 16px rgba(var(--primary-rgb), .35); }
+  .inst-ava svg { width: 25px; height: 25px; }
+  .inst-name { font-size: 1.22rem; font-weight: 700; letter-spacing: -.015em; }
+  .inst-sub { font-size: .79rem; color: var(--text-2); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+  .inst-status { margin-left: auto; }
+  .inst-task { margin-top: 17px; font-size: .92rem; line-height: 1.62; }
+  .inst-task .lbl { font-size: .64rem; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--text-2); margin-right: 8px; }
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 18px; }
+  @media (max-width: 720px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+  .tile-stat { display: flex; align-items: center; gap: 11px; padding: 13px 15px; border: none; background: var(--surface-2); border-radius: 14px; }
+  .tile-stat .ti { width: 36px; height: 36px; border-radius: 11px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; color: var(--accent, var(--primary)); background: rgba(var(--accent-rgb, var(--primary-rgb)), .15); }
+  .tile-stat .ti svg { width: 18px; height: 18px; }
+  .tile-body { display: flex; flex-direction: column; line-height: 1.1; }
+  .tile-stat .v { font-weight: 700; font-size: 1.18rem; letter-spacing: -.02em; }
+  .tile-stat .l { font-size: .68rem; color: var(--text-2); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+  .meters { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 18px; }
+  @media (max-width: 640px) { .meters { grid-template-columns: 1fr; } }
+  .meter-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+  .meter-l { font-size: .66rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-2); }
+  .meter-v { font-family: var(--font-mono); font-size: .76rem; font-weight: 600; }
+  .meter-bar { height: 8px; border-radius: 999px; background: var(--bg-soft); overflow: hidden; }
+  .meter-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--success); }
+  .meter-bar.warn > span { background: var(--warning); }
+  .meter-bar.over > span { background: var(--error); }
+
+  /* Stream */
+  .stream { display: flex; flex-direction: column; gap: 16px; }
+
+  /* Activation — soft rounded container with a gently tinted header */
+  .activation { background: var(--bg-soft); border-radius: var(--r-lg); overflow: hidden; }
+  .activation > summary { display: flex; align-items: center; gap: 11px; padding: 13px 17px; }
+  .act--done > summary { background: rgba(var(--success-rgb), .07); }
+  .act--running > summary { background: rgba(var(--info-rgb), .08); }
+  .act--queued > summary { background: var(--hover); }
+  .act-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; background: var(--text-3); }
+  .act--done .act-dot { background: var(--success); }
+  .act--running .act-dot { background: var(--info); box-shadow: 0 0 0 3px rgba(var(--info-rgb), .2); }
+  .act--queued .act-dot { background: var(--text-3); }
+  .act-state { font-weight: 700; font-size: .95rem; letter-spacing: -.01em; }
+  .act-cycle { font-family: var(--font-mono); font-size: .72rem; color: var(--text-2); background: var(--surface); padding: 2px 8px; border-radius: var(--r-pill); }
+  .act-sp { flex: 1 1 auto; }
+  .act-r { display: flex; align-items: center; gap: 11px; flex: 0 0 auto; }
+  .act-steps { font-size: .72rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .act-body { padding: 13px; display: flex; flex-direction: column; gap: 12px; }
+
+  /* Steps — soft borderless cards; status is a left dot before the number */
+  .step { background: var(--surface); border: none; border-radius: 14px; box-shadow: var(--shadow-1); overflow: hidden; --accent: var(--text-3); transition: box-shadow .14s ease; }
+  .step--done { --accent: var(--success); } .step--running { --accent: var(--info); }
+  .step--failed { --accent: var(--error); } .step--queued { --accent: var(--text-3); }
+  .step > summary { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
+  .step > summary:hover { background: var(--hover); }
+  .stepno { font-family: var(--font-mono); font-weight: 700; font-size: .76rem; color: var(--text-2); flex: 0 0 auto; display: inline-flex; align-items: center; gap: 9px; }
+  .stepno::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
+  .step-h { flex: 1 1 auto; min-width: 0; }
+  .step-t { font-weight: 600; font-size: .94rem; }
+  .step-r { display: flex; align-items: center; gap: 11px; flex: 0 0 auto; }
+  .step .body { padding: 0 16px 16px; }
+  .thinking { display: flex; gap: 8px; align-items: flex-start; margin-top: 12px; padding: 9px 12px; border-radius: 12px; background: rgba(var(--ev-think-rgb), .08); color: var(--text-2); font-size: .84rem; font-style: italic; }
+  .thinking .ic { width: 15px; height: 15px; color: var(--ev-think); flex: 0 0 auto; margin-top: 2px; }
+  .stepmsg { margin-top: 12px; font-size: .92rem; line-height: 1.6; }
+
+  /* Call list (≤5) — soft inset rows */
+  .calllist { display: flex; flex-direction: column; gap: 8px; margin-top: 13px; }
+  .call { background: var(--bg-soft); border: none; border-radius: 11px; overflow: hidden; --accent: var(--ev-tool); --accent-rgb: var(--ev-tool-rgb); }
+  .call--subagent { --accent: var(--ev-sub); --accent-rgb: var(--ev-sub-rgb); }
+  .call > summary { display: flex; align-items: center; gap: 11px; padding: 10px 13px; }
+  .call > summary:hover { background: var(--hover); }
+  .call .tile { width: 28px; height: 28px; border-radius: 9px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; color: var(--accent); background: rgba(var(--accent-rgb), .15); }
+  .call .tile svg { width: 15px; height: 15px; }
+  .call-h { flex: 1 1 auto; min-width: 0; }
+  .call-t { font-weight: 600; font-size: .88rem; display: flex; gap: 8px; align-items: center; }
+  .call .kind { font-family: var(--font-mono); font-size: .76rem; color: var(--accent); }
+  .call-s { font-size: .8rem; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .call-r { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; }
+  .call-b { padding: 2px 13px 13px; }
+
+  /* Transition — soft pill */
+  .tmark { display: flex; align-items: center; gap: 12px; padding: 2px 4px; }
+  .tmark .tline { flex: 1 1 auto; height: 1px; background: var(--border-2); opacity: .6; }
+  .tmark .sig { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: .72rem; font-weight: 700; color: var(--secondary); background: rgba(var(--secondary-rgb), .12); padding: 4px 11px; border-radius: var(--r-pill); }
+  .tmark .sig svg { width: 12px; height: 12px; }
+
+  /* Segmented badge — soft, separate rounded chips */
+  .segbadge { border: none; gap: 5px; }
+  .seg { border-radius: var(--r-pill); }
+  .seg + .seg { border-left: none; }
+
+  /* Sub-agent — soft inset card */
+  .mini { border: none; background: var(--surface); border-radius: 12px; padding: 13px; box-shadow: var(--shadow-1); }
+  .mini-h { display: flex; align-items: center; gap: 11px; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px dashed var(--border-2); }
+  .mini-h .ava { width: 32px; height: 32px; border-radius: 10px; flex: 0 0 auto; color: #fff; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--ev-sub), color-mix(in srgb, var(--ev-sub) 55%, #000)); }
+  .mini-h .ava svg { width: 16px; height: 16px; }
+  .mini-h .n { font-weight: 700; font-size: .9rem; }
+  .mini-h .s { font-size: .78rem; color: var(--text-2); }
+  .mini-stream { display: flex; flex-direction: column; gap: 10px; }
+  .mini-stream .step { background: var(--bg-soft); box-shadow: none; }
+
+  /* Cubes — a touch rounder for the soft look */
+  .cube { border-radius: 8px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a class="brand" href="index.html" title="Back to gallery">
+    <span class="mark"><svg class="ic"><use href="#i-agent"/></svg></span>
+    <span style="display:flex;flex-direction:column;line-height:1.1">
+      <span class="eyebrow">Forge mockup · Grouped</span><span class="name">Soft</span>
+    </span>
+  </a>
+  <span class="spacer"></span>
+  <button class="btn btn-ghost" onclick="setAllOpen(true)"><svg class="ic"><use href="#i-expand"/></svg>Expand all</button>
+  <button class="btn btn-ghost" onclick="setAllOpen(false)">Collapse all</button>
+  <button class="btn" onclick="toggleTheme()"><svg class="ic"><use href="#i-theme"/></svg><span data-theme-label>Dark</span></button>
+  <a class="btn" href="index.html"><svg class="ic"><use href="#i-arrow"/></svg>Gallery</a>
+</div>
+
+<div class="wrap"><div id="app"></div></div>
+
+<script src="mockup.js?v=2"></script>
+<script src="grouped-core.js?v=3"></script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+@* Segmented status badge — one coloured section per non-empty status (icon + count, no words).
+   Shown on a step header when the step dispatched more than one call. *@
+@{
+    var b = GroupedFormat.Breakdown(Calls);
+}
+<span class="segbadge">
+    @if (b.Done > 0)
+    {
+        <span class="seg seg-done"><Ic Class="seg-ic" Id="i-check" />@b.Done</span>
+    }
+    @if (b.Running > 0)
+    {
+        <span class="seg seg-run"><span class="segdot"></span>@b.Running</span>
+    }
+    @if (b.Failed > 0)
+    {
+        <span class="seg seg-fail"><Ic Class="seg-ic" Id="i-x" />@b.Failed</span>
+    }
+    @if (b.Queued > 0)
+    {
+        <span class="seg seg-queue"><Ic Class="seg-ic" Id="i-stopwatch" />@b.Queued</span>
+    }
+    @if (b.Dropped > 0)
+    {
+        <span class="seg seg-drop"><Ic Class="seg-ic" Id="i-ban" />@b.Dropped</span>
+    }
+</span>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<CallView> Calls { get; set; } = [];
+}

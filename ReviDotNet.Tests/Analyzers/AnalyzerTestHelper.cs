@@ -48,6 +48,19 @@ public static class Infer {
     }
     public static System.Collections.Generic.IAsyncEnumerable<string> Completion(string promptName, System.Threading.CancellationToken token = default) => Completion(promptName);
 }
+public interface IInferService {
+    string ToString(string promptName);
+    string ToString(string promptName, System.Collections.Generic.List<Input>? inputs);
+    T? ToObject<T>(string promptName, System.Collections.Generic.List<Input>? inputs = null);
+}
+public static class Agent {
+    public static System.Threading.Tasks.Task<string> Run(string agentName) => System.Threading.Tasks.Task.FromResult(string.Empty);
+    public static System.Threading.Tasks.Task<string> ToString(string agentName) => System.Threading.Tasks.Task.FromResult(string.Empty);
+}
+public interface IAgentService {
+    System.Threading.Tasks.Task<string> Run(string agentName);
+    System.Threading.Tasks.Task<string> ToString(string agentName);
+}
 public class Input { public Input(string label, string text) { } }
 }";
 

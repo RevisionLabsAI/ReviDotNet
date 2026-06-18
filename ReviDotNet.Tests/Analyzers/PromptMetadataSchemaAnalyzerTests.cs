@@ -60,9 +60,36 @@ instr
 
             DiagnosticResult expected = DiagnosticResult.CompilerError(PromptMetadataSchemaAnalyzer.DiagnosticId)
                 .WithSpan("RConfigs/Prompts/Sample2.pmt", 5, 1, 5, 1)
-                .WithArguments("nope", "settings.guidance-schema-type", "disabled, default, regex-manual, regex-auto, json-manual, json-auto, gnbf-manual, gnbf-auto");
+                .WithArguments("nope", "settings.guidance-schema-type", "disabled, default, defer, regex-manual, regex-auto, regex, json-manual, json-auto, json, gnbf-manual, gnbf-auto, gbnf");
 
             await AnalyzerTestHelper.RunAsync<PromptMetadataSchemaAnalyzer>(code, files, expected);
+        }
+
+        // D105: the runtime-accepted bare aliases (and `defer`) must NOT trip the analyzer.
+        [Theory]
+        [InlineData("json")]
+        [InlineData("regex")]
+        [InlineData("gbnf")]
+        [InlineData("defer")]
+        public async Task NoDiagnostic_OnBareGuidanceAliases(string value)
+        {
+            string code = "class C { void M() {} }";
+            (string path, string content)[] files =
+            {
+                ("RConfigs/Prompts/Alias.pmt", $@"[[information]]
+name = ok
+
+[[settings]]
+guidance-schema-type = {value}
+
+[[_system]]
+sys
+[[_instruction]]
+instr
+")
+            };
+
+            await AnalyzerTestHelper.RunAsync<PromptMetadataSchemaAnalyzer>(code, files);
         }
 
         [Fact]

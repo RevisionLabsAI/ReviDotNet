@@ -1,0 +1,32 @@
+@page "/workshop/instance/preview"
+@using ReviDotNet.Forge.Components.Pages.Workshop.Instance
+@inject IJSRuntime JS
+
+<PageTitle>Session View (preview) — ReviDotNet Forge</PageTitle>
+
+<div class="d-flex align-center gap-3 mb-2" style="flex-wrap:wrap;">
+    <MudText Typo="Typo.h4">Session view</MudText>
+    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Secondary" Class="ma-0">preview</MudChip>
+    <MudSpacer />
+    <MudButton StartIcon="@Icons.Material.Filled.UnfoldMore" Variant="Variant.Text" Size="Size.Small" OnClick="ExpandAll">Expand all</MudButton>
+    <MudButton StartIcon="@Icons.Material.Filled.UnfoldLess" Variant="Variant.Text" Size="Size.Small" OnClick="CollapseAll">Collapse all</MudButton>
+</div>
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+    The grouped session view, rendered through the live <code>RlogEvent</code> → view-model projector
+    from a synthetic event tree (the same shape a real run emits) — a still-running deep-research run.
+</MudText>
+
+@if (_data is not null)
+{
+    <GroupedInstanceView Data="_data" />
+}
+
+@code {
+    private GroupedInstanceData? _data;
+
+    protected override void OnInitialized()
+        => _data = GroupedTraceBuilder.Build(DummyTrace.Build(), DummyTrace.SessionId);
+
+    private async Task ExpandAll() => await JS.InvokeVoidAsync("groupedSetAllOpen", ".gi-root", true);
+    private async Task CollapseAll() => await JS.InvokeVoidAsync("groupedSetAllOpen", ".gi-root", false);
+}

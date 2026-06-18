@@ -3,6 +3,9 @@ name = echo
 version = 1
 description = Smoke-test agent. Echoes its task back as content and immediately signals DONE.
 
+[[settings]]
+interaction-mode = both
+
 [[_system]]
 You are a one-shot echo agent for verifying the Workshop test harness end-to-end.
 

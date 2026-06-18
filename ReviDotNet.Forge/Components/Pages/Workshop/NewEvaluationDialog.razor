@@ -5,7 +5,7 @@
 @inject IWorkshopStore Store
 
 @*
-    Composer for a new Evaluation. Either point it at an existing instance's runs, or
+    Composer for a new Evaluation. Either point it at an existing session's runs, or
     give it a task to run fresh and then evaluate. Returns a NewEvaluationSpec; the
     Evaluations hub does the running / evaluating / suggesting.
 *@
@@ -16,7 +16,9 @@
                    Label="Agent"
                    Variant="Variant.Outlined"
                    FullWidth="true"
-                   Class="mb-3">
+                   Class="mb-3"
+                   T="string"
+                   @bind-Value:after="RefreshSessions">
             @foreach (var a in Agents.GetAll().OrderBy(a => a.Name))
             {
                 <MudSelectItem Value="@(a.Name ?? string.Empty)">@a.Name</MudSelectItem>
@@ -25,22 +27,22 @@
 
         <MudRadioGroup @bind-Value="_mode" Class="mb-3">
             <MudRadio Value="EvaluationMode.RunFresh" Color="Color.Primary" Dense="true">Run fresh &amp; evaluate</MudRadio>
-            <MudRadio Value="EvaluationMode.ExistingInstance" Color="Color.Primary" Dense="true"
-                      Disabled="@(_completedInstances.Count == 0)">
-                Evaluate an existing instance
+            <MudRadio Value="EvaluationMode.ExistingSession" Color="Color.Primary" Dense="true"
+                      Disabled="@(_completedSessions.Count == 0)">
+                Evaluate an existing session
             </MudRadio>
         </MudRadioGroup>
 
-        @if (_mode == EvaluationMode.ExistingInstance)
+        @if (_mode == EvaluationMode.ExistingSession)
         {
-            <MudSelect @bind-Value="_instanceId"
-                       Label="Instance"
+            <MudSelect @bind-Value="_sourceSessionId"
+                       Label="Session"
                        Variant="Variant.Outlined"
                        FullWidth="true"
                        Class="mb-3">
-                @foreach (var inst in _completedInstances)
+                @foreach (var s in _completedSessions)
                 {
-                    <MudSelectItem Value="@inst.Id">@InstanceLabel(inst)</MudSelectItem>
+                    <MudSelectItem Value="@s.Id">@SessionLabel(s)</MudSelectItem>
                 }
             </MudSelect>
         }
@@ -98,24 +100,24 @@
     [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
 
     [Parameter] public string? AgentName { get; set; }
-    /// <summary>If set, default to evaluating this instance.</summary>
-    [Parameter] public string? PreselectInstanceId { get; set; }
+    /// <summary>If set, default to evaluating this session.</summary>
+    [Parameter] public string? PreselectSessionId { get; set; }
 
     private string _agentName = string.Empty;
     private EvaluationMode _mode = EvaluationMode.RunFresh;
-    private string? _instanceId;
+    private string? _sourceSessionId;
     private string _task = string.Empty;
     private int _runs = 1;
     private bool _autoSuggest = true;
     private readonly List<KvPair> _inputs = new();
 
-    private List<WorkshopInstance> _completedInstances = new();
+    private List<WorkshopSession> _completedSessions = new();
 
     private sealed class KvPair { public string Key { get; set; } = ""; public string Value { get; set; } = ""; }
 
     private bool CanConfirm => !string.IsNullOrWhiteSpace(_agentName) && _mode switch
     {
-        EvaluationMode.ExistingInstance => !string.IsNullOrWhiteSpace(_instanceId),
+        EvaluationMode.ExistingSession => !string.IsNullOrWhiteSpace(_sourceSessionId),
         _ => !string.IsNullOrWhiteSpace(_task)
     };
 
@@ -124,45 +126,43 @@
         _agentName = !string.IsNullOrWhiteSpace(AgentName)
             ? AgentName!
             : Agents.GetAll().FirstOrDefault()?.Name ?? string.Empty;
-        RefreshInstances();
+        RefreshSessions();
 
-        if (!string.IsNullOrWhiteSpace(PreselectInstanceId))
+        if (!string.IsNullOrWhiteSpace(PreselectSessionId))
         {
-            _mode = EvaluationMode.ExistingInstance;
-            _instanceId = PreselectInstanceId;
+            _mode = EvaluationMode.ExistingSession;
+            _sourceSessionId = PreselectSessionId;
         }
     }
 
-    private void RefreshInstances()
+    private void RefreshSessions()
     {
-        _completedInstances = Store.GetInstances(_agentName)
-            .Where(i => i.IsComplete && i.SessionIds.Count > 0)
+        _completedSessions = Store.GetSessions(_agentName)
+            .Where(s => s.IsComplete && s.SessionIds.Count > 0)
             .ToList();
-        if (_instanceId != null && _completedInstances.All(i => i.Id != _instanceId))
-            _instanceId = null;
-        if (_completedInstances.Count == 0 && _mode == EvaluationMode.ExistingInstance)
+        if (_sourceSessionId != null && _completedSessions.All(s => s.Id != _sourceSessionId))
+            _sourceSessionId = null;
+        if (_completedSessions.Count == 0 && _mode == EvaluationMode.ExistingSession)
             _mode = EvaluationMode.RunFresh;
     }
 
-    private static string InstanceLabel(WorkshopInstance i)
+    private static string SessionLabel(WorkshopSession s)
     {
-        var task = string.IsNullOrWhiteSpace(i.Task) ? "(no task)" : (i.Task.Length > 60 ? i.Task[..60] + "…" : i.Task);
-        var ver = i.AgentVersion.HasValue ? $"v{i.AgentVersion} · " : "";
-        return $"{task}  ({ver}{i.RunCount} run(s))";
+        var task = string.IsNullOrWhiteSpace(s.Task) ? "(no task)" : (s.Task.Length > 60 ? s.Task[..60] + "…" : s.Task);
+        var ver = s.AgentVersion.HasValue ? $"v{s.AgentVersion} · " : "";
+        return $"{task}  ({ver}{s.RunCount} run(s))";
     }
 
     private void Confirm()
     {
         if (!CanConfirm) return;
-
-        // If the agent was changed in the dialog, re-scope instances for safety.
-        if (_mode == EvaluationMode.ExistingInstance && Store.GetInstance(_instanceId!) is null) return;
+        if (_mode == EvaluationMode.ExistingSession && Store.GetSession(_sourceSessionId!) is null) return;
 
         var spec = new NewEvaluationSpec
         {
             Mode = _mode,
             AgentName = _agentName,
-            InstanceId = _mode == EvaluationMode.ExistingInstance ? _instanceId : null,
+            SourceSessionId = _mode == EvaluationMode.ExistingSession ? _sourceSessionId : null,
             Task = _task,
             Runs = Math.Max(1, _runs),
             Inputs = _inputs

@@ -44,7 +44,9 @@ public class AgentState
 
     /// <summary>
     /// Optional inline settings for this state, parsed from [[_state.&lt;name&gt;.settings]] in the .agent file.
-    /// Overrides model-level parameters (max-tokens, temperature, etc.) for LLM calls in this state.
+    /// Overrides model-level parameters for LLM calls in this state. Supported keys: max-tokens, best-of,
+    /// use-search-grounding, and the sampling/tuning keys (temperature, top-k, top-p, min-p,
+    /// presence-penalty, frequency-penalty, repetition-penalty).
     /// </summary>
     public Prompt? InlineSettings { get; set; }
 

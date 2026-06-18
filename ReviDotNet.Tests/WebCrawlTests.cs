@@ -239,12 +239,61 @@ public class WebCrawlTests
         count.Should().BeGreaterThanOrEqualTo(1);
     }
 
+    // D120: the crawl loop re-enqueues transient HTTP failures (forefront) instead of dropping them.
+    [Fact]
+    public async Task Crawl_RetriesTransientFailures()
+    {
+        var fetcher = new FlakyFetcher(failTimes: 2, html: "<html><body><p>finally ok</p></body></html>");
+        var service = NewService(fetcher);
+        var request = new WebCrawlRequest
+        {
+            SeedUrls = ["https://site.test/"],
+            MaxPages = 1,
+            MaxDepth = 0,
+            MaxConcurrency = 1,
+            FetchOptions = new WebFetchOptions { RespectRobots = false },
+        };
+
+        List<WebDocument> docs = [];
+        await foreach (WebDocument doc in service.CrawlAsync(request, CancellationToken.None))
+            docs.Add(doc);
+
+        docs.Should().ContainSingle();
+        docs[0].FetchInfo.StatusCode.Should().Be(200);  // succeeded after retries, not the 503
+        fetcher.Calls.Should().Be(3);                    // 2 transient failures + 1 success
+    }
+
     private static WebContentService NewService(IWebFetcher fetcher)
         => new(fetcher,
             new ReadabilityContentExtractor(),
             new ReverseMarkdownConverter(),
             new StructuredDataMetadataExtractor(),
             new HeadingTokenChunker());
+
+    /// <summary>An <see cref="IWebFetcher"/> that returns a transient 503 the first <c>failTimes</c> calls, then 200.</summary>
+    private sealed class FlakyFetcher(int failTimes, string html) : IWebFetcher
+    {
+        private int _calls;
+        public int Calls => _calls;
+
+        public WebFetchTier Tier => WebFetchTier.Http;
+
+        public Task<FetchResult> FetchAsync(FetchRequest request, CancellationToken cancellationToken = default)
+        {
+            int n = Interlocked.Increment(ref _calls);
+            bool fail = n <= failTimes;
+            return Task.FromResult(new FetchResult
+            {
+                Html = fail ? string.Empty : html,
+                FinalUrl = request.Url,
+                StatusCode = fail ? 503 : 200,  // 503 is a retryable transient status
+                ContentType = "text/html",
+                Tier = Tier,
+                ElapsedMs = 1,
+                Blocked = false,
+            });
+        }
+    }
 
     /// <summary>An <see cref="IWebFetcher"/> serving a fixed in-memory site graph; unknown URLs 404.</summary>
     private sealed class SiteFetcher(Dictionary<string, string> pages) : IWebFetcher

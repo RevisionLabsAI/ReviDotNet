@@ -54,6 +54,10 @@ public sealed class PromptManagerService : IPromptManager
             _logger.LogError($"Error loading prompts: {e.Message}");
         }
 
+        // Overlay built-in default prompts (json-fixer, enum-fixer) shipped embedded in ReviDotNet.Core.
+        // Runs last so any app-defined prompt of the same name (loaded above) wins; CheckAdd only fills gaps.
+        LoadFromEmbeddedResources(typeof(PromptManagerService).Assembly);
+
         return Task.CompletedTask;
     }
 

@@ -20,7 +20,7 @@ public sealed class ToolManagerService : IToolManager
     private readonly IReviLogger<ToolManagerService> _logger;
 
     /// <summary>Initializes a new <see cref="ToolManagerService"/> and registers the default built-in tools.</summary>
-    public ToolManagerService(Lazy<IAgentService> agentService, IWebContentService webContent, IReviLogger<ToolManagerService> logger)
+    public ToolManagerService(Lazy<IAgentService> agentService, IWebContentService webContent, IModelManager models, IReviLogger<ToolManagerService> logger)
     {
         _logger = logger;
 
@@ -28,6 +28,11 @@ public sealed class ToolManagerService : IToolManager
         Register(new WebScrapeTool(webContent));
         Register(new WebExtractTool(webContent));
         Register(new InvokeAgentTool(agentService));
+
+        // File-access tools (operate on AgentRunContext.Files; the reader needs the model registry).
+        Register(new ListFilesTool());
+        Register(new ReadFileTool(models));
+        Register(new SearchFilesTool(models));
     }
 
     /// <inheritdoc/>

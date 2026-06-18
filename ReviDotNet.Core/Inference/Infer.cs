@@ -266,11 +266,8 @@ internal class Infer
 		if (await FilterCheck(prompt, inputs, token))
 			throw new SecurityException("FilterCheck failed!");
 
-		// Find the completion method
-		if (!Enum.TryParse(prompt.CompletionType, out CompletionType type))
-		{
-			throw new Exception($"Invalid completion type: '{prompt.CompletionType}'");
-		}
+		// Find the completion method. Model-level completion-type override wins over the prompt's value.
+		CompletionType type = foundModel.CompletionType ?? Util.ResolveCompletionType(prompt.CompletionType);
 
 		DateTime startTime = DateTime.UtcNow;
 		bool inferenceSuccess = false;
@@ -292,14 +289,14 @@ internal class Infer
 				case CompletionType.PromptChatOne:
 				case CompletionType.PromptChatMulti:
 				{
-					if (foundModel.Provider.SupportsCompletion ?? false)
+					if (foundModel.EffectiveSupportsPromptCompletion)
 					{
 						promptString = CompletionPrompt.BuildString(prompt, foundModel, inputs);
 						result = await CallInference(promptString, prompt, foundModel, outputType, token);
 					}
 					else
 					{
-						messages = CompletionChat.BuildMessages(prompt, foundModel, inputs);
+						messages = CompletionChat.BuildMessages(prompt, foundModel, inputs, singleMessageExamples: type == CompletionType.PromptChatOne);
 						result = await CallInference(messages, prompt, foundModel, outputType, token);
 					}
 
@@ -511,11 +508,8 @@ internal class Infer
 		if (await FilterCheck(prompt, inputs))
 			throw new SecurityException("FilterCheck failed!");
 
-		// Find the completion method
-		if (!Enum.TryParse(prompt.CompletionType, out CompletionType type))
-		{
-			throw new Exception($"Invalid completion type: '{prompt.CompletionType}'");
-		}
+		// Find the completion method. Model-level completion-type override wins over the prompt's value.
+		CompletionType type = foundModel.CompletionType ?? Util.ResolveCompletionType(prompt.CompletionType);
 
 		IAsyncEnumerable<string> streamResult;
 
@@ -535,14 +529,14 @@ internal class Infer
 			case CompletionType.PromptChatOne:
 			case CompletionType.PromptChatMulti:
 			{
-				if (foundModel.Provider.SupportsCompletion ?? false)
+				if (foundModel.EffectiveSupportsPromptCompletion)
 				{
 					var promptStr = CompletionPrompt.BuildString(prompt, foundModel, inputs);
 					streamResult = CallStreamingInference(promptStr, prompt, foundModel, outputType, cancellationToken);
 				}
 				else
 				{
-					var msgs = CompletionChat.BuildMessages(prompt, foundModel, inputs);
+					var msgs = CompletionChat.BuildMessages(prompt, foundModel, inputs, singleMessageExamples: type == CompletionType.PromptChatOne);
 					streamResult = CallStreamingInference(msgs, prompt, foundModel, outputType, cancellationToken);
 				}
 				break;
@@ -660,9 +654,17 @@ internal class Infer
 			var dump = $"Faulty JSON!\nPrompt: {prompt.Name}\nFull Prompt: {result?.FullPrompt}\nOutput: {result?.Selected}";
 			await Util.DumpLog(dump, "faultyjson");
 			
-			// Run the json-fixer prompt to see if we can make this work
+			// Run the json-fixer prompt (null-safe: a missing fixer skips remediation instead of
+			// throwing; a default json-fixer ships embedded in ReviDotNet.Core).
+			Prompt? jsonFixer = PromptManager.Get("json-fixer");
+			if (jsonFixer is null)
+			{
+				Util.Log("No 'json-fixer' prompt available; skipping JSON remediation.");
+			}
+			else
+			{
 			result = await Completion(
-				FindPrompt("json-fixer"),
+				jsonFixer,
 				new List<Input>()
 				{
 					new Input("Schema", Util.JsonStringFromType(outputType)), 
@@ -696,8 +698,9 @@ internal class Infer
 			{
 				Util.Log($"JSON remediation {((newObject is not null) ? "SUCCEEDED!" : "FAILED")}");
 			}
+			}
 		}
-		
+
 		// Validate object and return it if it's valid
 		var castObject = (T?) Convert.ChangeType(newObject, typeof(T));
 		if (ValidateObject<T>(castObject, prompt))
@@ -973,17 +976,7 @@ internal class Infer
 		CancellationToken token = default)
 	{
 		string? result = await ToString(promptName, inputs, modelProfile, modelName, token);
-		switch (result?.ToLower())
-		{
-			case "true":
-				return true;
-				
-			case "false":
-				return false;
-			
-			default:
-				return null;
-		}
+		return Util.ParseBool(result);
 	}
 	#endregion
 	
@@ -1566,7 +1559,17 @@ internal class Infer
 		{
 			templateLine = model.InputItem;
 		}
-		
+
+		// A Listed/Both input type requires single-item/multi-item templates. Fail with a clear,
+		// actionable message instead of a NullReferenceException when the model profile omits them.
+		if (templateLine is null)
+		{
+			string missingKey = inputs.Count == 1 ? "single-item" : "multi-item";
+			throw new InvalidOperationException(
+				$"Model '{model.Name}' uses a Listed/Both input type but defines no '{missingKey}' template " +
+				$"in its [[input]] section. Add e.g. `{missingKey} = {{label}}: {{text}}` to the model .rcfg.");
+		}
+
 		var inputString = "";
 		for (var num = 0; num < inputs.Count; ++num)
 		{
@@ -1618,10 +1621,8 @@ internal class Infer
 		
 		// TODO: Response object conversion is likely necessary here
 
-		// Check result
-		//	Return true if the result is NOT "foobar"
-		//	Return false if the result IS "foobar"
-		return result?.Selected != "foobar";
+		// Check result: the filter prompt must emit the canary word for safe input; anything else is injection.
+		return !Util.FilterOutputIsSafe(result?.Selected, prompt.FilterCanary, prompt.FilterMatching);
 	}
 
 	/// <summary>

@@ -39,12 +39,17 @@ public sealed class EmbedService(
 
         int? effectiveDimensions = dimensions ?? model.Dimensions;
         string? effectiveEncodingFormat = encodingFormat ?? model.EncodingFormat;
+        string? effectiveTaskType = taskType ?? model.TaskType;
+        bool effectiveNormalize = normalize ?? model.NormalizeEmbeddings ?? false;
 
         EmbeddingResponse? response = await model.Provider.EmbeddingClient.GenerateEmbeddingAsync(
             input: text,
             model: model.ModelString,
             dimensions: effectiveDimensions,
             encodingFormat: effectiveEncodingFormat,
+            taskType: effectiveTaskType,
+            timeoutSecondsOverride: ParseTimeoutOverride(model.Timeout),
+            retryAttemptLimitOverride: model.RetryAttempts,
             cancellationToken: cancellationToken);
 
         if (response?.Data is null || response.Data.Count == 0)
@@ -52,7 +57,7 @@ public sealed class EmbedService(
 
         float[] embedding = response.Data[0].Embedding;
 
-        if (normalize == true)
+        if (effectiveNormalize)
             embedding = NormalizeVector(embedding);
 
         return embedding;
@@ -94,12 +99,17 @@ public sealed class EmbedService(
 
         int? effectiveDimensions = dimensions ?? model.Dimensions;
         string? effectiveEncodingFormat = encodingFormat ?? model.EncodingFormat;
+        string? effectiveTaskType = taskType ?? model.TaskType;
+        bool effectiveNormalize = normalize ?? model.NormalizeEmbeddings ?? false;
 
         EmbeddingResponse? response = await model.Provider.EmbeddingClient.GenerateEmbeddingsAsync(
             inputs: textArray,
             model: model.ModelString,
             dimensions: effectiveDimensions,
             encodingFormat: effectiveEncodingFormat,
+            taskType: effectiveTaskType,
+            timeoutSecondsOverride: ParseTimeoutOverride(model.Timeout),
+            retryAttemptLimitOverride: model.RetryAttempts,
             cancellationToken: cancellationToken);
 
         if (response?.Data is null || response.Data.Count == 0)
@@ -110,7 +120,7 @@ public sealed class EmbedService(
             .Select(d => d.Embedding)
             .ToList();
 
-        if (normalize == true)
+        if (effectiveNormalize)
         {
             for (int i = 0; i < embeddingList.Count; i++)
                 embeddingList[i] = NormalizeVector(embeddingList[i]);
@@ -279,6 +289,13 @@ public sealed class EmbedService(
 
         return defaultModel;
     }
+
+    /// <summary>
+    /// Parses an embedding profile's <c>override-settings_timeout</c> string into a positive seconds value,
+    /// or null (use the provider default) when unset, "disabled", or non-numeric.
+    /// </summary>
+    private static int? ParseTimeoutOverride(string? timeout)
+        => int.TryParse(timeout, out int seconds) && seconds > 0 ? seconds : (int?)null;
 
     private static void ValidateEmbeddings(float[] embedding1, float[] embedding2)
     {

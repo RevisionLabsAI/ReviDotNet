@@ -67,6 +67,9 @@
                 <MudNavLink Href="/workshop" Icon="@Icons.Material.Filled.SmartToy">
                     Workshop
                 </MudNavLink>
+                <MudNavLink Href="/workshop/instance/preview" Icon="@Icons.Material.Filled.Visibility">
+                    Session view (preview)
+                </MudNavLink>
             </MudNavGroup>
 
             <MudNavGroup Title="Routing" Icon="@Icons.Material.Filled.Route" Expanded="true">
@@ -97,7 +100,9 @@
 
     <MudMainContent>
         <MudContainer MaxWidth="MaxWidth.False" Class="pa-6">
-            @Body
+            <CascadingValue Value="_isDarkMode" Name="ForgeDarkMode">
+                @Body
+            </CascadingValue>
         </MudContainer>
     </MudMainContent>
 </MudLayout>

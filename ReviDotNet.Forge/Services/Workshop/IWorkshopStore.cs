@@ -16,17 +16,21 @@ namespace ReviDotNet.Forge.Services.Workshop;
 /// </summary>
 public interface IWorkshopStore
 {
-    /// <summary>Raised whenever an instance or evaluation is added or mutated.</summary>
+    /// <summary>Raised whenever a session or evaluation is added or mutated.</summary>
     event Action? Changed;
 
-    // ── Instances ───────────────────────────────────────────────────────────
-    /// <summary>All instances for an agent, newest first.</summary>
-    IReadOnlyList<WorkshopInstance> GetInstances(string agentName);
-    WorkshopInstance? GetInstance(string id);
-    void AddInstance(WorkshopInstance instance);
+    // ── Sessions ────────────────────────────────────────────────────────────
+    /// <summary>All sessions across every agent, newest first.</summary>
+    IReadOnlyList<WorkshopSession> GetAllSessions();
+    /// <summary>All sessions for one agent, newest first.</summary>
+    IReadOnlyList<WorkshopSession> GetSessions(string agentName);
+    WorkshopSession? GetSession(string id);
+    void AddSession(WorkshopSession session);
 
     // ── Evaluations ─────────────────────────────────────────────────────────
-    /// <summary>All evaluations for an agent, newest first.</summary>
+    /// <summary>All evaluations across every agent, newest first.</summary>
+    IReadOnlyList<WorkshopEvaluation> GetAllEvaluations();
+    /// <summary>All evaluations for one agent, newest first.</summary>
     IReadOnlyList<WorkshopEvaluation> GetEvaluations(string agentName);
     WorkshopEvaluation? GetEvaluation(string id);
     void AddEvaluation(WorkshopEvaluation evaluation);

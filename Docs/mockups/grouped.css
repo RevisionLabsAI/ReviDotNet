@@ -1,0 +1,93 @@
+/* ============================================================================
+   Shared "engine" visuals for the Grouped variations (06–08). These are the
+   functional, consistent primitives — the icon base, the status-cube system and
+   its glyphs, the hover tooltip, the detail panel, the segmented status badge,
+   and the status pills' dropped state. Each variation links this AFTER tokens.css
+   and BEFORE its own <style>, so a variation can still override anything here.
+   Layout/look (header, activations, steps, spacing) lives in each variation.
+   ========================================================================== */
+
+.ic { fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---- status pills: dropped variant (others come from tokens.css) ---- */
+.st-drop { color: var(--text-3); background: var(--hover); }
+.st-drop .dot { background: var(--text-3); }
+
+/* "time ran" labels on cycle/step headers (left of the status / batch badge) */
+.act-ran, .step-ran { font-family: var(--font-mono); font-size: .72rem; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* ---- segmented status badge: icon + count per non-empty status ---- */
+.segbadge { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: var(--r-pill); overflow: hidden; }
+.seg { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; font-size: .72rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.seg + .seg { border-left: 1px solid var(--border); }
+.seg-ic { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.1; stroke-linecap: round; stroke-linejoin: round; }
+.segdot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.seg-done { color: var(--success); background: rgba(var(--success-rgb), .12); }
+.seg-run { color: var(--info); background: rgba(var(--info-rgb), .12); }
+.seg-fail { color: var(--error); background: rgba(var(--error-rgb), .12); }
+.seg-queue { color: var(--text-3); background: var(--hover); }
+.seg-drop { color: var(--text-3); background: var(--hover); }
+
+/* ---- cube grid + status cubes ---- */
+.cubewrap { margin-top: 14px; }
+.cube-sum { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 11px; font-size: .78rem; color: var(--text-2); }
+.cube-sum .lead { font-weight: 700; color: var(--text); }
+.cubes { display: grid; grid-template-columns: repeat(auto-fill, 24px); gap: 7px; }
+.cube { width: 24px; height: 24px; border-radius: 6px; cursor: pointer; border: 1.5px solid transparent; padding: 0; position: relative; transition: transform .1s ease, box-shadow .1s ease; }
+.cube.done { background: color-mix(in srgb, var(--success) 50%, #000); }
+.cube.failed { background: color-mix(in srgb, var(--error) 54%, #000); }
+.cube.running { background: color-mix(in srgb, var(--info) 34%, #0b0e15); }
+.cube.queued { background: transparent; border: 1.5px dashed var(--border-2); }
+.cube.dropped { background: var(--hover); border: 1.5px solid var(--border-2); }
+.cube:hover { transform: scale(1.16); box-shadow: var(--shadow-2); z-index: 3; }
+.cube:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--primary); }
+.cube.sel { outline: 2px solid var(--primary); outline-offset: 2px; transform: scale(1.08); }
+
+/* cube glyphs */
+.cmark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 2px; pointer-events: none; }
+.cm-ic { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.cm-check { width: 15px; height: 15px; stroke: var(--success); stroke-width: 2.6; }   /* bright green check on dark green */
+.cm-watch { width: 13px; height: 13px; stroke: var(--text-3); stroke-width: 1.8; }     /* grayed stopwatch on queued */
+.cm-drop { width: 13px; height: 13px; stroke: var(--text-3); stroke-width: 1.9; }      /* gray ban on dropped */
+.cmark.cx::before, .cmark.cx::after { content: ""; position: absolute; top: 50%; left: 50%; width: 12px; height: 2.2px; margin: -1.1px 0 0 -6px; background: #fff; border-radius: 2px; }  /* bright X on dark red */
+.cmark.cx::before { transform: rotate(45deg); }
+.cmark.cx::after { transform: rotate(-45deg); }
+/* fixed height + animated scaleY (GPU-composited) — smooth even when slow */
+.cm-bars i { display: block; width: 2.5px; height: 13px; border-radius: 1px; background: rgba(255, 255, 255, .7); transform: scaleY(.32); transform-origin: center; will-change: transform; animation: cmbar 1.5s ease-in-out infinite; }
+.cm-bars i:nth-child(2) { animation-delay: .25s; }
+.cm-bars i:nth-child(3) { animation-delay: .5s; }
+@keyframes cmbar { 0%, 100% { transform: scaleY(.32); } 50% { transform: scaleY(1); } }
+@media (prefers-reduced-motion: reduce) { .cm-bars i { animation: none; transform: scaleY(.62); } }
+
+/* ---- selected-cube detail panel (hidden when nothing is selected) ---- */
+.cube-detail { margin-top: 13px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); overflow: hidden; }
+.cube-detail:empty { display: none; }
+/* a selected sub-agent renders its mini-instance directly — drop this panel's own box so it
+   isn't a redundant container wrapped around the mini (which carries its own header + frame) */
+.cube-detail.sub { border: none; background: none; border-radius: 0; overflow: visible; }
+.cd-head { display: flex; align-items: center; gap: 11px; padding: 10px 13px; border-bottom: 1px solid var(--border); background: var(--bg-soft); }
+.cd-head .tile { width: 28px; height: 28px; border-radius: 8px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; color: var(--accent); background: rgba(var(--accent-rgb), .14); }
+.cd-head .tile svg { width: 15px; height: 15px; }
+.cd-head .cd-t { flex: 1 1 auto; min-width: 0; font-weight: 600; font-size: .9rem; display: flex; gap: 8px; align-items: center; }
+.cd-head .kind { font-family: var(--font-mono); font-size: .76rem; color: var(--accent); }
+.cd-body { padding: 13px; }
+
+/* ---- input/output panels ---- */
+.panel2 { margin-top: 11px; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
+.panel2:first-child { margin-top: 0; }
+.panel2 .ph { padding: 6px 11px; background: var(--bg-soft); border-bottom: 1px solid var(--border); }
+.panel2 .code { border: none; border-radius: 0; }
+.panel2.err { border-color: rgba(var(--error-rgb), .4); }
+.panel2.err .ph { background: rgba(var(--error-rgb), .08); }
+.panel2.err .io-label { color: var(--error); }
+
+/* a flattened single-step sub-agent renders its work directly in .mini-stream —
+   neutralise the leading margins so the container's own gap controls spacing */
+.mini-stream > .thinking, .mini-stream > .stepmsg, .mini-stream > .calllist, .mini-stream > .cubewrap { margin-top: 0; }
+
+/* ---- hover tooltip ---- */
+#tip { position: fixed; z-index: 100; max-width: 280px; background: var(--surface); color: var(--text); border: 1px solid var(--border-2); border-radius: var(--r-sm); box-shadow: var(--shadow-3); padding: 8px 10px; font-size: .76rem; line-height: 1.45; pointer-events: none; opacity: 0; transform: translateY(4px); transition: opacity .1s ease, transform .1s ease; }
+#tip.on { opacity: 1; transform: translateY(0); }
+#tip .tt { font-weight: 600; display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+#tip .tt svg { width: 13px; height: 13px; flex: 0 0 auto; }
+#tip .td { color: var(--text-2); }

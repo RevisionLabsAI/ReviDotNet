@@ -70,6 +70,79 @@ public static partial class Util
 			.Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries)
 			.ToList();
 	}
+
+	/// <summary>
+	/// Resolves a prompt's <c>completion-type</c> string into a <see cref="CompletionType"/>.
+	/// Accepts the documented kebab forms (<c>chat-only</c>, <c>prompt-only</c>, <c>prompt-chat-one</c>,
+	/// <c>prompt-chat-multi</c>) as well as the PascalCase enum names, case-insensitively, by stripping
+	/// '-'/'_' before parsing. A null/empty value or <c>auto</c> resolves to <see cref="CompletionType.ChatOnly"/>
+	/// (the most broadly compatible interface). Throws on a non-empty value that matches no member.
+	/// </summary>
+	public static CompletionType ResolveCompletionType(string? raw)
+	{
+		if (string.IsNullOrWhiteSpace(raw) || raw.Trim().Equals("auto", StringComparison.OrdinalIgnoreCase))
+			return CompletionType.ChatOnly;
+
+		string compact = raw.Trim().Replace("-", string.Empty).Replace("_", string.Empty);
+		if (Enum.TryParse<CompletionType>(compact, ignoreCase: true, out CompletionType result))
+			return result;
+
+		throw new Exception(
+			$"Invalid completion-type '{raw}'. Valid values: auto, chat-only, prompt-only, prompt-chat-one, prompt-chat-multi.");
+	}
+
+	/// <summary>Default prompt-injection canary word a filter prompt must emit to indicate safe input.</summary>
+	public const string DefaultFilterCanary = "safeword";
+
+	/// <summary>
+	/// Returns true when a filter prompt's output indicates SAFE input (it matches the expected canary).
+	/// <paramref name="matching"/> = "strict" requires an exact match; any other value (the default) is
+	/// lenient — it trims whitespace, strips surrounding quotes/punctuation, and compares case-insensitively.
+	/// A null/empty <paramref name="canary"/> falls back to <see cref="DefaultFilterCanary"/>.
+	/// </summary>
+	public static bool FilterOutputIsSafe(string? output, string? canary, string? matching)
+	{
+		string expected = string.IsNullOrWhiteSpace(canary) ? DefaultFilterCanary : canary.Trim();
+
+		if (string.Equals(matching, "strict", StringComparison.OrdinalIgnoreCase))
+			return output == expected;
+
+		string norm = (output ?? string.Empty).Trim();
+		norm = norm.Trim('"', '\'', '`', '.', ',', '!', '?', ';', ':', '(', ')', '[', ']').Trim();
+		return string.Equals(norm, expected, StringComparison.OrdinalIgnoreCase);
+	}
+
+	/// <summary>
+	/// Leniently parses a model's text output into a boolean. Trims whitespace and surrounding
+	/// quotes/punctuation, compares case-insensitively, and accepts common spellings
+	/// (<c>true</c>/<c>false</c>, <c>yes</c>/<c>no</c>, <c>y</c>/<c>n</c>, <c>1</c>/<c>0</c>).
+	/// Returns null when the value can't be interpreted as a boolean.
+	/// </summary>
+	public static bool? ParseBool(string? value)
+	{
+		if (string.IsNullOrWhiteSpace(value))
+			return null;
+
+		string s = value.Trim().Trim('"', '\'', '`', '.', ',', '!', '?', ';', ':').Trim().ToLowerInvariant();
+		return s switch
+		{
+			"true" or "yes" or "y" or "1" => true,
+			"false" or "no" or "n" or "0" => false,
+			_ => (bool?)null,
+		};
+	}
+
+	/// <summary>
+	/// Strips a leading list marker from a line: a bullet (<c>-</c>, <c>*</c>, <c>+</c>) or an ordinal
+	/// (<c>1.</c>, <c>2)</c>) followed by whitespace. Returns the trimmed remainder.
+	/// </summary>
+	public static string StripListMarker(string line)
+	{
+		string s = (line ?? string.Empty).TrimStart();
+		s = Regex.Replace(s, @"^[-*+]\s+", string.Empty);
+		s = Regex.Replace(s, @"^\d+[.)]\s+", string.Empty);
+		return s.Trim();
+	}
 	
 	// Helper for getting a string value safely
 	public static string? GetDictionaryString(Dictionary<string, string> dictionary, string key, string? defaultValue = "")

@@ -35,6 +35,9 @@ internal sealed class AgentTestHarness : IDisposable
     public AgentProfile Agent { get; }
     public List<string> RegisteredTools { get; } = new();
 
+    /// <summary>Raw request bodies the fake server received, in order — for asserting what was sent.</summary>
+    public System.Collections.Concurrent.ConcurrentQueue<string> Requests { get; } = new();
+
     private readonly ProviderProfile _provider;
 
     public AgentTestHarness(
@@ -50,7 +53,7 @@ internal sealed class AgentTestHarness : IDisposable
         ModelName = $"fake-model-{suffix}";
         AgentName = agentName ?? $"fake-agent-{suffix}";
 
-        (Server, BaseAddress) = FakeInferenceServer.CreateWithScript(turns);
+        (Server, BaseAddress) = FakeInferenceServer.CreateWithScript(turns, Requests);
 
         // Build a provider with a fake InferClient that points at the test server.
         // We construct ProviderProfile via its parameterized ctor (which builds a real InferClient)

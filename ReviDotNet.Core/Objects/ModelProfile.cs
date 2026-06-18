@@ -56,11 +56,32 @@ public class ModelProfile
     public bool? SupportsPromptCompletion { get; set; }
 
     /// <summary>
+    /// The effective prompt-completion capability used by the inference engine: the model-level
+    /// <see cref="SupportsPromptCompletion"/> override when set, otherwise the provider's
+    /// <c>supports-prompt-completion</c>. This lets a single provider host both completion- and
+    /// chat-only models.
+    /// </summary>
+    public bool EffectiveSupportsPromptCompletion => SupportsPromptCompletion ?? Provider?.SupportsCompletion ?? false;
+
+    /// <summary>
     /// Indicates whether this model supports the newer Responses API completion endpoint.
     /// When set, this value overrides any provider-level defaults for responses completion support.
     /// </summary>
     [RConfigProperty("settings_supports-response-completion")]
     public bool? SupportsResponseCompletion { get; set; }
+
+    /// <summary>
+    /// Indicates whether this model accepts image inputs (vision / multimodal). When set, overrides
+    /// the provider-level default. Used to select a vision-capable model for the file-reading tools.
+    /// </summary>
+    [RConfigProperty("settings_supports-vision")]
+    public bool? SupportsVision { get; set; }
+
+    /// <summary>
+    /// The effective vision capability: the model-level <see cref="SupportsVision"/> override when
+    /// set, otherwise the provider's <c>supports-vision</c>, otherwise false.
+    /// </summary>
+    public bool EffectiveSupportsVision => SupportsVision ?? Provider?.SupportsVision ?? false;
 
     /// <summary>
     /// USD cost per 1,000,000 prompt/input tokens. Optional — when unset, this model
@@ -154,8 +175,9 @@ public class ModelProfile
     [RConfigProperty("input_default-system-input-type")]
     public InputType DefaultSystemInputType { get; set; }
     
+    // Defaults to Listed so instruction inputs are appended by default (matches the documented default).
     [RConfigProperty("input_default-instruction-input-type")]
-    public InputType DefaultInstructionInputType { get; set; }
+    public InputType DefaultInstructionInputType { get; set; } = InputType.Listed;
     
     [RConfigProperty("input_single-item")]
     public string? InputItem { get; set; } 

@@ -1,0 +1,394 @@
+@page "/workshop/evaluation/{Id}"
+@using Revi
+@using ReviDotNet.Forge.Services.Workshop
+@using ReviDotNet.Forge.Services.Workshop.Models
+@implements IDisposable
+@inject IWorkshopStore Store
+@inject IAgentWorkshopService WorkshopSvc
+@inject IAgentManager Agents
+@inject RunningJobsService JobsSvc
+@inject ISnackbar Snackbar
+@inject WorkshopHandoff Handoff
+@inject NavigationManager Nav
+
+@*
+    Dedicated evaluation viewer. Reached by selecting an evaluation, or as "new" (carrying a pending
+    request from the New Evaluation dialog / a session's "Evaluate these runs") in which case it runs
+    the create-and-evaluate flow and then redirects to the created evaluation. Shows the verdict,
+    score, strengths/weaknesses, ranked recommendations, and the proposed .agent revision.
+*@
+
+@if (_busy)
+{
+    <div class="d-flex align-center gap-2 mb-3">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/workshop?tab=1" Title="Back" />
+        <MudText Typo="Typo.h5">New evaluation</MudText>
+    </div>
+    <MudPaper Class="pa-4" Outlined="true">
+        <div class="d-flex align-center gap-3">
+            <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+            <MudText Typo="Typo.body2">@_phase</MudText>
+        </div>
+    </MudPaper>
+}
+else if (_selected is null)
+{
+    <MudAlert Severity="Severity.Warning">
+        Evaluation not found.
+        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/workshop?tab=1">Back to Evaluations</MudButton>
+    </MudAlert>
+}
+else
+{
+    var ev = _selected;
+    <div class="d-flex align-center gap-2 mb-3" style="flex-wrap: wrap;">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/workshop?tab=1" Title="Back to Evaluations" />
+        <MudIcon Icon="@Icons.Material.Filled.RateReview" Color="@ScoreColor(ev.Result.Score)" />
+        <MudText Typo="Typo.h5">@ev.AgentName</MudText>
+        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@VersionLabel(ev.AgentVersion)</MudChip>
+        @if (ev.AppliedAsVersion.HasValue)
+        {
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Success">applied as v@(ev.AppliedAsVersion)</MudChip>
+        }
+        <MudSpacer />
+        <MudChip T="string" Color="@ScoreColor(ev.Result.Score)">@ev.Result.Verdict · @($"{ev.Result.Score:0.0}")/10</MudChip>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(ev.Task))
+    {
+        <MudPaper Class="pa-3 mb-3" Outlined="true">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Task</MudText>
+            <MudText Typo="Typo.body2" Style="white-space: pre-wrap;">@ev.Task</MudText>
+        </MudPaper>
+    }
+
+    <MudPaper Class="pa-3 mb-3" Outlined="true">
+        <MudGrid Spacing="2">
+            <MudItem xs="3"><MudText Typo="Typo.caption" Color="Color.Secondary">Verdict</MudText><MudText Typo="Typo.h6">@ev.Result.Verdict</MudText></MudItem>
+            <MudItem xs="3"><MudText Typo="Typo.caption" Color="Color.Secondary">Score</MudText><MudText Typo="Typo.h6">@($"{ev.Result.Score:0.0}/10")</MudText></MudItem>
+            <MudItem xs="3"><MudText Typo="Typo.caption" Color="Color.Secondary">Success rate</MudText><MudText Typo="Typo.h6">@($"{ev.Result.SuccessRate * 100:0}%")</MudText></MudItem>
+            <MudItem xs="3"><MudText Typo="Typo.caption" Color="Color.Secondary">Avg duration</MudText><MudText Typo="Typo.h6">@($"{(ev.Result.Stats?.AverageDurationSeconds ?? 0):0.0}s")</MudText></MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Strengths</MudText>
+            <MudList T="string" Dense="true">
+                @foreach (var s in ev.Result.Strengths)
+                {
+                    <MudListItem T="string" Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">@s</MudListItem>
+                }
+            </MudList>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Weaknesses</MudText>
+            <MudList T="string" Dense="true">
+                @foreach (var w in ev.Result.Weaknesses)
+                {
+                    <MudListItem T="string" Icon="@Icons.Material.Filled.Warning" IconColor="Color.Warning">@w</MudListItem>
+                }
+            </MudList>
+        </MudItem>
+    </MudGrid>
+
+    <MudText Typo="Typo.subtitle1" Class="mt-3 mb-2">Recommendations</MudText>
+    @foreach (var rec in ev.Result.Recommendations)
+    {
+        @RenderRecommendation(ev, rec)
+    }
+
+    @if (ev.Result.Alternatives.Any())
+    {
+        <MudText Typo="Typo.subtitle1" Class="mt-3 mb-2">Alternatives</MudText>
+        @foreach (var alt in ev.Result.Alternatives)
+        {
+            @RenderRecommendation(ev, alt)
+        }
+    }
+
+    @if (_diffStreaming || !string.IsNullOrEmpty(ev.ProposedRevision))
+    {
+        <MudDivider Class="my-3" />
+        <div class="d-flex align-center mb-2">
+            <MudText Typo="Typo.subtitle1">Proposed revision</MudText>
+            @if (ev.ChosenRecommendation is { } chosen)
+            {
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ml-2">@chosen.Title</MudChip>
+            }
+            @if (_diffStreaming)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ml-2">streaming…</MudText>
+            }
+        </div>
+        <DiffViewer Left="@_currentSource"
+                    Right="@((ev.ProposedRevision ?? string.Empty) + (_diffStreaming ? "▌" : string.Empty))"
+                    LeftLabel="Current" RightLabel="Proposed"
+                    LeftSubLabel="@VersionLabel(ev.AgentVersion)"
+                    RightSubLabel="@(_diffStreaming ? "streaming…" : "ready")" />
+
+        @if (!_diffStreaming && !string.IsNullOrEmpty(ev.ProposedRevision))
+        {
+            <div class="d-flex gap-2 mt-3">
+                <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Save"
+                           OnClick="@(() => ApproveAndSaveAsync(ev))" Disabled="@_savingRevision">
+                    @(_savingRevision ? "Saving…" : "Approve & Save")
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Default" StartIcon="@Icons.Material.Filled.Cancel"
+                           OnClick="@(() => DiscardDiff(ev))" Disabled="@_savingRevision">
+                    Discard
+                </MudButton>
+            </div>
+        }
+    }
+}
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+
+    private WorkshopEvaluation? _selected;
+    private string? _loadedId;
+    private string _currentSource = string.Empty;
+    private bool _busy;
+    private string _phase = "";
+    private bool _diffStreaming;
+    private bool _savingRevision;
+    private bool _creating;
+
+    protected override void OnInitialized()
+    {
+        Store.Changed += OnStoreChanged;
+        if (Id == "new") { _busy = true; _phase = "Preparing…"; }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.Equals(_loadedId, Id, StringComparison.Ordinal)) return;
+        _loadedId = Id;
+        if (Id != "new")
+        {
+            _busy = false;
+            _selected = Store.GetEvaluation(Id);
+            if (_selected != null) await EnsureSourceAsync(_selected.AgentName);
+        }
+    }
+
+    private void OnStoreChanged() => InvokeAsync(StateHasChanged);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && Id == "new" && !_creating)
+        {
+            _creating = true;
+            var spec = Handoff.TakeEvaluation();
+            if (spec is null) { Nav.NavigateTo("/workshop?tab=1"); return; }
+            await RunFlowAsync(spec);
+        }
+    }
+
+    private async Task EnsureSourceAsync(string agentName)
+    {
+        try { _currentSource = await WorkshopSvc.ReadAgentSourceAsync(agentName, CancellationToken.None) ?? string.Empty; }
+        catch { _currentSource = string.Empty; }
+    }
+
+    // ── create-and-evaluate flow (the "new" route) ───────────────────────────
+
+    private async Task RunFlowAsync(NewEvaluationSpec spec)
+    {
+        _phase = "Preparing…";
+        await InvokeAsync(StateHasChanged);
+
+        var cts = new CancellationTokenSource();
+        string jobId = JobsSvc.Register(JobKind.Evaluate, $"Evaluate {spec.AgentName}", () => cts.Cancel());
+        WorkshopEvaluation? created = null;
+
+        try
+        {
+            WorkshopSession? session;
+            if (spec.Mode == EvaluationMode.ExistingSession)
+            {
+                session = Store.GetSession(spec.SourceSessionId ?? "");
+                if (session is null) { Snackbar.Add("Session no longer available.", Severity.Warning); Nav.NavigateTo("/workshop?tab=1"); return; }
+            }
+            else
+            {
+                _phase = $"Running 0/{spec.Runs} runs…";
+                await InvokeAsync(StateHasChanged);
+                session = await RunFreshAsync(spec, cts.Token);
+            }
+
+            if (session.SessionIds.Count == 0)
+            {
+                Snackbar.Add("No runs were produced to evaluate.", Severity.Warning);
+                Nav.NavigateTo("/workshop?tab=1");
+                return;
+            }
+
+            _phase = "Evaluating runs…";
+            await InvokeAsync(StateHasChanged);
+
+            var result = await WorkshopSvc.EvaluateSessionsAsync(session.AgentName, session.SessionIds, cts.Token);
+            if (result is null)
+            {
+                Snackbar.Add("Evaluator returned no result.", Severity.Warning);
+                Nav.NavigateTo("/workshop?tab=1");
+                return;
+            }
+
+            created = new WorkshopEvaluation
+            {
+                Id = Guid.NewGuid().ToString("N")[..8],
+                AgentName = session.AgentName,
+                AgentVersion = session.AgentVersion,
+                SourceSessionId = session.Id,
+                Task = session.Task,
+                SessionIds = session.SessionIds.ToList(),
+                Result = result
+            };
+            Store.AddEvaluation(created);
+            await EnsureSourceAsync(created.AgentName);
+
+            if (spec.AutoSuggest && result.Recommendations.Count > 0)
+            {
+                _phase = "Suggesting agent changes…";
+                await InvokeAsync(StateHasChanged);
+                await GenerateDiffAsync(created, result.Recommendations[0], cts.Token);
+            }
+        }
+        catch (OperationCanceledException) { /* cancelled */ }
+        catch (Exception ex) { Snackbar.Add($"Evaluation failed: {ex.Message}", Severity.Error); }
+        finally
+        {
+            JobsSvc.Complete(jobId);
+            cts.Dispose();
+            if (created is not null)
+            {
+                // Land on the created evaluation's own page.
+                Nav.NavigateTo($"/workshop/evaluation/{created.Id}", replace: true);
+            }
+            else
+            {
+                _busy = false;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+    }
+
+    private async Task<WorkshopSession> RunFreshAsync(NewEvaluationSpec spec, CancellationToken ct)
+    {
+        var profile = Agents.Get(spec.AgentName);
+        var session = new WorkshopSession
+        {
+            Id = Guid.NewGuid().ToString("N")[..8],
+            AgentName = spec.AgentName,
+            AgentVersion = profile?.Version,
+            Mode = InteractionMode.Fixed,
+            Task = spec.Task,
+            AdditionalInputs = spec.Inputs.ToDictionary(kv => kv.Key, kv => (object)kv.Value, StringComparer.OrdinalIgnoreCase),
+            RunCount = spec.Runs
+        };
+        Store.AddSession(session);
+
+        var succeeded = new Dictionary<string, bool?>(StringComparer.Ordinal);
+        var request = new WorkshopRunRequest { AgentName = spec.AgentName, Task = spec.Task, AdditionalInputs = session.AdditionalInputs, Runs = spec.Runs };
+
+        await foreach (var u in WorkshopSvc.RunMultiAsync(request, ct))
+        {
+            if (!session.SessionIds.Contains(u.SessionId)) { session.SessionIds.Add(u.SessionId); succeeded[u.SessionId] = null; }
+            if (u.FinalResult != null) succeeded[u.SessionId] = u.FinalResult.ExitReason == AgentExitReason.Completed;
+            if (!string.IsNullOrEmpty(u.ErrorMessage)) succeeded[u.SessionId] = false;
+            int done = succeeded.Count(s => s.Value != null);
+            _phase = $"Running {done}/{spec.Runs} runs…";
+            await InvokeAsync(StateHasChanged);
+        }
+
+        int total = session.SessionIds.Count;
+        int completed = succeeded.Count(s => s.Value == true);
+        session.Stats = new AggregateStats { TotalRuns = total, Completed = completed, Failed = total - completed, SuccessRate = total == 0 ? 0 : (double)completed / total, AverageDurationSeconds = 0, AverageSteps = 0 };
+        session.IsComplete = true;
+        Store.NotifyChanged();
+        return session;
+    }
+
+    // ── revision diff / save (viewer actions) ────────────────────────────────
+
+    private async Task GenerateDiffAsync(WorkshopEvaluation ev, AgentRecommendation rec, CancellationToken ct)
+    {
+        ev.ChosenRecommendation = rec;
+        ev.ProposedRevision = "";
+        _diffStreaming = true;
+        await EnsureSourceAsync(ev.AgentName);
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            await foreach (var token in WorkshopSvc.GenerateAgentDiffAsync(ev.AgentName, rec, ev.Result, ct))
+            {
+                ev.ProposedRevision += token;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        finally
+        {
+            _diffStreaming = false;
+            Store.NotifyChanged();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task PreviewDiffAsync(WorkshopEvaluation ev, AgentRecommendation rec)
+    {
+        if (_diffStreaming) return;
+        var cts = new CancellationTokenSource();
+        string jobId = JobsSvc.Register(JobKind.Revise, $"Revise {ev.AgentName}: {rec.Title}", () => cts.Cancel());
+        try { await GenerateDiffAsync(ev, rec, cts.Token); }
+        catch (Exception ex) { Snackbar.Add($"Diff generation failed: {ex.Message}", Severity.Error); }
+        finally { JobsSvc.Complete(jobId); cts.Dispose(); }
+    }
+
+    private async Task ApproveAndSaveAsync(WorkshopEvaluation ev)
+    {
+        if (string.IsNullOrEmpty(ev.ProposedRevision)) return;
+        _savingRevision = true;
+        StateHasChanged();
+        try
+        {
+            await WorkshopSvc.SaveAgentRevisionAsync(ev.AgentName, ev.ProposedRevision, CancellationToken.None);
+            ev.AppliedAsVersion = (ev.AgentVersion ?? 0) + 1;
+            Snackbar.Add($"Saved new revision of {ev.AgentName}.", Severity.Success);
+            await EnsureSourceAsync(ev.AgentName);
+            Store.NotifyChanged();
+        }
+        catch (Exception ex) { Snackbar.Add($"Save failed: {ex.Message}", Severity.Error); }
+        finally { _savingRevision = false; StateHasChanged(); }
+    }
+
+    private void DiscardDiff(WorkshopEvaluation ev)
+    {
+        ev.ProposedRevision = null;
+        ev.ChosenRecommendation = null;
+        Store.NotifyChanged();
+    }
+
+    private RenderFragment RenderRecommendation(WorkshopEvaluation ev, AgentRecommendation rec) => __builder =>
+    {
+        <MudPaper Class="pa-3 mb-2" Outlined="true">
+            <div class="d-flex align-center gap-2 mb-1">
+                <MudText Typo="Typo.subtitle2">@rec.Title</MudText>
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@rec.Impact</MudChip>
+                <MudSpacer />
+                <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.Edit"
+                           OnClick="@(() => PreviewDiffAsync(ev, rec))" Disabled="@(_diffStreaming)">
+                    Preview diff
+                </MudButton>
+            </div>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">@rec.Rationale</MudText>
+        </MudPaper>
+    };
+
+    private static string VersionLabel(int? version) => version.HasValue ? $"v{version}" : "—";
+
+    private static Color ScoreColor(double score) => score >= 7.5 ? Color.Success : score >= 5.0 ? Color.Warning : Color.Error;
+
+    public void Dispose() => Store.Changed -= OnStoreChanged;
+}

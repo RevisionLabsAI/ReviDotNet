@@ -222,7 +222,9 @@ public static class FakeInferenceServer
     /// Once the script is exhausted, further calls echo the final turn (so callers can
     /// safely over-allocate without surprises).
     /// </summary>
-    public static (TestServer Server, Uri BaseAddress) CreateWithScript(IReadOnlyList<FakeAgentTurn> turns)
+    public static (TestServer Server, Uri BaseAddress) CreateWithScript(
+        IReadOnlyList<FakeAgentTurn> turns,
+        System.Collections.Concurrent.ConcurrentQueue<string>? requestCapture = null)
     {
         if (turns == null || turns.Count == 0)
             throw new ArgumentException("WithScript requires at least one turn.", nameof(turns));
@@ -235,6 +237,12 @@ public static class FakeInferenceServer
 
         app.MapPost("/v1/chat/completions", async context =>
         {
+            if (requestCapture != null)
+            {
+                string reqBody = await new System.IO.StreamReader(context.Request.Body).ReadToEndAsync();
+                requestCapture.Enqueue(reqBody);
+            }
+
             int idx = Interlocked.Increment(ref counter) - 1;
             FakeAgentTurn turn = turns[Math.Min(idx, turns.Count - 1)];
 

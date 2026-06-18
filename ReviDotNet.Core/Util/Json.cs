@@ -6,6 +6,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Json.Schema.Generation;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -54,51 +55,136 @@ public static partial class Util
 		return JsonSerializer.Serialize(schema);
 	}
 	
+	/// <summary>
+	/// Extracts a valid JSON document from arbitrary model output. Handles the common ways chat-tuned
+	/// models wrap JSON: Markdown code fences (```json ... ```), surrounding prose, and (when
+	/// <paramref name="chainOfThought"/> is true) reasoning that precedes an "Output:"-style marker.
+	/// Returns the extracted JSON substring (validated by parsing), or "" when no valid JSON can be recovered.
+	/// </summary>
+	/// <param name="input">The raw model output.</param>
+	/// <param name="chainOfThought">When true, isolates the text after a known output marker before extraction.</param>
 	public static string ExtractJson(string? input, bool? chainOfThought = false)
 	{
 		if (string.IsNullOrEmpty(input))
 			return "";
-		
-		string textToJsonify = "";
 
-		// Define possible markers for splitting text to isolate potential JSON content
-		string[] possibleMarkers = { "output:", "result:", "answer:", "response:", "conclusion:", "solution:", "### output" };
+		string text = input;
 
+		// 1. Optionally isolate the content after a chain-of-thought output marker.
 		if (chainOfThought is true)
 		{
-			// Convert the input to lower case for case-insensitive comparison and check for markers
-			string? marker = possibleMarkers.FirstOrDefault(m => input.ToLower().Contains(m));
-
+			string[] possibleMarkers = { "output:", "result:", "answer:", "response:", "conclusion:", "solution:", "### output" };
+			string? marker = possibleMarkers.FirstOrDefault(m => text.ToLower().Contains(m));
 			if (marker != null)
 			{
-				// Split input text using the found marker, selecting the text after it
-				string[] parts = input.Split(new string[] { marker }, StringSplitOptions.RemoveEmptyEntries);
+				string[] parts = text.Split(new string[] { marker }, StringSplitOptions.RemoveEmptyEntries);
 				if (parts.Length > 1)
-				{
-					//reasoningText = parts[0].Trim();
-					textToJsonify = parts[1].Trim();
-				}
+					text = parts[1].Trim();
 			}
 		}
 
-		if (string.IsNullOrEmpty(textToJsonify)) 
-			textToJsonify = input;
-		
-		// We have some text which we want to be Json
+		// 2. Strip Markdown code fences (```json ... ``` or ``` ... ```).
+		text = StripCodeFences(text);
+
+		// 3. Fast path: the (possibly de-fenced) text is already valid JSON.
+		if (TryParseJson(text, out string valid))
+			return valid;
+
+		// 4. Bound to the outermost { } or [ ] region (drops surrounding prose) and retry.
+		string bounded = ExtractBracketRegion(text);
+		if (!string.IsNullOrEmpty(bounded) && TryParseJson(bounded, out string boundedValid))
+			return boundedValid;
+
+		// 5. Last resort: lightweight repairs (trailing commas, unbalanced braces/brackets).
+		string repairTarget = string.IsNullOrEmpty(bounded) ? text : bounded;
+		string repaired = TryLightweightJsonFixes(repairTarget);
+		if (!string.IsNullOrEmpty(repaired) && TryParseJson(repaired, out string repairedValid))
+			return repairedValid;
+
+		return "";
+	}
+
+	/// <summary>Returns the contents of the first Markdown code fence if present, otherwise the trimmed input.</summary>
+	private static string StripCodeFences(string text)
+	{
+		if (string.IsNullOrEmpty(text) || !text.Contains("```"))
+			return text.Trim();
+
+		Match m = Regex.Match(text, "```(?:json|JSON)?\\s*([\\s\\S]*?)```");
+		if (m.Success)
+			return m.Groups[1].Value.Trim();
+
+		// Unterminated fence — strip the opening marker(s) and continue with the remainder.
+		return text.Replace("```json", string.Empty)
+				   .Replace("```JSON", string.Empty)
+				   .Replace("```", string.Empty)
+				   .Trim();
+	}
+
+	/// <summary>True if <paramref name="candidate"/> parses as JSON; the trimmed text is returned via <paramref name="normalized"/>.</summary>
+	private static bool TryParseJson(string candidate, out string normalized)
+	{
+		normalized = "";
+		if (string.IsNullOrWhiteSpace(candidate))
+			return false;
 		try
 		{
-			// Check whether it's valid json with newtonsoft
-			var parsedJson = JsonDocument.Parse(textToJsonify);
-			
-			// If we make it here, we're good already. Nothing to do. 
-			return input;
+			using JsonDocument _ = JsonDocument.Parse(candidate);
+			normalized = candidate.Trim();
+			return true;
 		}
 		catch
 		{
-			// Ignored
+			return false;
 		}
+	}
+
+	/// <summary>Returns the substring spanning the outermost {...} or [...] region, or "" if none is found.</summary>
+	private static string ExtractBracketRegion(string input)
+	{
+		int firstCurly = input.IndexOf('{');
+		int firstSquare = input.IndexOf('[');
+		int lastCurly = input.LastIndexOf('}');
+		int lastSquare = input.LastIndexOf(']');
+
+		bool hasObject = firstCurly >= 0 && lastCurly > firstCurly;
+		bool hasArray = firstSquare >= 0 && lastSquare > firstSquare;
+
+		if (hasObject && hasArray)
+		{
+			// Use whichever bracket type encloses the other.
+			return (firstCurly < firstSquare && lastCurly > lastSquare)
+				? input.Substring(firstCurly, lastCurly - firstCurly + 1)
+				: input.Substring(firstSquare, lastSquare - firstSquare + 1);
+		}
+		if (hasObject)
+			return input.Substring(firstCurly, lastCurly - firstCurly + 1);
+		if (hasArray)
+			return input.Substring(firstSquare, lastSquare - firstSquare + 1);
 
 		return "";
+	}
+
+	/// <summary>Applies cheap, deterministic JSON repairs: removes trailing commas and balances braces/brackets.</summary>
+	private static string TryLightweightJsonFixes(string json)
+	{
+		if (string.IsNullOrWhiteSpace(json))
+			return "";
+
+		// Remove trailing commas immediately before a closing } or ].
+		string fixedJson = Regex.Replace(json, @",(?=\s*[}\]])", string.Empty);
+
+		int openCurly = fixedJson.Count(c => c == '{');
+		int closeCurly = fixedJson.Count(c => c == '}');
+		int openSquare = fixedJson.Count(c => c == '[');
+		int closeSquare = fixedJson.Count(c => c == ']');
+
+		if (openCurly > closeCurly)
+			fixedJson += new string('}', openCurly - closeCurly);
+		if (openSquare > closeSquare)
+			fixedJson += new string(']', openSquare - closeSquare);
+
+		return fixedJson;
 	}
 
 	public static string JsonifyExample(string input, bool? requestJson = false, bool? chainOfThought = false)

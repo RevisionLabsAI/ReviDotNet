@@ -3,522 +3,108 @@
 @using ReviDotNet.Forge.Services.Workshop.Models
 @implements IDisposable
 @inject IWorkshopStore Store
-@inject IAgentWorkshopService WorkshopSvc
-@inject IAgentManager Agents
 @inject IDialogService DialogSvc
-@inject ISnackbar Snackbar
-@inject RunningJobsService JobsSvc
+@inject WorkshopHandoff Handoff
+@inject NavigationManager Nav
 
 @*
-    Evaluations hub — master/detail list of LLM evaluations for one agent. "New Evaluation"
-    either assesses an existing instance's runs or runs the agent fresh first, then scores
-    the runs, surfaces ranked recommendations, and (optionally) streams a proposed .agent
-    revision the user can approve & save.
+    Evaluations list — every LLM evaluation across all agents (filterable by agent). Selecting one
+    opens its dedicated viewer page; "New Evaluation" composes a request and opens the create flow.
 *@
 
-<div class="d-flex align-center mb-3">
+<div class="d-flex align-center mb-3 gap-3" style="flex-wrap: wrap;">
     <MudText Typo="Typo.subtitle1">Evaluations</MudText>
-    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ml-2">@_evaluations.Count for @AgentName</MudText>
+    <MudSelect T="string" @bind-Value="_agentFilter" Label="Agent" Dense="true" Margin="Margin.Dense"
+               Variant="Variant.Outlined" Style="max-width: 240px;" Clearable="true">
+        <MudSelectItem T="string" Value="@("")">All agents</MudSelectItem>
+        @foreach (var name in AgentNames)
+        {
+            <MudSelectItem T="string" Value="@name">@name</MudSelectItem>
+        }
+    </MudSelect>
+    <MudText Typo="Typo.caption" Color="Color.Secondary">@FilteredEvaluations.Count shown</MudText>
     <MudSpacer />
-    <MudButton Variant="Variant.Filled"
-               Color="Color.Primary"
-               StartIcon="@Icons.Material.Filled.Add"
-               OnClick="OpenNewEvaluation"
-               Disabled="@(_busy || string.IsNullOrWhiteSpace(AgentName))">
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenNewEvaluation">
         New Evaluation
     </MudButton>
 </div>
 
-@if (_busy)
-{
-    <MudPaper Class="pa-3 mb-3" Outlined="true">
-        <div class="d-flex align-center gap-3">
-            <MudProgressCircular Size="Size.Small" Indeterminate="true" />
-            <MudText Typo="Typo.body2">@_phase</MudText>
+<MudPaper Outlined="true" Style="max-height: 74vh; overflow-y: auto;">
+    @if (FilteredEvaluations.Count == 0)
+    {
+        <div class="pa-4">
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                No evaluations yet. Click <strong>New Evaluation</strong> to run &amp; assess an agent.
+            </MudText>
         </div>
-    </MudPaper>
-}
-
-<MudGrid Spacing="3">
-    <!-- Master list -->
-    <MudItem xs="12" md="4">
-        <MudPaper Outlined="true" Style="max-height: 70vh; overflow-y: auto;">
-            @if (_evaluations.Count == 0)
+    }
+    else
+    {
+        <MudList T="string" Dense="true">
+            @foreach (var ev in FilteredEvaluations)
             {
-                <div class="pa-4">
-                    <MudText Typo="Typo.body2" Color="Color.Secondary">
-                        No evaluations yet. Click <strong>New Evaluation</strong> to run &amp; assess this agent.
-                    </MudText>
-                </div>
-            }
-            else
-            {
-                <MudList T="string" Dense="true">
-                    @for (int i = 0; i < _evaluations.Count; i++)
-                    {
-                        var ev = _evaluations[i];
-                        var number = _evaluations.Count - i;
-                        var selected = string.Equals(ev.Id, _selectedId, StringComparison.Ordinal);
-                        <MudListItem T="string"
-                                     OnClick="@(() => SelectEvaluationAsync(ev.Id))"
-                                     Style="@(selected ? "background-color: var(--mud-palette-action-default-hover);" : "")">
-                            <div class="d-flex align-center gap-2" style="width:100%; min-width:0;">
-                                <MudIcon Icon="@VerdictIcon(ev.Result.Verdict)" Color="@ScoreColor(ev.Result.Score)" Size="Size.Small" />
-                                <div style="min-width:0; flex:1;">
-                                    <div class="d-flex align-center gap-1">
-                                        <MudText Typo="Typo.body2">Eval #@number</MudText>
-                                        @if (ev.AppliedAsVersion.HasValue)
-                                        {
-                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Success" Class="ma-0">applied</MudChip>
-                                        }
-                                    </div>
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary"
-                                             Style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block;">
-                                        @TaskPreview(ev.Task)
-                                    </MudText>
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                        @VersionLabel(ev.AgentVersion) · @ev.SessionIds.Count run(s) · @FormatAge(ev.CreatedAt)
-                                    </MudText>
-                                </div>
-                                <MudChip T="string" Size="Size.Small" Color="@ScoreColor(ev.Result.Score)" Class="ma-0 flex-none">
-                                    @($"{ev.Result.Score:0.0}")
-                                </MudChip>
+                var evaluation = ev;
+                <MudListItem T="string" OnClick="@(() => Open(evaluation.Id))">
+                    <div class="d-flex align-center gap-2" style="width:100%; min-width:0;">
+                        <MudIcon Icon="@VerdictIcon(evaluation.Result.Verdict)" Color="@ScoreColor(evaluation.Result.Score)" Size="Size.Small" />
+                        <div style="min-width:0; flex:1;">
+                            <div class="d-flex align-center gap-1">
+                                <MudText Typo="Typo.body2">@evaluation.AgentName</MudText>
+                                @if (evaluation.AppliedAsVersion.HasValue)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Success" Class="ma-0">applied</MudChip>
+                                }
                             </div>
-                        </MudListItem>
-                    }
-                </MudList>
-            }
-        </MudPaper>
-    </MudItem>
-
-    <!-- Detail -->
-    <MudItem xs="12" md="8">
-        @if (_selected is null)
-        {
-            <MudPaper Class="pa-6" Outlined="true">
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
-                    Select an evaluation, or create a new one to run &amp; assess this agent.
-                </MudText>
-            </MudPaper>
-        }
-        else
-        {
-            var ev = _selected;
-            <MudPaper Class="pa-3 mb-3" Outlined="true">
-                <div class="d-flex align-center gap-2 mb-1">
-                    <MudText Typo="Typo.subtitle2">@ev.AgentName</MudText>
-                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@VersionLabel(ev.AgentVersion)</MudChip>
-                    <MudSpacer />
-                    <MudChip T="string" Size="Size.Small" Color="@ScoreColor(ev.Result.Score)">@ev.Result.Verdict</MudChip>
-                </div>
-                @if (!string.IsNullOrWhiteSpace(ev.Task))
-                {
-                    <MudText Typo="Typo.body2" Color="Color.Secondary" Style="white-space: pre-wrap;">@ev.Task</MudText>
-                }
-            </MudPaper>
-
-            <MudPaper Class="pa-3 mb-3" Outlined="true">
-                <MudGrid Spacing="2">
-                    <MudItem xs="3">
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">Verdict</MudText>
-                        <MudText Typo="Typo.h6">@ev.Result.Verdict</MudText>
-                    </MudItem>
-                    <MudItem xs="3">
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">Score</MudText>
-                        <MudText Typo="Typo.h6">@($"{ev.Result.Score:0.0}/10")</MudText>
-                    </MudItem>
-                    <MudItem xs="3">
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">Success rate</MudText>
-                        <MudText Typo="Typo.h6">@($"{ev.Result.SuccessRate * 100:0}%")</MudText>
-                    </MudItem>
-                    <MudItem xs="3">
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">Avg duration</MudText>
-                        <MudText Typo="Typo.h6">@($"{(ev.Result.Stats?.AverageDurationSeconds ?? 0):0.0}s")</MudText>
-                    </MudItem>
-                </MudGrid>
-            </MudPaper>
-
-            <MudGrid>
-                <MudItem xs="12" md="6">
-                    <MudText Typo="Typo.subtitle1" Class="mb-2">Strengths</MudText>
-                    <MudList T="string" Dense="true">
-                        @foreach (var s in ev.Result.Strengths)
-                        {
-                            <MudListItem T="string" Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">@s</MudListItem>
-                        }
-                    </MudList>
-                </MudItem>
-                <MudItem xs="12" md="6">
-                    <MudText Typo="Typo.subtitle1" Class="mb-2">Weaknesses</MudText>
-                    <MudList T="string" Dense="true">
-                        @foreach (var w in ev.Result.Weaknesses)
-                        {
-                            <MudListItem T="string" Icon="@Icons.Material.Filled.Warning" IconColor="Color.Warning">@w</MudListItem>
-                        }
-                    </MudList>
-                </MudItem>
-            </MudGrid>
-
-            <MudText Typo="Typo.subtitle1" Class="mt-3 mb-2">Recommendations</MudText>
-            @foreach (var rec in ev.Result.Recommendations)
-            {
-                @RenderRecommendation(ev, rec)
-            }
-
-            @if (ev.Result.Alternatives.Any())
-            {
-                <MudText Typo="Typo.subtitle1" Class="mt-3 mb-2">Alternatives</MudText>
-                @foreach (var alt in ev.Result.Alternatives)
-                {
-                    @RenderRecommendation(ev, alt)
-                }
-            }
-
-            @if (_diffStreaming || !string.IsNullOrEmpty(ev.ProposedRevision))
-            {
-                <MudDivider Class="my-3" />
-                <div class="d-flex align-center mb-2">
-                    <MudText Typo="Typo.subtitle1">Proposed revision</MudText>
-                    @if (ev.ChosenRecommendation is { } chosen)
-                    {
-                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ml-2">@chosen.Title</MudChip>
-                    }
-                    @if (_diffStreaming)
-                    {
-                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ml-2">streaming…</MudText>
-                    }
-                </div>
-                <DiffViewer Left="@_currentSource"
-                            Right="@((ev.ProposedRevision ?? string.Empty) + (_diffStreaming ? "▌" : string.Empty))"
-                            LeftLabel="Current"
-                            RightLabel="Proposed"
-                            LeftSubLabel="@VersionLabel(ev.AgentVersion)"
-                            RightSubLabel="@(_diffStreaming ? "streaming…" : "ready")" />
-
-                @if (!_diffStreaming && !string.IsNullOrEmpty(ev.ProposedRevision))
-                {
-                    <div class="d-flex gap-2 mt-3">
-                        <MudButton Variant="Variant.Filled" Color="Color.Success"
-                                   StartIcon="@Icons.Material.Filled.Save"
-                                   OnClick="@(() => ApproveAndSaveAsync(ev))"
-                                   Disabled="@_savingRevision">
-                            @(_savingRevision ? "Saving…" : "Approve & Save")
-                        </MudButton>
-                        <MudButton Variant="Variant.Outlined" Color="Color.Default"
-                                   StartIcon="@Icons.Material.Filled.Cancel"
-                                   OnClick="@(() => DiscardDiff(ev))"
-                                   Disabled="@_savingRevision">
-                            Discard
-                        </MudButton>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary"
+                                     Style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block;">
+                                @TaskPreview(evaluation.Task)
+                            </MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                @VersionLabel(evaluation.AgentVersion) · @evaluation.SessionIds.Count run(s) · @FormatAge(evaluation.CreatedAt)
+                            </MudText>
+                        </div>
+                        <MudChip T="string" Size="Size.Small" Color="@ScoreColor(evaluation.Result.Score)" Class="ma-0 flex-none">
+                            @($"{evaluation.Result.Score:0.0}")
+                        </MudChip>
+                        <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" Color="Color.Default" />
                     </div>
-                }
+                </MudListItem>
             }
-        }
-    </MudItem>
-</MudGrid>
+        </MudList>
+    }
+</MudPaper>
 
 @code {
-    [Parameter] public string AgentName { get; set; } = string.Empty;
-
-    private string? _lastAgentName;
-    private string? _selectedId;
-    private WorkshopEvaluation? _selected;
-    private string _currentSource = string.Empty;
-
-    private bool _busy;
-    private string _phase = "";
-    private bool _diffStreaming;
-    private bool _savingRevision;
-
+    private string _agentFilter = "";
     private IReadOnlyList<WorkshopEvaluation> _evaluations = Array.Empty<WorkshopEvaluation>();
 
-    protected override void OnInitialized() => Store.Changed += OnStoreChanged;
+    private IReadOnlyList<WorkshopEvaluation> FilteredEvaluations =>
+        string.IsNullOrEmpty(_agentFilter)
+            ? _evaluations
+            : _evaluations.Where(e => string.Equals(e.AgentName, _agentFilter, StringComparison.Ordinal)).ToList();
 
-    protected override void OnParametersSet()
+    private IEnumerable<string> AgentNames => _evaluations.Select(e => e.AgentName).Distinct().OrderBy(n => n);
+
+    protected override void OnInitialized()
     {
-        if (!string.Equals(_lastAgentName, AgentName, StringComparison.Ordinal))
-        {
-            _lastAgentName = AgentName;
-            _selectedId = null;
-            _selected = null;
-        }
-        _evaluations = Store.GetEvaluations(AgentName);
+        Store.Changed += OnStoreChanged;
+        _evaluations = Store.GetAllEvaluations();
     }
 
-    private void OnStoreChanged() => InvokeAsync(() =>
-    {
-        _evaluations = Store.GetEvaluations(AgentName);
-        StateHasChanged();
-    });
+    private void OnStoreChanged() => InvokeAsync(() => { _evaluations = Store.GetAllEvaluations(); StateHasChanged(); });
 
-    private async Task SelectEvaluationAsync(string id)
-    {
-        _selectedId = id;
-        _selected = Store.GetEvaluation(id);
-        if (_selected != null) await EnsureSourceAsync(_selected.AgentName);
-        StateHasChanged();
-    }
-
-    private async Task EnsureSourceAsync(string agentName)
-    {
-        try { _currentSource = await WorkshopSvc.ReadAgentSourceAsync(agentName, CancellationToken.None) ?? string.Empty; }
-        catch { _currentSource = string.Empty; }
-    }
-
-    // ── entry points ────────────────────────────────────────────────────────
+    private void Open(string id) => Nav.NavigateTo($"/workshop/evaluation/{id}");
 
     private async Task OpenNewEvaluation()
     {
-        var parameters = new DialogParameters { ["AgentName"] = AgentName };
+        var parameters = new DialogParameters { ["AgentName"] = string.IsNullOrEmpty(_agentFilter) ? null : _agentFilter };
         var dialog = await DialogSvc.ShowAsync<NewEvaluationDialog>("New Evaluation", parameters);
         var result = await dialog.Result;
         if (result is null || result.Canceled || result.Data is not NewEvaluationSpec spec) return;
-        await RunFlowAsync(spec);
+
+        Handoff.PendingEvaluation = spec;
+        Nav.NavigateTo("/workshop/evaluation/new");
     }
-
-    /// <summary>Direct entry from the Instances tab's "Evaluate these runs" button.</summary>
-    public async Task EvaluateInstanceAsync(WorkshopInstance instance)
-    {
-        if (instance.SessionIds.Count == 0) return;
-        await RunFlowAsync(new NewEvaluationSpec
-        {
-            Mode = EvaluationMode.ExistingInstance,
-            AgentName = instance.AgentName,
-            InstanceId = instance.Id,
-            AutoSuggest = true
-        });
-    }
-
-    // ── orchestration ───────────────────────────────────────────────────────
-
-    private async Task RunFlowAsync(NewEvaluationSpec spec)
-    {
-        if (_busy) return;
-        _busy = true;
-        _phase = "Preparing…";
-        StateHasChanged();
-
-        var cts = new CancellationTokenSource();
-        string jobId = JobsSvc.Register(JobKind.Evaluate, $"Evaluate {spec.AgentName}", () => cts.Cancel());
-
-        try
-        {
-            WorkshopInstance? instance;
-            if (spec.Mode == EvaluationMode.ExistingInstance)
-            {
-                instance = Store.GetInstance(spec.InstanceId ?? "");
-                if (instance is null) { Snackbar.Add("Instance no longer available.", Severity.Warning); return; }
-            }
-            else
-            {
-                _phase = $"Running 0/{spec.Runs} runs…";
-                StateHasChanged();
-                instance = await RunFreshAsync(spec, cts.Token);
-            }
-
-            if (instance.SessionIds.Count == 0)
-            {
-                Snackbar.Add("No runs were produced to evaluate.", Severity.Warning);
-                return;
-            }
-
-            _phase = "Evaluating runs…";
-            StateHasChanged();
-
-            var result = await WorkshopSvc.EvaluateSessionsAsync(instance.AgentName, instance.SessionIds, cts.Token);
-            if (result is null)
-            {
-                Snackbar.Add("Evaluator returned no result.", Severity.Warning);
-                return;
-            }
-
-            var evaluation = new WorkshopEvaluation
-            {
-                Id = Guid.NewGuid().ToString("N")[..8],
-                AgentName = instance.AgentName,
-                AgentVersion = instance.AgentVersion,
-                InstanceId = instance.Id,
-                Task = instance.Task,
-                SessionIds = instance.SessionIds.ToList(),
-                Result = result
-            };
-            Store.AddEvaluation(evaluation);
-            _selectedId = evaluation.Id;
-            _selected = evaluation;
-            await EnsureSourceAsync(evaluation.AgentName);
-
-            if (spec.AutoSuggest && result.Recommendations.Count > 0)
-            {
-                _phase = "Suggesting agent changes…";
-                StateHasChanged();
-                await GenerateDiffAsync(evaluation, result.Recommendations[0], cts.Token);
-            }
-        }
-        catch (OperationCanceledException) { /* cancelled */ }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Evaluation failed: {ex.Message}", Severity.Error);
-        }
-        finally
-        {
-            _busy = false;
-            _phase = "";
-            JobsSvc.Complete(jobId);
-            cts.Dispose();
-            await InvokeAsync(StateHasChanged);
-        }
-    }
-
-    // Run the agent fresh, registering the runs as a WorkshopInstance so they also appear
-    // in the Instances tab. Coarse progress only — full traces live in ReviLog / Instances.
-    private async Task<WorkshopInstance> RunFreshAsync(NewEvaluationSpec spec, CancellationToken ct)
-    {
-        var profile = Agents.Get(spec.AgentName);
-        var instance = new WorkshopInstance
-        {
-            Id = Guid.NewGuid().ToString("N")[..8],
-            AgentName = spec.AgentName,
-            AgentVersion = profile?.Version,
-            Task = spec.Task,
-            AdditionalInputs = spec.Inputs.ToDictionary(kv => kv.Key, kv => (object)kv.Value, StringComparer.OrdinalIgnoreCase),
-            RunCount = spec.Runs
-        };
-        Store.AddInstance(instance);
-
-        var succeeded = new Dictionary<string, bool?>(StringComparer.Ordinal);
-        var request = new WorkshopRunRequest
-        {
-            AgentName = spec.AgentName,
-            Task = spec.Task,
-            AdditionalInputs = instance.AdditionalInputs,
-            Runs = spec.Runs
-        };
-
-        await foreach (var u in WorkshopSvc.RunMultiAsync(request, ct))
-        {
-            if (!instance.SessionIds.Contains(u.SessionId))
-            {
-                instance.SessionIds.Add(u.SessionId);
-                succeeded[u.SessionId] = null;
-            }
-            if (u.FinalResult != null) succeeded[u.SessionId] = u.FinalResult.ExitReason == AgentExitReason.Completed;
-            if (!string.IsNullOrEmpty(u.ErrorMessage)) succeeded[u.SessionId] = false;
-
-            int done = succeeded.Count(s => s.Value != null);
-            _phase = $"Running {done}/{spec.Runs} runs…";
-            await InvokeAsync(StateHasChanged);
-        }
-
-        int total = instance.SessionIds.Count;
-        int completed = succeeded.Count(s => s.Value == true);
-        instance.Stats = new AggregateStats
-        {
-            TotalRuns = total,
-            Completed = completed,
-            Failed = total - completed,
-            SuccessRate = total == 0 ? 0 : (double)completed / total,
-            AverageDurationSeconds = 0,
-            AverageSteps = 0
-        };
-        instance.IsComplete = true;
-        Store.NotifyChanged();
-        return instance;
-    }
-
-    private async Task GenerateDiffAsync(WorkshopEvaluation ev, AgentRecommendation rec, CancellationToken ct)
-    {
-        ev.ChosenRecommendation = rec;
-        ev.ProposedRevision = "";
-        _diffStreaming = true;
-        await EnsureSourceAsync(ev.AgentName);
-        StateHasChanged();
-
-        try
-        {
-            await foreach (var token in WorkshopSvc.GenerateAgentDiffAsync(ev.AgentName, rec, ev.Result, ct))
-            {
-                ev.ProposedRevision += token;
-                await InvokeAsync(StateHasChanged);
-            }
-        }
-        finally
-        {
-            _diffStreaming = false;
-            Store.NotifyChanged();
-            await InvokeAsync(StateHasChanged);
-        }
-    }
-
-    // "Preview diff" on a recommendation — runs the revision generation standalone.
-    private async Task PreviewDiffAsync(WorkshopEvaluation ev, AgentRecommendation rec)
-    {
-        if (_diffStreaming) return;
-        var cts = new CancellationTokenSource();
-        string jobId = JobsSvc.Register(JobKind.Revise, $"Revise {ev.AgentName}: {rec.Title}", () => cts.Cancel());
-        try
-        {
-            await GenerateDiffAsync(ev, rec, cts.Token);
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Diff generation failed: {ex.Message}", Severity.Error);
-        }
-        finally
-        {
-            JobsSvc.Complete(jobId);
-            cts.Dispose();
-        }
-    }
-
-    private async Task ApproveAndSaveAsync(WorkshopEvaluation ev)
-    {
-        if (string.IsNullOrEmpty(ev.ProposedRevision)) return;
-        _savingRevision = true;
-        StateHasChanged();
-        try
-        {
-            await WorkshopSvc.SaveAgentRevisionAsync(ev.AgentName, ev.ProposedRevision, CancellationToken.None);
-            ev.AppliedAsVersion = (ev.AgentVersion ?? 0) + 1;
-            Snackbar.Add($"Saved new revision of {ev.AgentName}.", Severity.Success);
-            await EnsureSourceAsync(ev.AgentName);
-            Store.NotifyChanged();
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Save failed: {ex.Message}", Severity.Error);
-        }
-        finally
-        {
-            _savingRevision = false;
-            StateHasChanged();
-        }
-    }
-
-    private void DiscardDiff(WorkshopEvaluation ev)
-    {
-        ev.ProposedRevision = null;
-        ev.ChosenRecommendation = null;
-        Store.NotifyChanged();
-    }
-
-    // ── render helpers ──────────────────────────────────────────────────────
-
-    private RenderFragment RenderRecommendation(WorkshopEvaluation ev, AgentRecommendation rec) => __builder =>
-    {
-        <MudPaper Class="pa-3 mb-2" Outlined="true">
-            <div class="d-flex align-center gap-2 mb-1">
-                <MudText Typo="Typo.subtitle2">@rec.Title</MudText>
-                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@rec.Impact</MudChip>
-                <MudSpacer />
-                <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.Edit"
-                           OnClick="@(() => PreviewDiffAsync(ev, rec))"
-                           Disabled="@(_diffStreaming || _busy)">
-                    Preview diff
-                </MudButton>
-            </div>
-            <MudText Typo="Typo.body2" Color="Color.Secondary">@rec.Rationale</MudText>
-        </MudPaper>
-    };
 
     private static string TaskPreview(string? task)
         => string.IsNullOrWhiteSpace(task) ? "(no task)" : (task!.Length > 80 ? task[..80] + "…" : task);
@@ -534,8 +120,7 @@
         return $"{(int)span.TotalDays}d ago";
     }
 
-    private static Color ScoreColor(double score) =>
-        score >= 7.5 ? Color.Success : score >= 5.0 ? Color.Warning : Color.Error;
+    private static Color ScoreColor(double score) => score >= 7.5 ? Color.Success : score >= 5.0 ? Color.Warning : Color.Error;
 
     private static string VerdictIcon(string verdict) => verdict?.ToLowerInvariant() switch
     {

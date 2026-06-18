@@ -166,7 +166,9 @@ public class WebExtractionTests
             """;
 
         var chunker = new HeadingTokenChunker();
-        var chunks = chunker.Chunk(md, new WebMetadata { Title = "Doc" }, new ChunkOptions());
+        // MinChunkTokens = 0 isolates the heading-split behavior under test; these small sections would
+        // otherwise merge forward under the default MinChunkTokens (covered by Batch8FixesTests).
+        var chunks = chunker.Chunk(md, new WebMetadata { Title = "Doc" }, new ChunkOptions { MinChunkTokens = 0 });
 
         chunks.Count.Should().Be(2);
         chunks[0].HeadingTrail.Should().Be("Doc > Section One");

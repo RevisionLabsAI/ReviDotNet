@@ -30,6 +30,12 @@ public class Prompt
     [JsonProperty("filter"), RConfigProperty("settings_filter")]
     public string? Filter { get; set; }
 
+    [JsonProperty("filter-canary"), RConfigProperty("settings_filter-canary")]
+    public string? FilterCanary { get; set; }
+
+    [JsonProperty("filter-matching"), RConfigProperty("settings_filter-matching")]
+    public string? FilterMatching { get; set; }
+
     [JsonProperty("chain-of-thought"), RConfigProperty("settings_chain-of-thought")]
     public bool? ChainOfThought { get; set; }
 
@@ -131,9 +137,9 @@ public class Prompt
     {
         if (string.IsNullOrWhiteSpace(Name))
             throw new ArgumentException("Name must not be null or empty.");
-        
-        if (Version is null)
-            throw new ArgumentException("Version must not be null.");
+
+        // Version is optional and defaults to 1 (matches the documented default) rather than failing the load.
+        Version ??= 1;
         
         if (string.IsNullOrWhiteSpace(System) && string.IsNullOrWhiteSpace(Instruction))
             throw new ArgumentException("System and instruction cannot both be null or empty.");
@@ -214,6 +220,8 @@ public class Prompt
 
         // Copy value type Settings
         Filter = original.Filter;
+        FilterCanary = original.FilterCanary;
+        FilterMatching = original.FilterMatching;
         ChainOfThought = original.ChainOfThought;
         RequestJson = original.RequestJson;
         GuidanceSchema = original.GuidanceSchema;
@@ -518,7 +526,13 @@ public class Prompt
                 // Skip adding this property to the object/leave null if marked default
                 if (value.ToLower() == "default")
                     continue;
-                
+
+                // 'few-shot-examples = all' means "use every defined example" — represented as null,
+                // which the message builders treat as "all". Parsing "all" as an int would otherwise throw.
+                if (attribute.Name == "settings_few-shot-examples" &&
+                    string.Equals(value, "all", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
                 if (property.Name == "Name" && namePrefix != null)
                 {
                     value = $"{namePrefix}{value}";

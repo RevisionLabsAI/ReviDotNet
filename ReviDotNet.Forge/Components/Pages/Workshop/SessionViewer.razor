@@ -1,0 +1,295 @@
+@page "/workshop/session/{Id}"
+@using Revi
+@using Newtonsoft.Json.Linq
+@using ReviDotNet.Forge.Services.Workshop
+@using ReviDotNet.Forge.Services.Workshop.Models
+@implements IDisposable
+@inject IWorkshopStore Store
+@inject IAgentWorkshopService WorkshopSvc
+@inject RunningJobsService JobsSvc
+@inject ISnackbar Snackbar
+@inject WorkshopHandoff Handoff
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+@*
+    Dedicated session viewer. A fixed session runs (or loads) its agent run(s) and renders them in
+    the live grouped session view; a chat session opens the interactive chat. Reached by selecting a
+    session in the Workshop, or created fresh from "New Session".
+*@
+
+@if (_session is null)
+{
+    <MudAlert Severity="Severity.Warning">
+        Session not found.
+        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/workshop">Back to Workshop</MudButton>
+    </MudAlert>
+}
+else
+{
+    <div class="d-flex align-center gap-2 mb-3" style="flex-wrap: wrap;">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/workshop" Title="Back to Workshop" />
+        <MudIcon Icon="@(_session.Mode == InteractionMode.Chat ? Icons.Material.Filled.Chat : Icons.Material.Filled.PlayArrow)"
+                 Color="@(_session.Mode == InteractionMode.Chat ? Color.Tertiary : Color.Primary)" />
+        <MudText Typo="Typo.h5">@_session.AgentName</MudText>
+        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@(_session.Mode == InteractionMode.Chat ? "chat" : "fixed")</MudChip>
+        @if (_session.Attachments.Count > 0)
+        {
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Icon="@Icons.Material.Filled.AttachFile">@_session.Attachments.Count file(s)</MudChip>
+        }
+        <MudSpacer />
+        @if (_session.Mode == InteractionMode.Fixed)
+        {
+            <MudButton StartIcon="@Icons.Material.Filled.UnfoldMore" Variant="Variant.Text" Size="Size.Small" OnClick="ExpandAll">Expand all</MudButton>
+            <MudButton StartIcon="@Icons.Material.Filled.UnfoldLess" Variant="Variant.Text" Size="Size.Small" OnClick="CollapseAll">Collapse all</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.Analytics"
+                       OnClick="EvaluateRuns"
+                       Disabled="@(!_session.IsComplete || _session.SessionIds.Count == 0)">
+                Evaluate these runs →
+            </MudButton>
+        }
+    </div>
+
+    @if (_session.Mode == InteractionMode.Chat)
+    {
+        <ChatSessionView Session="_session" InitialMessage="@(_session.Turns.Count == 0 ? _session.Task : null)" />
+    }
+    else
+    {
+        @if (_loading)
+        {
+            <div class="d-flex align-center gap-2 pa-2">
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                <MudText Typo="Typo.caption">@(_runs.Count == 0 ? "Starting run…" : "Loading runs…")</MudText>
+            </div>
+        }
+
+        @if (_runs.Count == 1)
+        {
+            @RenderRun(_runs.Values.First())
+        }
+        else if (_runs.Count > 1)
+        {
+            <MudTabs Elevation="0" Rounded="true" Color="Color.Primary">
+                @foreach (var rs in _runs.Values.OrderBy(r => r.RunIndex))
+                {
+                    <MudTabPanel Text="@($"Run {rs.RunIndex + 1}")" Icon="@RunStateIcon(rs)">
+                        <div class="pa-2">@RenderRun(rs)</div>
+                    </MudTabPanel>
+                }
+            </MudTabs>
+        }
+    }
+}
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+
+    private WorkshopSession? _session;
+    private string? _loadedId;
+    private bool _loading;
+    private bool _started;
+    private CancellationTokenSource? _cts;
+
+    private readonly Dictionary<string, RunState> _runs = new(StringComparer.Ordinal);
+
+    private sealed class RunState
+    {
+        public required int RunIndex { get; init; }
+        public required string SessionId { get; init; }
+        public List<RlogEvent> Events { get; } = new();
+        public AgentResult? FinalResult { get; set; }
+        public string? ErrorMessage { get; set; }
+        public bool IsDone => FinalResult != null || !string.IsNullOrEmpty(ErrorMessage);
+    }
+
+    protected override void OnInitialized() => Store.Changed += OnStoreChanged;
+
+    protected override void OnParametersSet()
+    {
+        if (!string.Equals(_loadedId, Id, StringComparison.Ordinal))
+        {
+            _loadedId = Id;
+            _session = Store.GetSession(Id);
+            _runs.Clear();
+            _started = false;
+        }
+    }
+
+    private void OnStoreChanged() => InvokeAsync(StateHasChanged);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_session is null || _session.Mode != InteractionMode.Fixed || _started) return;
+        _started = true;
+
+        // A freshly-created fixed session that hasn't produced any runs yet → run it now; otherwise
+        // it already executed → load its persisted runs.
+        if (!_session.IsComplete && _session.SessionIds.Count == 0)
+            await RunFixed();
+        else
+            await LoadRuns();
+    }
+
+    private RenderFragment RenderRun(RunState rs) => __builder =>
+    {
+        var data = GroupedTraceBuilder.Build(rs.Events, rs.SessionId, _session?.AgentName);
+        if (data is not null)
+        {
+            <GroupedInstanceView Data="data" />
+        }
+        else if (!string.IsNullOrEmpty(rs.ErrorMessage))
+        {
+            <MudAlert Severity="Severity.Error">@rs.ErrorMessage</MudAlert>
+        }
+        else
+        {
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Waiting for events…</MudText>
+        }
+    };
+
+    private async Task RunFixed()
+    {
+        _loading = true;
+        _cts = new CancellationTokenSource();
+        string jobId = JobsSvc.Register(JobKind.AgentRun, $"Run {_session!.AgentName} × {_session.RunCount}", () => _cts?.Cancel());
+
+        var request = new WorkshopRunRequest
+        {
+            AgentName = _session.AgentName,
+            Task = _session.Task,
+            AdditionalInputs = _session.AdditionalInputs,
+            Runs = _session.RunCount,
+            Attachments = _session.Attachments,
+        };
+
+        try
+        {
+            await foreach (var update in WorkshopSvc.RunMultiAsync(request, _cts.Token))
+            {
+                if (!_runs.TryGetValue(update.SessionId, out var state))
+                {
+                    state = new RunState { RunIndex = update.RunIndex, SessionId = update.SessionId };
+                    _runs[update.SessionId] = state;
+                    if (!_session.SessionIds.Contains(update.SessionId))
+                        _session.SessionIds.Add(update.SessionId);
+                }
+                if (update.Event != null) state.Events.Add(update.Event);
+                if (update.FinalResult != null) state.FinalResult = update.FinalResult;
+                if (!string.IsNullOrEmpty(update.ErrorMessage)) state.ErrorMessage = update.ErrorMessage;
+
+                _session.Stats = ComputeStats(_runs.Values);
+                _loading = false;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) { /* navigated away / stopped */ }
+        catch (Exception ex) { Snackbar.Add($"Run failed: {ex.Message}", Severity.Error); }
+        finally
+        {
+            _session.Stats = ComputeStats(_runs.Values);
+            _session.IsComplete = true;
+            _loading = false;
+            JobsSvc.Complete(jobId);
+            Store.NotifyChanged();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task LoadRuns()
+    {
+        if (_session!.SessionIds.Count == 0) return;
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            for (int i = 0; i < _session.SessionIds.Count; i++)
+            {
+                var sid = _session.SessionIds[i];
+                var events = await WorkshopSvc.GetSessionEventsAsync(sid, CancellationToken.None);
+                var state = new RunState { RunIndex = i, SessionId = sid };
+                state.Events.AddRange(events);
+                state.FinalResult = DeriveResult(events);
+                _runs[sid] = state;
+            }
+            _session.Stats ??= ComputeStats(_runs.Values);
+        }
+        catch (Exception ex) { Snackbar.Add($"Failed to load runs: {ex.Message}", Severity.Error); }
+        finally
+        {
+            _loading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void EvaluateRuns()
+    {
+        if (_session is null) return;
+        Handoff.PendingEvaluation = new NewEvaluationSpec
+        {
+            Mode = EvaluationMode.ExistingSession,
+            AgentName = _session.AgentName,
+            SourceSessionId = _session.Id,
+            AutoSuggest = true,
+        };
+        Nav.NavigateTo("/workshop/evaluation/new");
+    }
+
+    private async Task ExpandAll() => await JS.InvokeVoidAsync("groupedSetAllOpen", ".gi-root", true);
+    private async Task CollapseAll() => await JS.InvokeVoidAsync("groupedSetAllOpen", ".gi-root", false);
+
+    private static AggregateStats ComputeStats(IEnumerable<RunState> states)
+    {
+        var list = states.ToList();
+        int total = list.Count;
+        int completed = list.Count(r => r.FinalResult?.ExitReason == AgentExitReason.Completed);
+        int failed = list.Count(r => r.IsDone && r.FinalResult?.ExitReason != AgentExitReason.Completed);
+        var done = list.Where(r => r.FinalResult != null).ToList();
+        double avgSteps = done.Count > 0 ? done.Average(r => r.FinalResult!.TotalSteps) : 0;
+        double avgDur = done.Where(r => r.Events.Count > 0)
+            .Select(r => (r.Events.Max(e => e.Timestamp) - r.Events.Min(e => e.Timestamp)).TotalSeconds)
+            .DefaultIfEmpty(0).Average();
+        return new AggregateStats
+        {
+            TotalRuns = total,
+            Completed = completed,
+            Failed = failed,
+            SuccessRate = total == 0 ? 0 : (double)completed / total,
+            AverageDurationSeconds = avgDur,
+            AverageSteps = avgSteps
+        };
+    }
+
+    private static AgentResult? DeriveResult(IReadOnlyList<RlogEvent> events)
+    {
+        var end = events.FirstOrDefault(e => e.Identifier == AgentReviLogger.Step.End);
+        if (end == null) return null;
+        var exit = AgentExitReason.Completed;
+        int steps = 0;
+        if (!string.IsNullOrEmpty(end.Object2))
+        {
+            try
+            {
+                var meta = JObject.Parse(end.Object2);
+                if (Enum.TryParse<AgentExitReason>((string?)meta["exitReason"], ignoreCase: true, out var parsed))
+                    exit = parsed;
+                steps = (int?)meta["totalSteps"] ?? 0;
+            }
+            catch { /* ignore */ }
+        }
+        return new AgentResult { FinalOutput = end.Object1, ExitReason = exit, TotalSteps = steps };
+    }
+
+    private static string RunStateIcon(RunState s) =>
+        s.FinalResult?.ExitReason == AgentExitReason.Completed ? Icons.Material.Filled.CheckCircle :
+        !string.IsNullOrEmpty(s.ErrorMessage) || (s.FinalResult != null && s.FinalResult.ExitReason != AgentExitReason.Completed) ? Icons.Material.Filled.Error :
+        Icons.Material.Filled.HourglassEmpty;
+
+    public void Dispose()
+    {
+        Store.Changed -= OnStoreChanged;
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
+}

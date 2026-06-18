@@ -11,6 +11,15 @@ namespace Revi;
 /// grows lazily up to a cap, hands out a <em>random</em> usable session (random, not round-robin, to
 /// avoid a predictable rotation a defender can fingerprint), and retires sessions that get blocked or
 /// age out. This is the design that most differentiates a serious scraper from a naive one.
+/// <para>
+/// <b>Status: standalone primitive — NOT wired into any production fetch path.</b> Neither
+/// <see cref="WebContentService"/>, the HTTP fetcher, the crawl engine, nor
+/// <c>ReviDotNet.Scraping</c>'s tiered fetcher consume <see cref="SessionPool"/> /
+/// <see cref="ScrapeSession"/>; the Core fetcher uses a single static <c>HttpClient</c> with one
+/// header-generator profile and no cookie jar or session rotation. These types exist and are unit-tested
+/// for a future anti-bot identity layer, but enabling Core crawling (or registering
+/// <c>ReviDotNet.Scraping</c>) does <b>not</b> rotate sessions/cookies today. Don't assume otherwise.
+/// </para>
 /// </summary>
 public sealed class SessionPool
 {

@@ -76,6 +76,10 @@ namespace Revi
             {
                 Util.Log($"Error loading prompts: {e.Message}");
             }
+
+            // Overlay built-in default prompts (json-fixer, enum-fixer) shipped embedded in ReviDotNet.Core.
+            // Runs last so any app-defined prompt of the same name wins; CheckAdd only fills gaps.
+            LoadFromEmbeddedResources(typeof(PromptManager).Assembly);
         }
 
         /// <summary>

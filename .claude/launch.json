@@ -10,7 +10,7 @@
     {
       "name": "mockups",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "4599", "--directory", "Docs/mockups"],
+      "runtimeArgs": ["Docs/mockups/serve.py"],
       "port": 4599
     }
   ]

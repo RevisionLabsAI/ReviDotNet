@@ -62,14 +62,16 @@ public sealed class ModelManagerService : IModelManager
     /// <inheritdoc/>
     public ModelProfile? Find(string? minTier, bool needsPromptCompletion = false)
     {
-        Enum.TryParse(minTier ?? "", out ModelTier foundTier);
+        // Case-insensitive so a lowercase a/b/c resolves correctly instead of silently defaulting to C.
+        Enum.TryParse(minTier ?? "", ignoreCase: true, out ModelTier foundTier);
         return Find(foundTier, needsPromptCompletion);
     }
 
     /// <inheritdoc/>
     public ModelProfile? Find(string? minTier, bool needsPromptCompletion, List<string>? blockedModels)
     {
-        Enum.TryParse(minTier ?? "", out ModelTier foundTier);
+        // Case-insensitive so a lowercase a/b/c resolves correctly instead of silently defaulting to C.
+        Enum.TryParse(minTier ?? "", ignoreCase: true, out ModelTier foundTier);
         return Find(foundTier, needsPromptCompletion, blockedModels);
     }
 
@@ -95,7 +97,8 @@ public sealed class ModelManagerService : IModelManager
     private static bool IsEligible(ModelProfile model, ModelTier minTier, bool needsPromptCompletion)
         => model.Enabled &&
            model.Tier >= minTier &&
-           (!needsPromptCompletion || (model.Provider?.SupportsCompletion ?? false));
+           // Honor a model-level supports-prompt-completion override before the provider's.
+           (!needsPromptCompletion || model.EffectiveSupportsPromptCompletion);
 
     private void LoadFromFileSystem(string path)
     {

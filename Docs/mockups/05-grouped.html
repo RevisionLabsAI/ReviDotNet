@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Forge · Agent Instance — Grouped (steps + cubes)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="grouped.css?v=2" />
+<style>
+  /* ── Grouped: steps grouped under state activations, with status-cube fan-out for >5 calls.
+       Accent-striped step cards + activation bands. Shares the engine in grouped-core.js. ── */
+  .wrap { max-width: 960px; margin: 0 auto; padding: 26px 20px 110px; }
+
+  /* Header — premium card with gradient top accent */
+  .inst { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-2); padding: 22px 22px 18px; margin-bottom: 24px; overflow: hidden; }
+  .inst::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: linear-gradient(90deg, var(--primary), var(--tertiary), var(--secondary)); }
+  .inst-top { display: flex; align-items: center; gap: 14px; }
+  .inst-ava { width: 46px; height: 46px; border-radius: 13px; flex: 0 0 auto; color: #fff; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--primary), var(--tertiary)); box-shadow: 0 4px 14px rgba(var(--primary-rgb), .4); }
+  .inst-ava svg { width: 25px; height: 25px; }
+  .inst-name { font-size: 1.2rem; font-weight: 700; letter-spacing: -.015em; }
+  .inst-sub { font-size: .79rem; color: var(--text-2); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 3px; }
+  .inst-status { margin-left: auto; font-size: .78rem; padding: 6px 12px; }
+  .inst-task { margin-top: 16px; font-size: .92rem; line-height: 1.6; }
+  .inst-task .lbl { font-size: .64rem; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--text-2); margin-right: 8px; }
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 18px; }
+  @media (max-width: 720px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+  .tile-stat { display: flex; align-items: center; gap: 11px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface-2); }
+  .tile-stat .ti { width: 34px; height: 34px; border-radius: 9px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; color: var(--accent, var(--primary)); background: rgba(var(--accent-rgb, var(--primary-rgb)), .14); }
+  .tile-stat .ti svg { width: 18px; height: 18px; }
+  .tile-body { display: flex; flex-direction: column; line-height: 1.08; }
+  .tile-stat .v { font-weight: 700; font-size: 1.15rem; letter-spacing: -.02em; }
+  .tile-stat .l { font-size: .68rem; color: var(--text-2); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+  .meters { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 16px; }
+  @media (max-width: 720px) { .meters { grid-template-columns: 1fr; } }
+  .meter-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
+  .meter-l { font-size: .66rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-2); }
+  .meter-v { font-family: var(--font-mono); font-size: .76rem; font-weight: 600; }
+  .meter-bar { height: 7px; border-radius: 999px; background: var(--bg-soft); border: 1px solid var(--border); overflow: hidden; }
+  .meter-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--success); }
+  .meter-bar.warn > span { background: var(--warning); }
+  .meter-bar.over > span { background: var(--error); }
+
+  /* Stream */
+  .stream { display: flex; flex-direction: column; gap: 14px; }
+
+  /* Activation — bg-soft band with a surface header bar */
+  .activation { background: var(--bg-soft); border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; }
+  .activation > summary { display: flex; align-items: center; gap: 11px; padding: 11px 15px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .activation > summary:hover { background: var(--hover); }
+  .activation:not([open]) > summary { border-bottom: none; }
+  .act-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; background: var(--text-3); }
+  .act--done .act-dot { background: var(--success); }
+  .act--running .act-dot { background: var(--info); box-shadow: 0 0 0 3px rgba(var(--info-rgb), .18); }
+  .act--queued .act-dot { background: var(--text-3); }
+  .act-state { font-weight: 700; font-size: .92rem; letter-spacing: -.01em; }
+  .act-cycle { font-family: var(--font-mono); font-size: .72rem; color: var(--text-2); background: var(--hover); padding: 2px 7px; border-radius: var(--r-pill); }
+  .act-sp { flex: 1 1 auto; }
+  .act-r { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+  .act-steps { display: none; }   /* per-activation step counter removed */
+  .act-body { padding: 13px; display: flex; flex-direction: column; gap: 13px; }
+
+  /* Steps — surface cards with an accent stripe */
+  .step { --accent: var(--ev-tool); --accent-rgb: var(--ev-tool-rgb); position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--shadow-1); overflow: hidden; }
+  .step--done { --accent: var(--success); --accent-rgb: var(--success-rgb); }
+  .step--running { --accent: var(--info); --accent-rgb: var(--info-rgb); }
+  .step--failed { --accent: var(--error); --accent-rgb: var(--error-rgb); }
+  .step--queued { --accent: var(--ev-system); --accent-rgb: var(--ev-system-rgb); }
+  .step > summary { display: flex; align-items: center; gap: 12px; padding: 13px 16px; }
+  .step > summary:hover { background: var(--hover); }
+  .stepno { font-family: var(--font-mono); font-weight: 700; font-size: .78rem; color: var(--accent); background: rgba(var(--accent-rgb), .14); padding: 4px 9px; border-radius: var(--r-sm); flex: 0 0 auto; }
+  .step-h { flex: 1 1 auto; min-width: 0; }
+  .step-t { font-weight: 600; font-size: .95rem; }
+  .step-r { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+  .step .body { padding: 2px 16px 16px; }
+  .thinking { display: flex; gap: 8px; align-items: flex-start; margin-top: 12px; padding: 9px 11px; border-radius: var(--r-sm); background: rgba(var(--ev-think-rgb), .07); border: 1px solid rgba(var(--ev-think-rgb), .18); color: var(--text-2); font-size: .84rem; font-style: italic; }
+  .thinking .ic { width: 15px; height: 15px; color: var(--ev-think); flex: 0 0 auto; margin-top: 2px; }
+  .stepmsg { margin-top: 12px; font-size: .92rem; line-height: 1.6; }
+
+  /* Call list (≤5) */
+  .calllist { display: flex; flex-direction: column; gap: 9px; margin-top: 13px; }
+  .call { --accent: var(--ev-tool); --accent-rgb: var(--ev-tool-rgb); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; background: var(--surface); }
+  .call--subagent { --accent: var(--ev-sub); --accent-rgb: var(--ev-sub-rgb); }
+  .call > summary { display: flex; align-items: center; gap: 11px; padding: 9px 12px; }
+  .call > summary:hover { background: var(--hover); }
+  .call .tile { width: 28px; height: 28px; border-radius: 8px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; color: var(--accent); background: rgba(var(--accent-rgb), .14); }
+  .call .tile svg { width: 15px; height: 15px; }
+  .call-h { flex: 1 1 auto; min-width: 0; }
+  .call-t { font-weight: 600; font-size: .88rem; display: flex; gap: 8px; align-items: center; }
+  .call .kind { font-family: var(--font-mono); font-size: .76rem; color: var(--accent); }
+  .call-s { font-size: .8rem; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .call-r { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; }
+  .call-b { padding: 4px 12px 12px; border-top: 1px solid var(--border); }
+
+  /* Transition marker */
+  .tmark { display: flex; align-items: center; gap: 12px; }
+  .tmark .tline { flex: 1 1 auto; height: 1px; background: var(--border); }
+  .tmark .sig { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: .72rem; font-weight: 700; color: var(--secondary); background: rgba(var(--secondary-rgb), .12); border: 1px solid rgba(var(--secondary-rgb), .3); padding: 3px 10px; border-radius: var(--r-pill); }
+  .tmark .sig svg { width: 12px; height: 12px; }
+
+  /* Sub-agent mini-instance (renders its single step's work directly — no "Step N.1" wrapper) */
+  .mini { border: 1px solid var(--border); border-radius: var(--r); background: var(--bg-soft); padding: 13px; }
+  .mini-h { display: flex; align-items: center; gap: 11px; padding-bottom: 11px; margin-bottom: 12px; border-bottom: 1px dashed var(--border-2); }
+  .mini-h .ava { width: 30px; height: 30px; border-radius: 8px; flex: 0 0 auto; color: #fff; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--ev-sub), color-mix(in srgb, var(--ev-sub) 55%, #000)); }
+  .mini-h .ava svg { width: 16px; height: 16px; }
+  .mini-h .n { font-weight: 700; font-size: .9rem; }
+  .mini-h .s { font-size: .78rem; color: var(--text-2); }
+  .mini-stream { display: flex; flex-direction: column; gap: 10px; }
+  .mini-stream .step { box-shadow: var(--shadow-1); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a class="brand" href="index.html" title="Back to gallery">
+    <span class="mark"><svg class="ic"><use href="#i-agent"/></svg></span>
+    <span style="display:flex;flex-direction:column;line-height:1.1">
+      <span class="eyebrow">Forge mockup</span><span class="name">Grouped · steps + cubes</span>
+    </span>
+  </a>
+  <span class="spacer"></span>
+  <button class="btn btn-ghost" onclick="setAllOpen(true)"><svg class="ic"><use href="#i-expand"/></svg>Expand all</button>
+  <button class="btn btn-ghost" onclick="setAllOpen(false)">Collapse all</button>
+  <button class="btn" onclick="toggleTheme()"><svg class="ic"><use href="#i-theme"/></svg><span data-theme-label>Dark</span></button>
+  <a class="btn" href="index.html"><svg class="ic"><use href="#i-arrow"/></svg>Gallery</a>
+</div>
+
+<div class="wrap"><div id="app"></div></div>
+
+<script src="mockup.js?v=2"></script>
+<script src="grouped-core.js?v=3"></script>
+</body>
+</html>

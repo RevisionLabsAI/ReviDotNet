@@ -30,8 +30,10 @@ string? output = await Agent.ToString("research/market-scan", "Find recent prici
 | Option | Type | Description |
 | :--- | :--- | :--- |
 | `name` | string | Logical agent name (combined with folder prefix). |
-| `version` | integer | Optional version number. |
+| `version` | integer | Optional version number. Must be an integer if present — a non-integer value throws a `FormatException` that is caught per-file and **skips the entire agent**, so the agent silently won't be found at runtime. |
 | `description` | string | Optional description for maintainers. |
+
+> **Load-time vs run-time errors:** a malformed `.agent` file (e.g. a non-integer `version`) is skipped during loading with a logged warning rather than throwing to your startup. Structural problems such as a missing `[[loop]] entry` or an entry/transition that names a state which doesn't exist are also logged at load and then surface as a **run-time** failure when you invoke the agent — not as a load-time rejection. Watch the startup logs when an agent "isn't found" or fails immediately.
 
 ### `[[loop]]` (Required)
 
@@ -45,7 +47,8 @@ Run-wide configuration applied across every state in the run.
 
 | Option | Type | Description |
 | :--- | :--- | :--- |
-| `cost-budget` | decimal | Optional run-wide USD cost budget. The runner accumulates the cost of every LLM call across the run (using each model's `cost-per-million-input-tokens` / `cost-per-million-output-tokens`). When the projected cost of the next call would exceed this cap, the run terminates gracefully with `AgentExitReason.BudgetExceeded` and returns whatever output was last accumulated. State-level `cost-budget` guardrails still apply independently. |
+| `cost-budget` | decimal | Optional run-wide USD cost budget. The runner accumulates the cost of every LLM call across the run (using each model's `cost-per-million-input-tokens` / `cost-per-million-output-tokens`). When the projected cost of the next call would exceed this cap, the run terminates gracefully with `AgentExitReason.BudgetExceeded` and returns whatever output was last accumulated. State-level `cost-budget` guardrails still apply independently. **Result semantics:** if even the *first* call is projected over budget, the run ends immediately with `TotalSteps = 0` and `FinalOutput = null` — a valid budget refusal, not an error. The 80%-of-budget warning is a **Warning log event only**; it is not surfaced on `AgentResult`. Use a `.` decimal separator (values parse culture-invariantly). |
+| `interaction-mode` | enum | How the agent may be driven: `fixed` (autonomous run on an initial input), `chat` (interactive — one user message per turn, each turn re-running the agent seeded with the prior conversation), or `both`. Defaults to `fixed`. The workshop's New Session dialog offers only the modes an agent declares. |
 
 ### `[[state.<name>]]` (At least one required)
 
@@ -64,13 +67,14 @@ All values are optional.
 
 | Option | Type | Description |
 | :--- | :--- | :--- |
-| `cycle-limit` | integer | Max activations of this state across a run. |
-| `max-steps` | integer | Max LLM calls per activation. |
-| `timeout` | integer | Max seconds per activation. |
+| `cycle-limit` | integer | Max activations of this state across a run. A `-> self` transition counts as a re-activation, so `cycle-limit` also bounds self-looping states (e.g. the `-> self [when: CONTINUE]` pattern). |
+| `max-steps` | integer | Max LLM calls per activation. (Not reset by a `-> self` transition, so it bounds the total LLM calls a self-looping state makes.) |
+| `timeout` | integer | Dual-purpose, in seconds. (1) **Per-activation wall-clock**: checked at the top of the loop before each LLM call — a single long-running/streaming call is therefore not hard-capped mid-flight; the overrun is caught before the *next* call and surfaces as `AgentExitReason.GuardrailViolation`. (2) **Per-LLM-call inactivity timeout**: passed to the inference call as the no-data timeout — if the provider sends no data for this long the call aborts, surfacing as `Cancelled`/`Error` (not `GuardrailViolation`). |
 | `cost-budget` | decimal | Optional USD cost budget for one activation of this state. Tracked alongside the run-wide `[[settings]] cost-budget`; the runner refuses an LLM call whose projected cost would exceed either cap. A warning event fires when consumption first crosses 80% of the cap. Models without `cost-per-million-*-tokens` rates contribute zero to tracking. |
-| `tool-call-limit` | integer | Max tool calls per activation. |
-| `retry-limit` | integer | Parsed but not currently enforced by `AgentRunner`. |
-| `loop-detection` | boolean | Enables repeated-traversal loop detection. |
+| `tool-call-limit` | integer | Max tool calls per activation. Unlike the other guardrails, exceeding it does **not** terminate the run — excess tool calls beyond the limit are silently **dropped** (logged via `Util.Log` only, no event) and the state continues. |
+| `max-parallel-tools` | integer | Max tool calls from a single step that may execute concurrently. Excess calls queue and start as slots free (each emits a `tool-call` event immediately, then a `tool-start` event once a slot is acquired). Defaults to unbounded (every tool call in the step runs at once). |
+| `retry-limit` | integer | Max retries of a failed LLM call within a single activation of this state before the run terminates with `AgentExitReason.Error`. Defaults to `0` (no retry). |
+| `loop-detection` | boolean | Enables repeated-traversal loop detection for **this** state. Constraints: (1) detection only runs while a state that has it enabled is active — so to catch an `A <-> B` ping-pong you must set it on **both** A and B; (2) it detects repeating multi-state sub-sequences in the traversal history and needs **≥ 4** history entries to fire; (3) `-> self` self-loops are **not** added to the traversal history and therefore can't be caught this way (bound them with `max-steps`/`timeout`/`cost-budget`/`cycle-limit` instead). |
 | `max-agent-depth` | integer | Maximum sub-agent nesting depth permitted from this state. If `invoke_agent` would push depth above this, the call is refused. Defaults to `AgentRunner.DefaultMaxAgentDepth` (3). |
 
 ### `[[_system]]` (Optional)
@@ -80,6 +84,31 @@ Global system text applied to every step.
 ### `[[_state.<name>.instruction]]` (Optional)
 
 State-specific instruction appended to the global system text.
+
+### `[[_state.<name>.settings]]` (Optional)
+
+Per-state inference overrides applied to every LLM call made while this state is active. Each line is a `key = value` pair (the same keys used in a `.pmt` `[[settings]]`/`[[tuning]]` block). A value set here overrides the resolved model-profile parameter for this state only.
+
+Supported keys:
+
+| Key | Type | Description |
+| :--- | :--- | :--- |
+| `max-tokens` | integer | Max tokens to generate for calls in this state. |
+| `best-of` | integer | Request multiple completions and keep the best. |
+| `use-search-grounding` | boolean | Enable search grounding (if the model/provider supports it). |
+| `temperature` | float | Sampling temperature. |
+| `top-k` | integer | Top-K sampling. |
+| `top-p` | float | Nucleus sampling. |
+| `min-p` | float | Minimum-probability sampling threshold. |
+| `presence-penalty` | float | Presence penalty. |
+| `frequency-penalty` | float | Frequency penalty. |
+| `repetition-penalty` | float | Repetition penalty. |
+
+```ini
+[[_state.draft.settings]]
+temperature = 0.2
+max-tokens = 800
+```
 
 ### `[[_loop]]` (Required for transitions)
 
@@ -111,7 +140,10 @@ summarize
 Notes:
 - Transition matching checks `signal` first, then first unconditional transition.
 - Signal tokens should be uppercase with underscores (for example `READY_FOR_SUMMARY`).
-- State names in transitions may contain word characters and hyphens (`[A-Za-z0-9_-]`). Names must start with a word character.
+- **State names may contain letters, digits, and hyphens — but NOT underscores.** State discovery parses `[[state.<name>]]` headers up to the first `.` or `_`, so an underscore in a state name truncates it and the intended state is never registered. (The `[end]` and `self` targets are reserved.)
+- **Each state must declare at least one plain `[[state.<name>]]` field** (e.g. `description`, `model`, or `tools`). A state that only has `[[state.<name>.guardrails]]` or `[[_state.<name>.instruction]]` — with no plain `[[state.<name>]]` field — is never discovered, so referencing it from `entry`/a transition resolves to a non-existent state.
+
+Either pitfall produces a state that doesn't exist with no load-time error; the failure surfaces at run time as an entry/transition error.
 
 ## Signal Validation
 
@@ -125,13 +157,27 @@ Up to `MaxSignalCorrectionsPerActivation` (currently 2) corrections are absorbed
 
 ## Tool Registration
 
-Built-in tools are registered statically in `ToolManager`. Both built-ins shipped with ReviDotNet (`web-search`, `web-scrape`, `invoke_agent`) are auto-registered at process start. Hosting applications can register their own tools via:
+Built-in tools are registered statically in `ToolManager`'s static constructor: `web-search`, `web-scrape`, and `web-extract` are always available. `invoke_agent` is **not** registered statically — it requires `Lazy<IAgentService>` and is registered only on the DI path by `ToolManagerService`. So `invoke_agent` works when you run agents through the injected `IAgentService`/`ReviClient`, but is unavailable on the static `Agent.Run` path (a state that allows it there will get a "tool is not registered" result).
+
+### Built-in tools
+
+| Tool name | Input | Output |
+| :--- | :--- | :--- |
+| `web-search` | A search query string. | Search results. |
+| `web-scrape` | A URL to fetch. | Page content. |
+| `web-extract` | Either a bare URL string, or JSON `{ "url": "<url>", "maxTokens": <n> }` (the key `uri` is also accepted; `maxTokens` is clamped to **64–2000**, default **400**). | Structured JSON: the page's main content split into token-bounded chunks. |
+| `invoke_agent` | JSON `{ "agent": "<name>", "task": "<text>", "inputs": { … } }` — see the InvokeAgentTool section. (DI-only.) | The sub-agent's final output. |
+
+### Registering custom tools
+
+`ToolManager` itself is `internal` (visible only to tests), so host applications register custom tools through the DI-exposed `IToolManager`:
 
 ```csharp
-ToolManager.Register(new MyCustomTool());
+IToolManager tools = serviceProvider.GetRequiredService<IToolManager>();
+tools.Register(new MyCustomTool());
 ```
 
-Call this during host startup (e.g. from an `IHostedService.StartAsync`), before the first `Agent.Run`. `ToolManager.Unregister(name)` removes a tool by name and is primarily intended for tests. Custom MCP/HTTP tool profiles loaded from `RConfigs/Tools/*.tool` are still parsed but their dispatch is not yet implemented.
+Do this during host startup (e.g. from an `IHostedService.StartAsync`), before the first agent run. `IToolManager.Unregister(name)` removes a tool by name and is primarily intended for tests. Custom MCP/HTTP tool profiles loaded from `RConfigs/Tools/*.tool` (see [tool-files.md](tool-files.md)) are parsed but their dispatch is **not yet implemented** — only built-in tools execute today.
 
 ## LLM Step Contract
 
@@ -140,6 +186,7 @@ Each step response is expected as JSON:
 ```json
 {
   "signal": "READY",
+  "thinking": "Two libs cover OTLP; the rest are abandoned.",
   "tool_calls": [
     { "name": "web-search", "input": "best .NET tracing libs 2026" }
   ],
@@ -148,7 +195,8 @@ Each step response is expected as JSON:
 ```
 
 - `signal`: Used to resolve next transition.
-- `tool_calls`: Filtered to tools allowed by current state's `tools`.
+- `thinking` (optional `string`|`null`): the model's reasoning. Surfaced as a separate `Thinking` trace event (not part of `content`/`FinalOutput`). Mention it in your `[[_system]]` JSON-shape instructions if you want the model to reason before deciding.
+- `tool_calls`: Filtered to the tools allowed by the current state's `tools` list (matching is **case-insensitive**). Calls naming a disallowed tool — or calls beyond the state's `tool-call-limit` — are **silently dropped** (logged via `Util.Log` only; the model gets **no** error feedback, so it may "think" the tool ran). The surviving allowed calls execute **in parallel** (`Task.WhenAll`), and their results are appended to the conversation.
 - `content`: Stored and becomes `FinalOutput` when agent reaches `[end]`.
 
 ## Complete Example
@@ -210,7 +258,7 @@ summarize
 - `RegistryInitService` loads agents via `AgentManager.Load(...)` at startup.
 - You can access loaded agents through:
 1. static API: `AgentManager.Get(...)`
-2. DI facade: `IAgentManager` / `AgentRegistry`
+2. DI facade: `IAgentManager` (implemented by `AgentManagerService`)
 
 ## Analyzer Setup for `.agent` Files
 

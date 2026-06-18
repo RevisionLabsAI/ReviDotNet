@@ -72,13 +72,18 @@ internal static class Embed
 		// Use model profile settings as defaults, but allow method parameters to override
 		int? effectiveDimensions = dimensions ?? model.Dimensions;
 		string? effectiveEncodingFormat = encodingFormat ?? model.EncodingFormat;
-		
-		// Call the embedding client
+		string? effectiveTaskType = taskType ?? model.TaskType;
+		bool effectiveNormalize = normalize ?? model.NormalizeEmbeddings ?? false;
+
+		// Call the embedding client, honoring the profile's per-model timeout/retry overrides.
 		EmbeddingResponse? response = await model.Provider.EmbeddingClient.GenerateEmbeddingAsync(
 			input: text,
 			model: model.ModelString,
 			dimensions: effectiveDimensions,
 			encodingFormat: effectiveEncodingFormat,
+			taskType: effectiveTaskType,
+			timeoutSecondsOverride: ParseTimeoutOverride(model.Timeout),
+			retryAttemptLimitOverride: model.RetryAttempts,
 			cancellationToken: cancellationToken);
 
 		// Extract and return the embedding vector
@@ -87,8 +92,8 @@ internal static class Embed
 
 		float[] embedding = response.Data[0].Embedding;
 
-		// Apply normalization if requested
-		if (normalize == true)
+		// Apply normalization if requested (method arg wins, else the profile's normalize setting)
+		if (effectiveNormalize)
 			embedding = NormalizeVector(embedding);
 
 		return embedding;
@@ -160,13 +165,18 @@ internal static class Embed
 		// Use model profile settings as defaults, but allow method parameters to override
 		int? effectiveDimensions = dimensions ?? model.Dimensions;
 		string? effectiveEncodingFormat = encodingFormat ?? model.EncodingFormat;
+		string? effectiveTaskType = taskType ?? model.TaskType;
+		bool effectiveNormalize = normalize ?? model.NormalizeEmbeddings ?? false;
 
-		// Call the embedding client
+		// Call the embedding client, honoring the profile's per-model timeout/retry overrides.
 		EmbeddingResponse? response = await model.Provider.EmbeddingClient.GenerateEmbeddingsAsync(
 			inputs: textArray,
 			model: model.ModelString,
 			dimensions: effectiveDimensions,
 			encodingFormat: effectiveEncodingFormat,
+			taskType: effectiveTaskType,
+			timeoutSecondsOverride: ParseTimeoutOverride(model.Timeout),
+			retryAttemptLimitOverride: model.RetryAttempts,
 			cancellationToken: cancellationToken);
 
 		// Extract and return the embedding vectors
@@ -178,8 +188,8 @@ internal static class Embed
 			.Select(d => d.Embedding)
 			.ToList();
 
-		// Apply normalization if requested
-		if (normalize == true)
+		// Apply normalization if requested (method arg wins, else the profile's normalize setting)
+		if (effectiveNormalize)
 		{
 			for (int i = 0; i < embeddings.Count; i++)
 			{
@@ -449,6 +459,13 @@ internal static class Embed
 	// ===================
 	//  Helper Methods 
 	// ===================
+
+	/// <summary>
+	/// Parses an embedding profile's <c>override-settings_timeout</c> string into a positive seconds value,
+	/// or null (use the provider default) when unset, "disabled", or non-numeric.
+	/// </summary>
+	private static int? ParseTimeoutOverride(string? timeout)
+		=> int.TryParse(timeout, out int seconds) && seconds > 0 ? seconds : (int?)null;
 
 	#region Model Selection
 

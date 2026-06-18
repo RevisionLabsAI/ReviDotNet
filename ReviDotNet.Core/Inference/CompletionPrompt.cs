@@ -246,7 +246,8 @@ public static class CompletionPrompt
 		if ((prompt.Examples is null) || !prompt.Examples.Any())
 			return "";
 		
-		int maxExamples = Math.Min(prompt.FewShotExamples ?? 0, prompt.Examples.Count);
+		// Unset (null) few-shot-examples means "use all defined examples"; a number caps the count.
+		int maxExamples = Math.Min(prompt.FewShotExamples ?? prompt.Examples.Count, prompt.Examples.Count);
 		
 		if (maxExamples == 0)
 			return "";

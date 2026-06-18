@@ -5,6 +5,7 @@
 // ===================================================================
 
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using System.Threading.Channels;
 
 namespace Revi;
@@ -114,6 +115,7 @@ public sealed class WebContentService : IWebContentService
         ExtractedContent extracted = _extractor.Extract(html, baseUri);
         WebMetadata meta = _metadata.Extract(html, baseUri);
         string markdown = _markdown.ToMarkdown(extracted.ContentHtml, baseUri);
+        string plainText = HtmlToPlainText(extracted.ContentHtml);
 
         IReadOnlyList<WebChunk> chunks = options.Chunk
             ? _chunker.Chunk(markdown, meta, options.ChunkOptions)
@@ -138,6 +140,9 @@ public sealed class WebContentService : IWebContentService
             Tags = meta.Tags,
             LeadImageUrl = meta.LeadImageUrl ?? extracted.LeadImageUrl,
             Markdown = markdown,
+            Html = extracted.ContentHtml,
+            Text = plainText,
+            Format = options.OutputFormat,
             Chunks = chunks,
             FetchInfo = new WebFetchInfo
             {
@@ -150,6 +155,19 @@ public sealed class WebContentService : IWebContentService
                 Note = fetch.Note,
             },
         };
+    }
+
+    /// <summary>Converts cleaned content HTML to plain text: drops script/style, strips tags, decodes entities, collapses whitespace.</summary>
+    private static string HtmlToPlainText(string? html)
+    {
+        if (string.IsNullOrEmpty(html))
+            return "";
+
+        string s = Regex.Replace(html, @"<(script|style)[^>]*>.*?</\1>", " ", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        s = Regex.Replace(s, @"<[^>]+>", " ");
+        s = System.Net.WebUtility.HtmlDecode(s);
+        s = Regex.Replace(s, @"\s+", " ").Trim();
+        return s;
     }
 
     /// <inheritdoc/>
@@ -187,6 +205,7 @@ public sealed class WebContentService : IWebContentService
             InMemoryDupeFilter dupe = new();
             DomainThrottle throttle = new();
             RobotsTxtCache robots = new(RobotsUserAgent);
+            RetryPolicy retry = RetryPolicy.Default;
             HashSet<string> sites = new(StringComparer.OrdinalIgnoreCase);
 
             bool respectRobots = request.FetchOptions.RespectRobots;
@@ -248,6 +267,18 @@ public sealed class WebContentService : IWebContentService
                             latencyMs = fetch.ElapsedMs;
                             ok = !fetch.Blocked && fetch.StatusCode is >= 200 and < 400;
 
+                            // Retry a transient HTTP failure: re-enqueue to the forefront (after backoff),
+                            // bounded by RetryPolicy.MaxRetries, without consuming the page budget.
+                            if (!ok && retry.IsRetryableStatus(fetch.StatusCode) && item.Attempt < retry.MaxRetries)
+                            {
+                                int attempt = item.Attempt + 1;
+                                _logger?.LogDebug($"crawl: retry {item.Url} ({attempt}/{retry.MaxRetries}) after status {fetch.StatusCode}");
+                                await Task.Delay(retry.GetDelay(attempt), ct);
+                                Interlocked.Increment(ref pending);
+                                queue.Enqueue(new RequestQueue.CrawlItem(item.Url, item.Depth, item.Priority, attempt), forefront: true);
+                            }
+                            else
+                            {
                             long n = Interlocked.Increment(ref fetched);
                             if (n <= maxPages)
                             {
@@ -266,6 +297,7 @@ public sealed class WebContentService : IWebContentService
                                     }
                                 }
                             }
+                            }
                         }
                         finally
                         {
@@ -275,6 +307,14 @@ public sealed class WebContentService : IWebContentService
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {
                         break;
+                    }
+                    catch (Exception ex) when (RetryPolicy.IsRetryableException(ex) && item.Attempt < retry.MaxRetries)
+                    {
+                        // Transient transport fault — re-enqueue to the forefront, bounded by RetryPolicy.
+                        int attempt = item.Attempt + 1;
+                        _logger?.LogWarning($"crawl: retry {item.Url} ({attempt}/{retry.MaxRetries}) after error: {ex.Message}");
+                        Interlocked.Increment(ref pending);
+                        queue.Enqueue(new RequestQueue.CrawlItem(item.Url, item.Depth, item.Priority, attempt), forefront: true);
                     }
                     catch (Exception ex)
                     {

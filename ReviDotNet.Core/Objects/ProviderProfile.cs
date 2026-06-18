@@ -52,6 +52,14 @@ public class ProviderProfile
     [RConfigProperty("general_supports-response-completion")]
     public bool? SupportsResponseCompletion { get; set; }
 
+    /// <summary>
+    /// Indicates whether models on this provider accept image inputs (vision / multimodal) by
+    /// default. A model-level <c>supports-vision</c> overrides this. Consumed by the file-reading
+    /// tools to select a vision-capable reader model.
+    /// </summary>
+    [RConfigProperty("general_supports-vision")]
+    public bool? SupportsVision { get; set; }
+
     // Guidance settings
     [RConfigProperty(("guidance_supports-guidance"))]
     public bool? SupportsGuidance { get; set; }
@@ -194,6 +202,7 @@ public class ProviderProfile
         string defaultModel = "default",
         bool supportsCompletion = false,
         bool supportsResponseCompletion = false,
+        bool supportsVision = false,
         bool supportsGuidance = false,
         GuidanceSchemaType? defaultGuidanceType = null,
         string? defaultGuidanceString = null)
@@ -215,6 +224,7 @@ public class ProviderProfile
         DefaultModel = defaultModel;
         SupportsCompletion = supportsCompletion;
         SupportsResponseCompletion = supportsResponseCompletion;
+        SupportsVision = supportsVision;
 
         SupportsGuidance = supportsGuidance;
         DefaultGuidanceType = defaultGuidanceType;

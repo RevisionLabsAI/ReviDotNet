@@ -49,6 +49,7 @@ Your app’s configuration files typically live under an `RConfigs` folder in yo
 
 - `RConfigs/Prompts` – `.pmt` prompt files (any subfolders)
 - `RConfigs/Agents` – `.agent` orchestration files (any subfolders)
+- `RConfigs/Tools` – `.tool` custom tool (MCP/HTTP) files (see `ReviDotNet.Core/Docs/tool-files.md`)
 - `RConfigs/Providers` – provider `.rcfg` files
 - `RConfigs/Models/Inference` – inference model `.rcfg` files
 - `RConfigs/Models/Embedding` – embedding model `.rcfg` files
@@ -59,6 +60,7 @@ The core docs are in this repo:
 
 - Prompt files: `ReviDotNet.Core/Docs/prompt-files.md`
 - Agent files: `ReviDotNet.Core/Docs/agent-files.md`
+- Tool files: `ReviDotNet.Core/Docs/tool-files.md`
 - Provider files: `ReviDotNet.Core/Docs/provider-files.md`
 - Model files: `ReviDotNet.Core/Docs/model-files.md`
 - Inference API: `ReviDotNet.Core/Docs/inference.md`
@@ -68,14 +70,15 @@ The core docs are in this repo:
 
 1) Add ReviDotNet to your solution
 
-- Reference the `ReviDotNet.Core` project (or consume the package if you publish it internally).
-- (Recommended) Add the analyzers to projects that call `IInferService`:
+- Reference the `ReviDotNet.Core` project, or consume the `ReviDotNet` package (if you publish it internally):
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="ReviDotNet.Analyzers" Version="1.*" PrivateAssets="all" />
+  <PackageReference Include="ReviDotNet" Version="0.1.0" />
 </ItemGroup>
 ```
+
+The Roslyn analyzers ship **inside** the `ReviDotNet` package and are applied automatically — there is no separate `ReviDotNet.Analyzers` package to install. You still need to expose your `.pmt`/`.agent` files as `AdditionalFiles` for the analyzers to validate them (see below).
 
 2) Register ReviDotNet in your DI container
 
@@ -237,6 +240,8 @@ See `ReviDotNet.Core/Docs/analyzers.md` for details and troubleshooting.
 ## Embeddings
 
 Define embedding model profiles under `RConfigs/Models/Embedding` and use them where vectorization is required. See `ReviDotNet.Core/Docs/model-files.md` for the supported options (`dimensions`, `encoding-format`, `task-type`, etc.).
+
+Like inference models, **each embedding profile needs a matching enabled provider** — its `provider-name` must resolve to an enabled provider `.rcfg`, and for hosted APIs you must set the provider's `PROVAPIKEY__<NAME>` environment variable. If the provider is missing or disabled, the embedding model is auto-disabled (and `embed.Generate` throws "no valid EmbeddingClient configured" / "Could not find embedding model"). Defining only the embedding `.rcfg` is not enough.
 
 ## Testing
 

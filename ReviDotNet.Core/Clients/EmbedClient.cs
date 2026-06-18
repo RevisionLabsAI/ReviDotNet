@@ -294,21 +294,23 @@ public class EmbedClient : IDisposable
     /// <returns>An EmbeddingResponse containing the embedding vectors from the API.</returns>
     private async Task<EmbeddingResponse> MakeRequestAsync(
         string endpoint,
-        StringContent content, 
+        StringContent content,
+        int? retryAttemptLimitOverride,
         CancellationToken cancellationToken)
     {
         int retryAttempt = 0; // Counter for the current attempt number
+        int retryLimit = retryAttemptLimitOverride ?? _retryAttemptLimit; // per-model override or provider default
 
         HttpResponseMessage response = await _client.PostAsync(endpoint, content, cancellationToken);
-        
-        // We got an unsuccessful response back... try again? 
+
+        // We got an unsuccessful response back... try again?
         while (!response.IsSuccessStatusCode)
         {
             // Get the error message
             var errorMessage = await response.Content.ReadAsStringAsync(cancellationToken);
-            
+
             // End if we're at our retry attempt limit
-            if (retryAttempt >= _retryAttemptLimit)
+            if (retryAttempt >= retryLimit)
             {
                 throw new Exception(
                     $"API request failed after {retryAttempt} retries: " +
@@ -342,6 +344,8 @@ public class EmbedClient : IDisposable
     private async Task<EmbeddingResponse> ExecuteRequest(
         string endpoint,
         Dictionary<string, object> payload,
+        int? timeoutSecondsOverride,
+        int? retryAttemptLimitOverride,
         CancellationToken cancellationToken)
     {
         await _clientSemaphore.WaitAsync(cancellationToken);
@@ -350,7 +354,17 @@ public class EmbedClient : IDisposable
             await EnsureRateLimit();
             var content = new StringContent(JsonConvert.SerializeObject(payload), System.Text.Encoding.UTF8,
                 "application/json");
-            return await MakeRequestAsync(endpoint, content, cancellationToken);
+
+            // Per-model timeout override is enforced with a linked CTS so we don't mutate the shared
+            // HttpClient.Timeout. Note the provider-level HttpClient.Timeout still acts as an upper bound.
+            if (timeoutSecondsOverride is > 0)
+            {
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSecondsOverride.Value));
+                return await MakeRequestAsync(endpoint, content, retryAttemptLimitOverride, timeoutCts.Token);
+            }
+
+            return await MakeRequestAsync(endpoint, content, retryAttemptLimitOverride, cancellationToken);
         }
         finally
         {
@@ -379,9 +393,12 @@ public class EmbedClient : IDisposable
         string model = "default",
         int? dimensions = null,
         string? encodingFormat = null,
+        string? taskType = null,
+        int? timeoutSecondsOverride = null,
+        int? retryAttemptLimitOverride = null,
         CancellationToken cancellationToken = default)
     {
-        return await GenerateEmbeddingsAsync(new[] { input }, model, dimensions, encodingFormat, cancellationToken);
+        return await GenerateEmbeddingsAsync(new[] { input }, model, dimensions, encodingFormat, taskType, timeoutSecondsOverride, retryAttemptLimitOverride, cancellationToken);
     }
 
     /// <summary>
@@ -398,6 +415,9 @@ public class EmbedClient : IDisposable
         string model = "default",
         int? dimensions = null,
         string? encodingFormat = null,
+        string? taskType = null,
+        int? timeoutSecondsOverride = null,
+        int? retryAttemptLimitOverride = null,
         CancellationToken cancellationToken = default)
     {
         model = model == "default" ? _defaultModel : model;
@@ -418,10 +438,11 @@ public class EmbedClient : IDisposable
 
                 if (dimensions.HasValue)
                     parameters.Add("dimensions", dimensions.Value);
-                
+
                 if (!string.IsNullOrEmpty(encodingFormat))
                     parameters.Add("encoding_format", encodingFormat);
-                
+
+                // OpenAI's embeddings endpoint has no task-type concept; it is intentionally not sent here.
                 break;
 
             case Protocol.Gemini:
@@ -438,12 +459,17 @@ public class EmbedClient : IDisposable
                     }
                 };
                 
+                // Gemini's embedContent accepts an optional top-level taskType
+                // (e.g. RETRIEVAL_QUERY, RETRIEVAL_DOCUMENT, SEMANTIC_SIMILARITY, CLASSIFICATION).
+                if (!string.IsNullOrEmpty(taskType))
+                    parameters.Add("taskType", taskType);
+
                 // Note: Gemini currently doesn't support batch embeddings in the same way
                 if (inputs.Length > 1)
                 {
                     Util.Log("Warning: Gemini embedding client processes only the first input in batch requests");
                 }
-                
+
                 break;
 
             default:
@@ -458,8 +484,8 @@ public class EmbedClient : IDisposable
         }
 
         Util.Log($"Embedding Payload:\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}");
-        
-        var response = await ExecuteRequest(endpoint, parameters, cancellationToken);
+
+        var response = await ExecuteRequest(endpoint, parameters, timeoutSecondsOverride, retryAttemptLimitOverride, cancellationToken);
         
         // Store the original inputs in the response
         response.Inputs = inputs.ToList();

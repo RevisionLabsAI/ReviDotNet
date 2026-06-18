@@ -42,12 +42,16 @@ internal static class Agent
         string agentName,
         Dictionary<string, object>? inputs,
         AgentRunContext ctx,
-        CancellationToken token = default)
+        CancellationToken token = default,
+        IReadOnlyList<Message>? seedHistory = null)
     {
-        if (ReviServiceLocator.TryGetService<IAgentService>(out IAgentService? svc) && svc != null)
+        // The DI service path doesn't carry a seed conversation (chat turns construct AgentRunner
+        // directly via the workshop service), so only delegate to it when no seed is supplied.
+        if (seedHistory is null
+            && ReviServiceLocator.TryGetService<IAgentService>(out IAgentService? svc) && svc != null)
             return await svc.Run(agentName, inputs, ctx, token);
 
-        // Standalone / test path: resolve registries from the static managers directly.
+        // Standalone / test / seeded-chat path: resolve registries from the static managers directly.
         AgentProfile profile = FindAgent(agentName);
         AgentRunner runner = new(
             profile,
@@ -56,7 +60,8 @@ internal static class Agent
             ctx,
             ReviServiceLocator.TryGetService<IModelManager>(out IModelManager? mm) ? mm! : new StaticModelAdapter(),
             ReviServiceLocator.TryGetService<IPromptManager>(out IPromptManager? pm) ? pm! : new StaticPromptAdapter(),
-            ReviServiceLocator.TryGetService<IToolManager>(out IToolManager? tm) ? tm! : new StaticToolAdapter());
+            ReviServiceLocator.TryGetService<IToolManager>(out IToolManager? tm) ? tm! : new StaticToolAdapter(),
+            seedHistory);
         return await runner.RunAsync();
     }
 

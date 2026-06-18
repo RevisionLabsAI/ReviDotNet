@@ -13,8 +13,8 @@ namespace Revi;
 /// </summary>
 public sealed class RequestQueue
 {
-    /// <summary>A queued URL with its crawl depth and priority.</summary>
-    public readonly record struct CrawlItem(string Url, int Depth, int Priority = 0);
+    /// <summary>A queued URL with its crawl depth, priority, and retry-attempt count.</summary>
+    public readonly record struct CrawlItem(string Url, int Depth, int Priority = 0, int Attempt = 0);
 
     private readonly Dictionary<string, LinkedList<CrawlItem>> _byHost = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<string> _hosts = [];

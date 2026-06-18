@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Forge · Agent Instance — Grouped / Minimal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="grouped.css?v=2" />
+<style>
+  /* ── Minimal: flat, hairline-separated, lots of whitespace; colour only where it carries meaning ── */
+  .wrap { max-width: 880px; margin: 0 auto; padding: 26px 22px 110px; }
+
+  /* Header */
+  .inst { padding: 2px 0 20px; border-bottom: 1px solid var(--border); }
+  .inst-top { display: flex; align-items: center; gap: 14px; }
+  .inst-ava { width: 42px; height: 42px; border-radius: 12px; flex: 0 0 auto; color: #fff; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--primary), var(--tertiary)); }
+  .inst-ava svg { width: 23px; height: 23px; }
+  .inst-name { font-size: 1.18rem; font-weight: 700; letter-spacing: -.015em; }
+  .inst-sub { font-size: .78rem; color: var(--text-2); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 3px; }
+  .inst-status { margin-left: auto; }
+  .inst-task { margin-top: 16px; font-size: .92rem; line-height: 1.6; }
+  .inst-task .lbl { font-size: .64rem; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--text-2); margin-right: 8px; }
+
+  /* Flat stat row — no boxes */
+  .tiles { display: flex; gap: 28px; flex-wrap: wrap; margin-top: 18px; }
+  .tile-stat { display: flex; align-items: center; gap: 10px; padding: 0; border: none; background: none; }
+  .tile-stat .ti { width: 30px; height: 30px; border-radius: 9px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; color: var(--accent, var(--primary)); background: rgba(var(--accent-rgb, var(--primary-rgb)), .13); }
+  .tile-stat .ti svg { width: 16px; height: 16px; }
+  .tile-body { display: flex; flex-direction: column; line-height: 1.12; }
+  .tile-stat .v { font-weight: 700; font-size: 1.05rem; letter-spacing: -.01em; }
+  .tile-stat .l { font-size: .67rem; color: var(--text-2); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+
+  /* Meters */
+  .meters { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
+  @media (max-width: 640px) { .meters { grid-template-columns: 1fr; } }
+  .meter-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
+  .meter-l { font-size: .66rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-2); }
+  .meter-v { font-family: var(--font-mono); font-size: .74rem; font-weight: 600; }
+  .meter-bar { height: 6px; border-radius: 999px; background: var(--bg-soft); overflow: hidden; }
+  .meter-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--success); }
+  .meter-bar.warn > span { background: var(--warning); }
+  .meter-bar.over > span { background: var(--error); }
+
+  /* Stream */
+  .stream { display: flex; flex-direction: column; gap: 32px; margin-top: 28px; }
+
+  /* Activation — a quiet section header over flat steps; no box */
+  .activation > summary { display: flex; align-items: center; gap: 11px; padding: 0 0 9px; border-bottom: 1px solid var(--border); }
+  .activation > summary:hover .act-state { color: var(--primary); }
+  .act-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; background: var(--text-3); }
+  .act--done .act-dot { background: var(--success); }
+  .act--running .act-dot { background: var(--info); box-shadow: 0 0 0 3px rgba(var(--info-rgb), .18); }
+  .act--queued .act-dot { background: var(--text-3); }
+  .act-state { font-weight: 700; font-size: .98rem; letter-spacing: -.01em; transition: color .12s ease; }
+  .act-cycle { font-family: var(--font-mono); font-size: .72rem; color: var(--text-2); }
+  .act-sp { flex: 1 1 auto; }
+  .act-r { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
+  .act-steps { font-size: .72rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .act-body { display: flex; flex-direction: column; padding-top: 2px; }
+
+  /* Steps — flat rows divided by hairlines, with a slim status tick */
+  .step { border: none; background: none; box-shadow: none; border-radius: 0; --accent: var(--text-3); }
+  .step + .step { border-top: 1px solid var(--border); }
+  .step--done { --accent: var(--success); } .step--running { --accent: var(--info); }
+  .step--failed { --accent: var(--error); } .step--queued { --accent: var(--text-3); }
+  .step > summary { display: flex; align-items: center; gap: 12px; padding: 13px 2px 13px 15px; position: relative; }
+  .step > summary::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 2px; border-radius: 2px; background: var(--accent); }
+  .step > summary:hover { background: var(--hover); }
+  .stepno { font-family: var(--font-mono); font-weight: 700; font-size: .76rem; color: var(--text-2); flex: 0 0 auto; }
+  .step-h { flex: 1 1 auto; min-width: 0; }
+  .step-t { font-weight: 600; font-size: .92rem; }
+  .step-r { display: flex; align-items: center; gap: 11px; flex: 0 0 auto; }
+  .step .body { padding: 0 2px 16px 15px; }
+  .thinking { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; color: var(--text-2); font-size: .84rem; font-style: italic; }
+  .thinking .ic { width: 15px; height: 15px; color: var(--ev-think); flex: 0 0 auto; margin-top: 2px; }
+  .stepmsg { margin-top: 12px; font-size: .92rem; line-height: 1.6; }
+
+  /* Call list (≤5) — flat rows */
+  .calllist { display: flex; flex-direction: column; margin-top: 12px; }
+  .call { border: none; background: none; border-radius: 0; --accent: var(--ev-tool); --accent-rgb: var(--ev-tool-rgb); }
+  .call + .call { border-top: 1px solid var(--border); }
+  .call--subagent { --accent: var(--ev-sub); --accent-rgb: var(--ev-sub-rgb); }
+  .call > summary { display: flex; align-items: center; gap: 11px; padding: 9px 2px; }
+  .call > summary:hover { background: var(--hover); }
+  .call .tile { width: 26px; height: 26px; border-radius: 7px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; color: var(--accent); background: rgba(var(--accent-rgb), .13); }
+  .call .tile svg { width: 14px; height: 14px; }
+  .call-h { flex: 1 1 auto; min-width: 0; }
+  .call-t { font-weight: 600; font-size: .86rem; display: flex; gap: 8px; align-items: center; }
+  .call .kind { font-family: var(--font-mono); font-size: .75rem; color: var(--accent); }
+  .call-s { font-size: .8rem; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .call-r { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; }
+  .call-b { padding: 2px 2px 12px 37px; }
+
+  /* Transition marker — minimal: just the signal, no boxed chip */
+  .tmark { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+  .tmark .tline { flex: 1 1 auto; height: 1px; background: var(--border); }
+  .tmark .sig { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: .72rem; font-weight: 700; color: var(--secondary); }
+  .tmark .sig svg { width: 12px; height: 12px; }
+
+  /* Segmented badge — borderless inline counts */
+  .segbadge { border: none; gap: 13px; }
+  .seg { padding: 0; background: none; }
+  .seg + .seg { border-left: none; }
+
+  /* Sub-agent — flat, with a left rule for the nested trace */
+  .mini { border: none; background: none; padding: 12px 0 2px; }
+  .mini-h { display: flex; align-items: center; gap: 11px; padding-bottom: 11px; margin-bottom: 4px; border-bottom: 1px dashed var(--border-2); }
+  .mini-h .ava { width: 28px; height: 28px; border-radius: 8px; flex: 0 0 auto; color: #fff; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--ev-sub), color-mix(in srgb, var(--ev-sub) 55%, #000)); }
+  .mini-h .ava svg { width: 15px; height: 15px; }
+  .mini-h .n { font-weight: 700; font-size: .88rem; }
+  .mini-h .s { font-size: .76rem; color: var(--text-2); }
+  .mini-stream { display: flex; flex-direction: column; padding-left: 15px; border-left: 2px solid var(--border); }
+  .mini-stream .step > summary::before { display: none; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a class="brand" href="index.html" title="Back to gallery">
+    <span class="mark"><svg class="ic"><use href="#i-agent"/></svg></span>
+    <span style="display:flex;flex-direction:column;line-height:1.1">
+      <span class="eyebrow">Forge mockup · Grouped</span><span class="name">Minimal</span>
+    </span>
+  </a>
+  <span class="spacer"></span>
+  <button class="btn btn-ghost" onclick="setAllOpen(true)"><svg class="ic"><use href="#i-expand"/></svg>Expand all</button>
+  <button class="btn btn-ghost" onclick="setAllOpen(false)">Collapse all</button>
+  <button class="btn" onclick="toggleTheme()"><svg class="ic"><use href="#i-theme"/></svg><span data-theme-label>Dark</span></button>
+  <a class="btn" href="index.html"><svg class="ic"><use href="#i-arrow"/></svg>Gallery</a>
+</div>
+
+<div class="wrap"><div id="app"></div></div>
+
+<script src="mockup.js?v=2"></script>
+<script src="grouped-core.js?v=3"></script>
+</body>
+</html>

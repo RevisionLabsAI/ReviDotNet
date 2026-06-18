@@ -73,7 +73,28 @@ Per Core's convention, each provider's API key is read at startup from
 Hyphens and spaces in provider names become underscores when forming the variable name.
 See [provider-files.md](../../ReviDotNet.Core/Docs/provider-files.md) for the full rule.
 
-## Bundled `RConfigs/`
+## Client configuration (`forge.rcfg`)
+
+The settings above configure Forge as a **gateway server**. A separate, **client-side** file lets a *consumer* application route its inference through a Forge gateway. It is loaded by Core's `ForgeManager` from `RConfigs/forge.rcfg` (under the app base directory) at startup; when present and enabled, `IInferService.Completion`/`CompletionStream` route remotely through the gateway instead of calling providers directly (see [inference.md → Forge Gateway Routing](../../ReviDotNet.Core/Docs/inference.md)).
+
+```ini
+[[general]]
+enabled = true
+forge-url = https://forge.example.com
+api-key = environment
+client-id = my-app
+timeout-seconds = 300
+```
+
+| Key (under `[[general]]`) | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `enabled` | boolean | — | Must be `true` for routing to activate. |
+| `forge-url` | string | — | Base URL of the Forge gateway. Required; routing is skipped if empty. |
+| `api-key` | string | — | The gateway API key. Use `environment` to load it from the `FORGE_API_KEY` environment variable. |
+| `client-id` | string | `unknown` | Identifier reported with usage. |
+| `timeout-seconds` | integer | `300` | Request timeout for gateway calls. |
+
+> Routed calls bypass the **local** prompt-injection `filter`, model selection, and retry pipeline — the gateway owns those. Use the `directRoute` parameter on the `Prompt`-object inference overloads to force a local call.
 
 [`RConfigs/`](../RConfigs) is included as an **embedded resource** in the assembly and
 also lives on disk under the project content root. It ships:

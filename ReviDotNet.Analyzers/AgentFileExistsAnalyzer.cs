@@ -58,11 +58,8 @@ namespace ReviDotNet.Analyzers
             if (resolved is not IMethodSymbol symbol)
                 return;
 
-            if (symbol.ContainingType.Name != "Agent")
-                return;
-
-            string? nsName = symbol.ContainingType.ContainingNamespace?.Name;
-            if (nsName != "Revi" && nsName != "ReviDotNet")
+            // Match the static Agent class AND the injected IAgentService/AgentService surface.
+            if (!ReviApiRecognizer.IsAgentSurface(symbol))
                 return;
 
             string[] targetMethods = { "Run", "ToString", "FindAgent" };
@@ -132,40 +129,21 @@ namespace ReviDotNet.Analyzers
 
         private static string? TryParseInformationName(string content)
         {
-            // Try flat key first: information_name = value
-            Regex rx = new Regex(@"^\s*information_name\s*[:=]\s*(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+            // Mirror the runtime RConfigParser exactly: split on '=' only (not ':'), and do not strip quotes.
+            Regex rx = new Regex(@"^\s*information_name\s*=\s*(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
             Match m = rx.Match(content);
-            string? value;
-
             if (m.Success)
-            {
-                value = m.Groups[1].Value.Trim();
-            }
-            else
-            {
-                // Try [[information]] section with name = value
-                Regex sectionRx = new Regex(@"\[\[\s*information\s*\]\](?<body>.*?)(?:\n\s*\[\[|\z)", RegexOptions.Singleline | RegexOptions.IgnoreCase);
-                Match s = sectionRx.Match(content);
-                if (!s.Success)
-                    return null;
+                return m.Groups[1].Value.Trim();
 
-                string body = s.Groups["body"].Value;
-                Regex nameRx = new Regex(@"^\s*name\s*[:=]\s*(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
-                Match nm = nameRx.Match(body);
-                if (!nm.Success)
-                    return null;
+            // Try [[information]] section with name = value
+            Regex sectionRx = new Regex(@"\[\[\s*information\s*\]\](?<body>.*?)(?:\n\s*\[\[|\z)", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            Match s = sectionRx.Match(content);
+            if (!s.Success)
+                return null;
 
-                value = nm.Groups[1].Value.Trim();
-            }
-
-            // Strip surrounding quotes
-            if ((value.StartsWith("\"", StringComparison.Ordinal) && value.EndsWith("\"", StringComparison.Ordinal)) ||
-                (value.StartsWith("'", StringComparison.Ordinal) && value.EndsWith("'", StringComparison.Ordinal)))
-            {
-                value = value.Substring(1, value.Length - 2);
-            }
-
-            return value;
+            Regex nameRx = new Regex(@"^\s*name\s*=\s*(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+            Match nm = nameRx.Match(s.Groups["body"].Value);
+            return nm.Success ? nm.Groups[1].Value.Trim() : null;
         }
     }
 }

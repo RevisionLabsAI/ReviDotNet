@@ -138,7 +138,8 @@ internal static class ModelManager
     private static bool IsEligibleModel(ModelProfile model, ModelTier minTier, bool needsPromptCompletion)
     {
         bool isTierSufficient = model.Tier >= minTier;
-        bool isCompletionSupported = !needsPromptCompletion || (model.Provider?.SupportsCompletion ?? false);
+        // Honor a model-level supports-prompt-completion override before falling back to the provider's.
+        bool isCompletionSupported = !needsPromptCompletion || model.EffectiveSupportsPromptCompletion;
         return model.Enabled && isTierSufficient && isCompletionSupported;
     }
 
@@ -205,7 +206,8 @@ internal static class ModelManager
     /// <returns>The best matching model if one exists, otherwise null.</returns>
     public static ModelProfile? Find(string? minTier, bool needsPromptCompletion = false)
     {
-        Enum.TryParse(minTier ?? "", out ModelTier foundTier);
+        // Case-insensitive so a lowercase a/b/c resolves correctly instead of silently defaulting to C.
+        Enum.TryParse(minTier ?? "", ignoreCase: true, out ModelTier foundTier);
         return Find(foundTier, needsPromptCompletion);
     }
 
@@ -219,7 +221,8 @@ internal static class ModelManager
     /// <returns>The best matching model if one exists, otherwise null.</returns>
     public static ModelProfile? Find(string? minTier, bool needsPromptCompletion, List<string>? blockedModels)
     {
-        Enum.TryParse(minTier ?? "", out ModelTier foundTier);
+        // Case-insensitive so a lowercase a/b/c resolves correctly instead of silently defaulting to C.
+        Enum.TryParse(minTier ?? "", ignoreCase: true, out ModelTier foundTier);
         return Find(foundTier, needsPromptCompletion, blockedModels);
     }
     

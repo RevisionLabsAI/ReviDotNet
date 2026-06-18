@@ -102,6 +102,21 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
             yield return update;
     }
 
+    /// <inheritdoc/>
+    public IAsyncEnumerable<WorkshopRunUpdate> RunChatTurnAsync(
+        string agentName,
+        IReadOnlyList<Message> seededHistory,
+        IReadOnlyList<SessionAttachment>? attachments,
+        CancellationToken ct)
+        => RunMultiAsync(new WorkshopRunRequest
+        {
+            AgentName = agentName,
+            Task = string.Empty,
+            Runs = 1,
+            Attachments = attachments,
+            SeedHistory = seededHistory
+        }, ct);
+
     private async Task RunOne(
         AgentProfile profile,
         WorkshopRunRequest request,
@@ -111,8 +126,12 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
     {
         Dictionary<string, object> inputs = BuildInputs(request);
 
-        AgentRunner runner = new(profile, inputs, ct, AgentRunContext.Root(),
-            _models, _prompts, _tools);
+        // Attach the session's files (if any) to the run context so the file-access tools can reach
+        // them; seed the conversation for a chat turn (otherwise the runner synthesises the first
+        // user message from the inputs).
+        SessionFileRegistry? files = BuildFileRegistry(request.Attachments);
+        AgentRunner runner = new(profile, inputs, ct, AgentRunContext.Root(files),
+            _models, _prompts, _tools, request.SeedHistory);
         string sessionId = runner.SessionId;
 
         // Subscribe to live events for this session before starting the run.
@@ -175,6 +194,26 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
             inputs["task"] = req.Task;
 
         return inputs;
+    }
+
+    // Maps UI-side attachments to the Core file registry threaded through the run context.
+    private static SessionFileRegistry? BuildFileRegistry(IReadOnlyList<SessionAttachment>? attachments)
+    {
+        if (attachments is null || attachments.Count == 0) return null;
+
+        var files = new List<SessionFile>(attachments.Count);
+        for (int i = 0; i < attachments.Count; i++)
+        {
+            var a = attachments[i];
+            files.Add(new SessionFile
+            {
+                Id = $"file-{i + 1}",
+                Name = a.Name,
+                MediaType = a.MediaType,
+                Bytes = a.Bytes
+            });
+        }
+        return new SessionFileRegistry(files);
     }
 
 

@@ -69,14 +69,11 @@ namespace ReviDotNet.Analyzers
             if (resolved is not IMethodSymbol methodSymbol)
                 return;
 
-            if (methodSymbol.ContainingType.Name != "Infer")
+            // Match the static Infer class AND the injected IInferService/InferService surface.
+            if (!ReviApiRecognizer.IsInferSurface(methodSymbol))
                 return;
 
-            string? nsName = methodSymbol.ContainingType.ContainingNamespace?.Name;
-            if (nsName != "Revi" && nsName != "ReviDotNet")
-                return;
-
-            string[] targetMethods = { "ToObject", "ToEnum", "ToString", "ToStringList", "ToStringListLimited", "ToBool", "ToJObject", "Completion" };
+            string[] targetMethods = { "ToObject", "ToEnum", "ToString", "ToStringList", "ToStringListClean", "ToStringListLimited", "ToBool", "ToJObject", "Completion" };
             if (!targetMethods.Contains(methodSymbol.Name))
                 return;
 

@@ -239,13 +239,22 @@ public class PayloadTransformer
 
             var contents = messages
                 .Where(m => !string.Equals(m.Role, "system", StringComparison.OrdinalIgnoreCase))
-                .Select(m => new
+                .Select(m =>
                 {
-                    role = string.Equals(m.Role, "assistant", StringComparison.OrdinalIgnoreCase) ? "model" : m.Role.ToLower(),
-                    parts = new[] { new { text = m.Content } }
+                    var parts = new List<object>();
+                    if (!string.IsNullOrEmpty(m.Content))
+                        parts.Add(new { text = m.Content });
+                    if (m.Images != null)
+                        foreach (var img in m.Images)
+                            parts.Add(new { inlineData = new { mimeType = img.MediaType, data = img.Base64 } });
+                    return new
+                    {
+                        role = string.Equals(m.Role, "assistant", StringComparison.OrdinalIgnoreCase) ? "model" : m.Role.ToLower(),
+                        parts
+                    };
                 })
                 .ToList();
-            
+
             geminiPayload["contents"] = contents;
         }
         
@@ -327,10 +336,20 @@ public class PayloadTransformer
                 if (string.Equals(m.Role, "system", StringComparison.OrdinalIgnoreCase))
                     continue;
                 string role = string.Equals(m.Role, "assistant", StringComparison.OrdinalIgnoreCase) ? "assistant" : "user";
+                var contentBlocks = new List<object>();
+                if (!string.IsNullOrEmpty(m.Content))
+                    contentBlocks.Add(new Dictionary<string, object> { { "type", "text" }, { "text", m.Content } });
+                if (m.Images != null)
+                    foreach (var img in m.Images)
+                        contentBlocks.Add(new Dictionary<string, object>
+                        {
+                            { "type", "image" },
+                            { "source", new Dictionary<string, object> { { "type", "base64" }, { "media_type", img.MediaType }, { "data", img.Base64 } } }
+                        });
                 conv.Add(new Dictionary<string, object>
                 {
                     { "role", role },
-                    { "content", new List<object> { new Dictionary<string, object>{{"type","text"},{"text", m.Content}} } }
+                    { "content", contentBlocks }
                 });
             }
             outPayload["messages"] = conv;

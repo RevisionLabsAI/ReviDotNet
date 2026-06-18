@@ -86,6 +86,9 @@ public static class RConfigParser
                     "json" => nameof(GuidanceSchemaType.JsonManual),
                     "regex" => nameof(GuidanceSchemaType.RegexManual),
                     "gbnf" => nameof(GuidanceSchemaType.GNBFManual),
+                    // 'defer' explicitly requests provider-default deferral (GuidanceSchemaType.Default).
+                    // The bare value 'default' is intercepted earlier as a skip-sentinel, so it never reaches here.
+                    "defer" => nameof(GuidanceSchemaType.Default),
                     _ => string.Empty
                 };
                 if (!string.IsNullOrEmpty(alias) &&
@@ -96,14 +99,23 @@ public static class RConfigParser
             throw new FormatException($"Unable to convert '{value}' to enum type {type.Name}.");
         }
         
+        // Handle comma/space-separated list values (e.g. preferred-models, blocked-models, capabilities).
+        // Convert.ChangeType has no List<string> conversion, so without this the whole config file fails to load.
+        if (type == typeof(List<string>))
+        {
+            return Util.SplitByCommaOrSpace(value);
+        }
+
         // Handle custom converters
         if (_converters.TryGetValue(type, out var converter))
         {
             return converter(value);
         }
 
-        // Default conversion for other types
-        return System.Convert.ChangeType(value, type);
+        // Default conversion for other types. Use the invariant culture so numeric config values
+        // (e.g. cost-budget = 0.005) parse identically regardless of the host's locale — a comma-decimal
+        // culture would otherwise misparse or throw on a '.'-separated number.
+        return System.Convert.ChangeType(value, type, System.Globalization.CultureInfo.InvariantCulture);
     }
     
     /// <summary>

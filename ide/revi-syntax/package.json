@@ -1,0 +1,31 @@
+{
+  "name": "revi-syntax",
+  "displayName": "ReviDotNet Config Syntax",
+  "description": "Syntax highlighting for ReviDotNet .pmt / .rcfg / .agent / .tool configuration files (prompts, providers, models, agents, tools).",
+  "version": "0.1.0",
+  "publisher": "revisionlabs",
+  "license": "SEE LICENSE IN ../../LICENSE.txt",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "revi",
+        "aliases": ["ReviDotNet Config", "revi", "RConfig"],
+        "extensions": [".pmt", ".rcfg", ".agent", ".tool"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "revi",
+        "scopeName": "source.revi",
+        "path": "./syntaxes/revi.tmLanguage.json"
+      }
+    ]
+  }
+}

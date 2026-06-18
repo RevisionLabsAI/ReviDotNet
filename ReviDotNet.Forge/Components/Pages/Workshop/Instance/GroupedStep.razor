@@ -1,0 +1,54 @@
+@* One LLM step: header (number, title, time-ran, segmented badge, status) + body (thinking,
+   assistant message, then its calls — a cube grid for >5, else a call list). Recurses into
+   sub-agent steps via GroupedMini → GroupedStep. *@
+<details class="ev step step--@GroupedFormat.StatusKey(Step.Status)" open="@Step.Open">
+    <summary>
+        <span class="stepno" title="internal step @Step.No">Step @Display</span>
+        <span class="step-h"><span class="step-t">@Step.Title</span></span>
+        <span class="step-r">
+            @if (Step.DurationMs is { } d)
+            {
+                <span class="step-ran">@GroupedFormat.Ran(d)</span>
+            }
+            @if (Step.Calls.Count > 1)
+            {
+                <SegBadge Calls="Step.Calls" />
+            }
+            <StPill Status="Step.Status" />
+            <Ic Class="ic chev" Id="i-chevron-r" />
+        </span>
+    </summary>
+    <div class="body">
+        @if (!string.IsNullOrEmpty(Step.Thinking))
+        {
+            <div class="thinking"><Ic Id="i-think" /><span>@Step.Thinking</span></div>
+        }
+        @if (!string.IsNullOrEmpty(Step.Message))
+        {
+            <div class="stepmsg">@Step.Message</div>
+        }
+        @if (Step.Calls.Count > 5)
+        {
+            <GroupedCubeGrid Calls="Step.Calls" Preselect="Step.Select" OwnerDisplay="@Display" MaxParallel="Step.MaxParallel" />
+        }
+        else
+        {
+            <div class="calllist">
+                @foreach (var c in Step.Calls)
+                {
+                    <GroupedCallRow Call="c" OwnerDisplay="@Display" />
+                }
+            </div>
+        }
+    </div>
+</details>
+
+@code {
+    [Parameter, EditorRequired] public StepView Step { get; set; } = default!;
+
+    /// <summary>"" for top-level steps; "N." for a sub-agent's steps (N = the parent step's number).</summary>
+    [Parameter] public string Prefix { get; set; } = "";
+
+    /// <summary>1-based display number — the internal index is left untouched.</summary>
+    private string Display => Prefix + (Step.No + 1);
+}

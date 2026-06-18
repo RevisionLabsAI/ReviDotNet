@@ -47,6 +47,26 @@ public sealed record WebDocument
     /// <summary>Clean Markdown of the main content with boilerplate removed.</summary>
     public required string Markdown { get; init; }
 
+    /// <summary>The cleaned main-content HTML (before Markdown conversion).</summary>
+    public string Html { get; init; } = "";
+
+    /// <summary>Plain text of the main content (HTML tags stripped).</summary>
+    public string Text { get; init; } = "";
+
+    /// <summary>The requested output format; selects which representation <see cref="Content"/> returns.</summary>
+    public WebOutputFormat Format { get; init; } = WebOutputFormat.Markdown;
+
+    /// <summary>
+    /// The main-content representation selected by <see cref="Format"/> (Markdown / Html / Text).
+    /// All three are always available via their dedicated properties regardless of this setting.
+    /// </summary>
+    public string Content => Format switch
+    {
+        WebOutputFormat.Html => Html,
+        WebOutputFormat.Text => Text,
+        _ => Markdown,
+    };
+
     /// <summary>Optional heading- and token-aware chunks for embedding or agent context.</summary>
     public IReadOnlyList<WebChunk> Chunks { get; init; } = [];
 

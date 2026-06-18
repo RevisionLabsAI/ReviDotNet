@@ -1,66 +1,88 @@
-﻿# ReviDotNet.Optimizer
+# Prompt Optimizer & Test Runner (ReviDotNet.Forge)
 
-The ReviDotNet Optimizer is a console application designed to test, analyze, and optimize AI prompts using the ReviDotNet framework. It provides performance metrics such as Time to First Token (TTFT) and total execution time, as well as AI-powered qualitative analysis of the responses.
+Prompt optimization and testing in ReviDotNet ship as part of the **ReviDotNet.Forge** Blazor web app — there is no standalone `ReviDotNet.Optimizer` console application. The functionality is exposed through two pages and the services that back them:
+
+| Page | Route | Backing service |
+| :--- | :--- | :--- |
+| Optimize | `/optimize` (`Components/Pages/Optimize/Optimize.razor`) | `OptimizerService` |
+| Test | `/test` (`Components/Pages/Test/Test.razor`) | `TestRunnerService` |
+
+It lets you run a prompt across one or more models, capture performance metrics (Time to First Token and total time), and get an AI-powered qualitative analysis of each response.
 
 ## Setup
 
 ### Prerequisites
 
 - .NET 9.0 SDK
-- API keys for supported providers (e.g., OpenAI)
+- API keys for the providers you want to exercise (e.g., OpenAI)
 
-### Environment Variables
+### Environment variables
 
-The Optimizer uses environment variables to securely load API keys for different providers. Ensure you have the following environment variables set as needed:
+Provider API keys are loaded from environment variables following the pattern `PROVAPIKEY__<PROVIDER_NAME>` (uppercase; spaces/hyphens become underscores):
 
-- `PROVAPIKEY__OPENAI`: Your OpenAI API key.
-- `PROVAPIKEY__CLAUDE`: Your Anthropic (Claude) API key.
-- `PROVAPIKEY__GEMINI`: Your Google (Gemini) API key.
-
-Note: The environment variable name follows the pattern `PROVAPIKEY__<PROVIDER_NAME>` where `<PROVIDER_NAME>` is uppercase and spaces/hyphens are replaced by underscores.
+- `PROVAPIKEY__OPENAI` — OpenAI
+- `PROVAPIKEY__CLAUDE` — Anthropic (Claude)
+- `PROVAPIKEY__GEMINI` — Google (Gemini)
 
 ### Configuration
 
-RConfigs are located in the `RConfigs` directory:
-- `RConfigs/Providers`: Provider configurations (e.g., `openai.rcfg`, `claude.rcfg`, `gemini.rcfg`).
-- `RConfigs/Models`: Model profiles (e.g., `gpt-4o-mini.rcfg`, `claude-3-5-sonnet.rcfg`, `gemini-1-5-flash.rcfg`).
-- `RConfigs/Prompts`: Prompt templates (e.g., `Optimizer/SimpleTask.pmt`).
+Forge loads its `RConfigs` as embedded resources (see the note on embedded-only Forge configs). They live under `ReviDotNet.Forge/RConfigs`:
+
+- `RConfigs/Providers` — provider configs (e.g. `openai.rcfg`, `claude.rcfg`, `gemini.rcfg`)
+- `RConfigs/Models` — model profiles
+- `RConfigs/Prompts` — prompt templates, including the optimizer prompts under `RConfigs/Prompts/Optimizer`
 
 ## Usage
 
-Run the Optimizer from the command line:
+Run the Forge web app and use the UI:
 
 ```bash
-dotnet run --project ReviDotNet.Optimizer <command> [args]
+dotnet run --project ReviDotNet.Forge
 ```
 
-### Commands
+Then open the app and navigate to:
 
-#### 1. `run`
+- **`/test`** — pick a prompt, select one or more enabled models, supply inputs, choose the number of runs per model, and (optionally) enable qualitative analysis. Results stream in as each run completes.
+- **`/optimize`** — review a prompt's output and the analyzer's qualitative feedback / suggested improvements.
 
-Executes a specific prompt and displays the output along with performance metrics.
+### Driving it from code
 
-```bash
-dotnet run --project ReviDotNet.Optimizer run Optimizer.SimpleTask Task="Write a short poem about coding."
+The same capabilities are available through the services (both registered in Forge's DI):
+
+```csharp
+// Qualitative analysis of a single response (uses the Optimizer.Analyzer prompt internally).
+AnalysisResult? analysis = await optimizerService.AnalyzeAsync(
+    promptName: "Optimizer.SimpleTask",
+    modelName:  "gpt-4o-mini",
+    inputs:     [ new Input("Task", "Write a short poem about coding.") ],
+    response:   modelOutput);
+
+// Run a prompt across several models, N runs each, streaming TestRunResult items as they finish.
+Channel<TestRunResult> results = testRunnerService.RunTests(
+    promptName:  "Optimizer.SimpleTask",
+    modelNames:  ["gpt-4o-mini", "claude-3-5-sonnet"],
+    inputs:      [ new Input("Task", "Write a short poem about coding.") ],
+    runsPerModel: 3,
+    runAnalysis:  true);
+
+await foreach (TestRunResult r in results.Reader.ReadAllAsync())
+{
+    // r carries timing (TTFT / total) and, when runAnalysis is true, the AnalysisResult.
+}
 ```
 
-#### 2. `test`
+## Performance metrics
 
-Runs a test suite across all enabled models using a set of test prompts. It performs both quantitative (timing) and qualitative (AI-powered) analysis.
+- **TTFT (Time to First Token)** — duration between sending the request and receiving the first response chunk.
+- **Total Time** — duration from request start to completion.
 
-```bash
-dotnet run --project ReviDotNet.Optimizer test
-```
+## Qualitative analysis
 
-## Performance Metrics
+When analysis is enabled, each response is scored by the `Optimizer.Analyzer` prompt, which evaluates:
 
-- **TTFT (Time to First Token)**: The duration between sending the request and receiving the first chunk of the response.
-- **Total Time**: The total duration from request start to completion.
+- **Fulfilled Request** — whether the response adequately addressed the instructions.
+- **Quality Score** — a 1–10 rating of response quality.
+- **Detailed Analysis** — strengths and weaknesses of the response.
+- **Improvements** — suggestions for prompt or parameter tuning.
 
-## Qualitative Analysis
-
-The Optimizer includes a special `Optimizer.Analyzer` prompt that evaluates the output of other prompts based on:
-- **Fulfilled Request**: Whether the response adequately addressed the instructions.
-- **Quality Score**: A 1-10 rating of the response quality.
-- **Detailed Analysis**: A breakdown of the response's strengths and weaknesses.
-- **Improvements**: Suggestions for prompt or parameter tuning.
+> Note: the `ReviDotNet.Core/Optimization` types (`Optimization`, `Evaluation`, `PromptEvalTicket`, `TestTicket`) are an earlier, largely-stubbed experiment and are **not** what drives this feature. The working implementation is the Forge `OptimizerService` / `TestRunnerService` described above.

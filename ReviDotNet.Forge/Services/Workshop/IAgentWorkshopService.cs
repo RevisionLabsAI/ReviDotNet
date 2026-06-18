@@ -22,6 +22,17 @@ public interface IAgentWorkshopService
     /// </summary>
     IAsyncEnumerable<WorkshopRunUpdate> RunMultiAsync(WorkshopRunRequest request, CancellationToken ct);
 
+    /// <summary>
+    /// Runs one chat turn: the agent runs once from its entry state seeded with the supplied
+    /// conversation (prior turns plus the new user message) and the session's attachments. Yields
+    /// live ReviLog events and the final AgentResult, whose output is the turn's reply.
+    /// </summary>
+    IAsyncEnumerable<WorkshopRunUpdate> RunChatTurnAsync(
+        string agentName,
+        IReadOnlyList<Message> seededHistory,
+        IReadOnlyList<SessionAttachment>? attachments,
+        CancellationToken ct);
+
     /// <summary>Returns all events for one session, recursively expanded (includes sub-agents).</summary>
     Task<IReadOnlyList<RlogEvent>> GetSessionEventsAsync(string sessionId, CancellationToken ct);
 

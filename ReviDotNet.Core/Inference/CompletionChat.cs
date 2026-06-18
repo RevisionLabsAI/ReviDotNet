@@ -4,6 +4,7 @@
 //  See LICENSE.txt in the project root for full license information.
 // ===================================================================
 
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Revi;
@@ -22,20 +23,31 @@ public static class CompletionChat
 	/// <param name="model">The model profile to use for the messages.</param>
 	/// <param name="inputs">Optional list of inputs for the messages.</param>
 	/// <returns>A list of messages for the completion chat.</returns>
-	public static List<Message> BuildMessages(Prompt prompt, ModelProfile model, List<Input>? inputs = null)
+	/// <param name="singleMessageExamples">
+	/// When true (PromptChatOne), all few-shot examples and the prompt are packed into a single user
+	/// message. When false (ChatOnly / PromptChatMulti), examples are emitted as separate user/assistant
+	/// message pairs followed by the prompt's own user message.
+	/// </param>
+	public static List<Message> BuildMessages(Prompt prompt, ModelProfile model, List<Input>? inputs = null, bool singleMessageExamples = false)
 	{
 		// Process inputs
 		ProcessInputs(prompt, model, out string system, out string instruction, inputs);
-		
-		// Figure out whether we should do example messages first
-		//  - Are examples part of the user message, or are they separate user messages?
-		//  - Right now examples are separate messages... maybe support making them part of the prompt?
-		
+
 		// Form the prompt
 		List<Message> messages = new List<Message>();
 		InsertSystem(messages, model, system, instruction);
-		InsertExamples(messages, prompt, model);
-		InsertPrompt(messages, model, system, instruction);
+
+		if (singleMessageExamples)
+		{
+			// PromptChatOne: examples and the prompt share one user message.
+			InsertExamplesAndPromptAsSingleMessage(messages, prompt, model, system, instruction);
+		}
+		else
+		{
+			// ChatOnly / PromptChatMulti: examples as separate turns, then the prompt's user message.
+			InsertExamples(messages, prompt, model);
+			InsertPrompt(messages, model, system, instruction);
+		}
 
 		// Check if something is screwy
 		if (messages.Count is 0)
@@ -43,8 +55,56 @@ public static class CompletionChat
 			// Something is indeed screwy
 			throw new Exception("No messages for inference");
 		}
-		
+
 		return messages;
+	}
+
+	/// <summary>
+	/// Packs the few-shot examples and the prompt into a single user message (the PromptChatOne mode):
+	/// each example's user text is followed by its output, then the actual prompt content.
+	/// </summary>
+	private static void InsertExamplesAndPromptAsSingleMessage(
+		List<Message> messages,
+		Prompt prompt,
+		ModelProfile model,
+		string system,
+		string instruction)
+	{
+		StringBuilder sb = new();
+
+		if (prompt.Examples is not null && prompt.Examples.Any())
+		{
+			// Unset (null) few-shot-examples means "use all defined examples"; a number caps the count.
+			int maxExamples = Math.Min(prompt.FewShotExamples ?? prompt.Examples.Count, prompt.Examples.Count);
+			for (int index = 0; index < maxExamples; index++)
+			{
+				ProcessInputs(prompt, model, out string exSystem, out string exInstruction, prompt.Examples[index].Inputs);
+
+				string exUser = "";
+				if (model.SystemInUser && !string.IsNullOrEmpty(exSystem))
+					exUser += exSystem;
+				if (model.PromptInUser && !string.IsNullOrEmpty(exInstruction))
+					exUser += exInstruction;
+
+				if (string.IsNullOrEmpty(exUser))
+					continue;
+
+				sb.Append(exUser).Append('\n').Append(prompt.Examples[index].Output).Append("\n\n");
+			}
+		}
+
+		// The actual prompt content, composed the same way InsertPrompt does for the final user message.
+		string promptText = "";
+		if (!string.IsNullOrEmpty(instruction) && model.SystemInUser)
+			promptText += system;
+		if (!string.IsNullOrEmpty(instruction) && model.PromptInUser)
+			promptText += instruction;
+
+		sb.Append(promptText);
+
+		string combined = sb.ToString().Trim();
+		if (!string.IsNullOrEmpty(combined))
+			messages.Add(new Message("user", combined));
 	}
 	#endregion
 
@@ -205,7 +265,8 @@ public static class CompletionChat
 			return;
 		}
 		
-		int maxExamples = Math.Min(prompt.FewShotExamples ?? 0, prompt.Examples.Count);
+		// Unset (null) few-shot-examples means "use all defined examples"; a number caps the count.
+		int maxExamples = Math.Min(prompt.FewShotExamples ?? prompt.Examples.Count, prompt.Examples.Count);
 
 		for (int index = 0; index < maxExamples; ++index)
 		{

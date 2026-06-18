@@ -76,18 +76,18 @@ public class InvokeAgentTool : IBuiltInTool
             };
         }
 
-        // Enforce the MaxAgentDepth guardrail. We don't have direct access to the parent
-        // state's guardrails here, so we apply the runner-wide default. State-level overrides
-        // are validated at AgentRunner construction time (the sub-agent will refuse if its
-        // own state guardrails forbid it).
+        // Enforce the MaxAgentDepth guardrail. AgentRunner threads the dispatching state's
+        // max-agent-depth (from [[state.X.guardrails]]) onto the ambient context; fall back to
+        // the runner-wide default when the state didn't set one.
+        int maxDepth = ambient.MaxAgentDepthOverride ?? AgentRunner.DefaultMaxAgentDepth;
         int nextDepth = ambient.Depth + 1;
-        if (nextDepth > AgentRunner.DefaultMaxAgentDepth)
+        if (nextDepth > maxDepth)
         {
             return new ToolCallResult
             {
                 ToolName = Name,
                 Failed = true,
-                ErrorMessage = $"invoke_agent refused: would exceed MaxAgentDepth ({AgentRunner.DefaultMaxAgentDepth})."
+                ErrorMessage = $"invoke_agent refused: would exceed MaxAgentDepth ({maxDepth})."
             };
         }
 

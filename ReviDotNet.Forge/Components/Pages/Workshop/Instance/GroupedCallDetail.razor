@@ -1,0 +1,34 @@
+@* The expanded body of a call: a sub-agent renders its mini-instance; a tool renders its
+   input + output (or error / not-executed) panels. *@
+@if (Call.Kind == CallKind.SubAgent)
+{
+    <GroupedMini Call="Call" OwnerDisplay="@OwnerDisplay" />
+}
+else
+{
+    @if (!string.IsNullOrEmpty(Call.Input))
+    {
+        <div class="panel2">
+            <div class="ph"><span class="io-label">Input</span></div>
+            <div class="code">@Call.Input</div>
+        </div>
+    }
+    <div class="panel2 @(Call.Status == CallStatus.Failed ? "err" : "")">
+        <div class="ph"><span class="io-label">@OutputLabel</span></div>
+        <div class="code">@Call.Output</div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CallView Call { get; set; } = default!;
+
+    /// <summary>Display number of the owning step (e.g. "4") — sub-agent steps number from it ("4.1").</summary>
+    [Parameter] public string OwnerDisplay { get; set; } = "";
+
+    private string OutputLabel => Call.Status switch
+    {
+        CallStatus.Failed => "Error",
+        CallStatus.Dropped => "Not executed",
+        _ => "Output",
+    };
+}

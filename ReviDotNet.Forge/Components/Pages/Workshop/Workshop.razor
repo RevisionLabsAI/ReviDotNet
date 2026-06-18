@@ -2,170 +2,36 @@
 @using Revi
 @using ReviDotNet.Forge.Services.Workshop
 @using ReviDotNet.Forge.Services.Workshop.Models
-@inject IAgentManager Agents
-@inject NavigationManager Nav
 
 <PageTitle>Agent Workshop — ReviDotNet Forge</PageTitle>
 
 <MudText Typo="Typo.h4" Class="mb-1">Agent Workshop</MudText>
 <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
-    Run agents as <strong>instances</strong>, score them as <strong>evaluations</strong> with ranked
-    recommendations, and apply the suggested <code>.agent</code> revisions — then watch the score climb across versions.
+    Run agents as <strong>sessions</strong> — a fixed task run or an interactive chat — then score them as
+    <strong>evaluations</strong> with ranked recommendations and apply the suggested <code>.agent</code> revisions.
+    Pick the agent when you create a session; version history lives in the Agents <strong>Registry</strong>.
 </MudText>
 
-<MudGrid Spacing="3">
-
-    <!-- Left rail: agent browser -->
-    <MudItem xs="12" md="3">
-        <MudPaper Class="pa-3" Elevation="2" Style="position: sticky; top: 80px;">
-            <div class="d-flex align-center mb-2">
-                <MudText Typo="Typo.subtitle2">Agents</MudText>
-                <MudSpacer />
-                <MudIconButton Icon="@Icons.Material.Filled.Add"
-                               Size="Size.Small"
-                               Title="New agent"
-                               OnClick="@GoToNewAgent" />
-                <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
-                               Size="Size.Small"
-                               Title="Fork current as new version"
-                               Disabled="@string.IsNullOrWhiteSpace(_selectedAgentName)"
-                               OnClick="@ForkCurrentAgent" />
-            </div>
-            <MudTextField @bind-Value="_agentSearch"
-                          Placeholder="Search..."
-                          Adornment="Adornment.Start"
-                          AdornmentIcon="@Icons.Material.Filled.Search"
-                          Clearable="true"
-                          Variant="Variant.Outlined"
-                          Margin="Margin.Dense"
-                          Class="mb-2" />
-            <MudList T="string" Dense="true" Style="max-height: 65vh; overflow-y: auto;">
-                @foreach (var a in FilteredAgents)
-                {
-                    var name = a.Name ?? string.Empty;
-                    var selected = string.Equals(name, _selectedAgentName, StringComparison.Ordinal);
-                    <MudListItem T="string"
-                                 OnClick="@(() => SelectAgent(name))"
-                                 Style="@(selected ? "background-color: var(--mud-palette-action-default-hover);" : "")">
-                        <div class="d-flex align-center gap-2">
-                            @if (selected)
-                            {
-                                <MudIcon Icon="@Icons.Material.Filled.RadioButtonChecked" Color="Color.Primary" Size="Size.Small" />
-                            }
-                            else
-                            {
-                                <MudIcon Icon="@Icons.Material.Filled.RadioButtonUnchecked" Size="Size.Small" />
-                            }
-                            <div>
-                                <MudText Typo="Typo.body2">@name</MudText>
-                                @if (a.Version.HasValue)
-                                {
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">v@(a.Version) · @(a.States?.Count ?? 0) state(s)</MudText>
-                                }
-                                else
-                                {
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@(a.States?.Count ?? 0) state(s)</MudText>
-                                }
-                            </div>
-                        </div>
-                    </MudListItem>
-                }
-                @if (!FilteredAgents.Any())
-                {
-                    <MudListItem T="string" Disabled="true">
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">No agents match.</MudText>
-                    </MudListItem>
-                }
-            </MudList>
-        </MudPaper>
-    </MudItem>
-
-    <!-- Detail: Instances / Evaluations / Versions hubs -->
-    <MudItem xs="12" md="9">
-        @if (string.IsNullOrWhiteSpace(_selectedAgentName))
-        {
-            <MudPaper Class="pa-6" Outlined="true">
-                <MudText Typo="Typo.body2" Color="Color.Secondary">Select an agent to begin.</MudText>
-            </MudPaper>
-        }
-        else
-        {
-            <MudTabs Elevation="2" Rounded="true" Color="Color.Primary" @bind-ActivePanelIndex="_activeTab">
-                <MudTabPanel Text="Instances" Icon="@Icons.Material.Filled.PlayArrow">
-                    <div class="pa-4">
-                        <InstancesHub AgentName="@_selectedAgentName" OnEvaluateRequested="HandleEvaluateRequested" />
-                    </div>
-                </MudTabPanel>
-                <MudTabPanel Text="Evaluations" Icon="@Icons.Material.Filled.RateReview">
-                    <div class="pa-4">
-                        <EvaluationsHub @ref="_evalHub" AgentName="@_selectedAgentName" />
-                    </div>
-                </MudTabPanel>
-                <MudTabPanel Text="Versions" Icon="@Icons.Material.Filled.History">
-                    <div class="pa-4">
-                        <VersionsHub AgentName="@_selectedAgentName" />
-                    </div>
-                </MudTabPanel>
-            </MudTabs>
-        }
-    </MudItem>
-</MudGrid>
+<MudTabs Elevation="2" Rounded="true" Color="Color.Primary" @bind-ActivePanelIndex="_activeTab">
+    <MudTabPanel Text="Sessions" Icon="@Icons.Material.Filled.PlayArrow">
+        <div class="pa-4">
+            <SessionsHub />
+        </div>
+    </MudTabPanel>
+    <MudTabPanel Text="Evaluations" Icon="@Icons.Material.Filled.RateReview">
+        <div class="pa-4">
+            <EvaluationsHub />
+        </div>
+    </MudTabPanel>
+</MudTabs>
 
 @code {
-    [SupplyParameterFromQuery] public string? Agent { get; set; }
     [SupplyParameterFromQuery] public int? Tab { get; set; }
 
     private int _activeTab;
-    private string _selectedAgentName = "";
-    private string _agentSearch = "";
-
-    private EvaluationsHub? _evalHub;
-    private WorkshopInstance? _pendingEvalInstance;
-
-    private IEnumerable<AgentProfile> FilteredAgents => Agents.GetAll()
-        .Where(a => string.IsNullOrWhiteSpace(_agentSearch) ||
-                    (a.Name?.Contains(_agentSearch, StringComparison.OrdinalIgnoreCase) ?? false))
-        .OrderBy(a => a.Name);
 
     protected override void OnInitialized()
     {
-        _selectedAgentName = !string.IsNullOrWhiteSpace(Agent)
-            ? Agent!
-            : Agents.GetAll().FirstOrDefault()?.Name ?? string.Empty;
-
-        if (Tab is >= 0 and < 3) _activeTab = Tab.Value;
-    }
-
-    private void SelectAgent(string name)
-    {
-        if (string.Equals(name, _selectedAgentName, StringComparison.Ordinal)) return;
-        _selectedAgentName = name;
-        StateHasChanged();
-    }
-
-    // Instances tab → "Evaluate these runs": switch to the Evaluations tab, then kick off the
-    // evaluation once that hub has rendered (it isn't alive until its panel is shown).
-    private void HandleEvaluateRequested(WorkshopInstance instance)
-    {
-        _pendingEvalInstance = instance;
-        _activeTab = 1;
-        StateHasChanged();
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (_pendingEvalInstance is { } inst && _evalHub is not null)
-        {
-            _pendingEvalInstance = null;
-            await _evalHub.EvaluateInstanceAsync(inst);
-        }
-    }
-
-    private void GoToNewAgent() => Nav.NavigateTo("/agents/generate");
-
-    private void ForkCurrentAgent()
-    {
-        if (string.IsNullOrWhiteSpace(_selectedAgentName)) return;
-        Nav.NavigateTo($"/agents/generate?fork={Uri.EscapeDataString(_selectedAgentName)}");
+        if (Tab is >= 0 and < 2) _activeTab = Tab.Value;
     }
 }

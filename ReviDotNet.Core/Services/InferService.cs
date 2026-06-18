@@ -55,8 +55,8 @@ public sealed class InferService(
         if (await FilterCheck(prompt, inputs, token))
             throw new SecurityException("FilterCheck failed!");
 
-        if (!Enum.TryParse(prompt.CompletionType, out CompletionType type))
-            throw new Exception($"Invalid completion type: '{prompt.CompletionType}'");
+        // Model-level [[override-settings]] completion-type overrides the prompt's value when set.
+        CompletionType type = foundModel.CompletionType ?? Util.ResolveCompletionType(prompt.CompletionType);
 
         DateTime startTime = DateTime.UtcNow;
         bool inferenceSuccess = false;
@@ -77,14 +77,15 @@ public sealed class InferService(
                 case CompletionType.PromptChatOne:
                 case CompletionType.PromptChatMulti:
                 {
-                    if (foundModel.Provider.SupportsCompletion ?? false)
+                    if (foundModel.EffectiveSupportsPromptCompletion)
                     {
                         promptString = CompletionPrompt.BuildString(prompt, foundModel, inputs);
                         result = await CallInference(promptString, prompt, foundModel, outputType, token);
                     }
                     else
                     {
-                        messages = CompletionChat.BuildMessages(prompt, foundModel, inputs);
+                        // PromptChatOne packs examples into one user message; PromptChatMulti uses separate messages.
+                        messages = CompletionChat.BuildMessages(prompt, foundModel, inputs, singleMessageExamples: type == CompletionType.PromptChatOne);
                         result = await CallInference(messages, prompt, foundModel, outputType, token);
                     }
                     break;
@@ -162,8 +163,8 @@ public sealed class InferService(
         if (await FilterCheck(prompt, inputs))
             throw new SecurityException("FilterCheck failed!");
 
-        if (!Enum.TryParse(prompt.CompletionType, out CompletionType type))
-            throw new Exception($"Invalid completion type: '{prompt.CompletionType}'");
+        // Model-level [[override-settings]] completion-type overrides the prompt's value when set.
+        CompletionType type = foundModel.CompletionType ?? Util.ResolveCompletionType(prompt.CompletionType);
 
         IAsyncEnumerable<string> streamResult;
 
@@ -182,14 +183,14 @@ public sealed class InferService(
             case CompletionType.PromptChatOne:
             case CompletionType.PromptChatMulti:
             {
-                if (foundModel.Provider.SupportsCompletion ?? false)
+                if (foundModel.EffectiveSupportsPromptCompletion)
                 {
                     string ps = CompletionPrompt.BuildString(prompt, foundModel, inputs);
                     streamResult = CallStreamingInference(ps, prompt, foundModel, outputType, cancellationToken);
                 }
                 else
                 {
-                    List<Message> ms = CompletionChat.BuildMessages(prompt, foundModel, inputs);
+                    List<Message> ms = CompletionChat.BuildMessages(prompt, foundModel, inputs, singleMessageExamples: type == CompletionType.PromptChatOne);
                     streamResult = CallStreamingInference(ms, prompt, foundModel, outputType, cancellationToken);
                 }
                 break;
@@ -292,35 +293,45 @@ public sealed class InferService(
             string dump = $"Faulty JSON!\nPrompt: {prompt.Name}\nFull Prompt: {result?.FullPrompt}\nOutput: {result?.Selected}";
             await Util.DumpLog(dump, "faultyjson");
 
-            result = await Completion(
-                FindPrompt("json-fixer"),
-                [
-                    new Input("Schema", Util.JsonStringFromType(outputType)),
-                    new Input("Bad JSON", extractedJson)
-                ],
-                null,
-                null,
-                outputType,
-                token);
-
-            extractedJson = Util.ExtractJson(result?.Selected, prompt.ChainOfThought);
-
-            try
+            // Remediation is best-effort: resolve the json-fixer prompt null-safely so its absence
+            // skips repair instead of throwing. A default json-fixer ships embedded with ReviDotNet.Core.
+            Prompt? jsonFixer = prompts.Get("json-fixer");
+            if (jsonFixer is null)
             {
-                if (!string.IsNullOrEmpty(extractedJson))
+                Util.Log("No 'json-fixer' prompt available; skipping JSON remediation.");
+            }
+            else
+            {
+                result = await Completion(
+                    jsonFixer,
+                    [
+                        new Input("Schema", Util.JsonStringFromType(outputType)),
+                        new Input("Bad JSON", extractedJson)
+                    ],
+                    null,
+                    null,
+                    outputType,
+                    token);
+
+                extractedJson = Util.ExtractJson(result?.Selected, prompt.ChainOfThought);
+
+                try
                 {
-                    JsonSerializerSettings settings = new()
-                        { Converters = new List<JsonConverter> { new StringEnumConverter() } };
-                    newObject = JsonConvert.DeserializeObject<T>(extractedJson, settings);
+                    if (!string.IsNullOrEmpty(extractedJson))
+                    {
+                        JsonSerializerSettings settings = new()
+                            { Converters = new List<JsonConverter> { new StringEnumConverter() } };
+                        newObject = JsonConvert.DeserializeObject<T>(extractedJson, settings);
+                    }
                 }
-            }
-            catch
-            {
-                Util.Log($"JSON remediation FAILED with output:\n {extractedJson}\n\n");
-            }
-            finally
-            {
-                Util.Log($"JSON remediation {(newObject is not null ? "SUCCEEDED!" : "FAILED")}");
+                catch
+                {
+                    Util.Log($"JSON remediation FAILED with output:\n {extractedJson}\n\n");
+                }
+                finally
+                {
+                    Util.Log($"JSON remediation {(newObject is not null ? "SUCCEEDED!" : "FAILED")}");
+                }
             }
         }
 
@@ -402,12 +413,7 @@ public sealed class InferService(
         CancellationToken token = default)
     {
         string? result = await ToString(promptName, inputs, modelProfile, modelName, token);
-        return result?.ToLower() switch
-        {
-            "true" => true,
-            "false" => false,
-            _ => null
-        };
+        return Util.ParseBool(result);
     }
 
     /// <inheritdoc/>
@@ -600,6 +606,33 @@ public sealed class InferService(
     {
         List<Input>? inputs = input is not null ? [input] : null;
         return await ToStringList(promptName, inputs, modelProfile, modelName, token: token);
+    }
+
+    /// <inheritdoc/>
+    public async Task<List<string>> ToStringListClean(
+        string promptName,
+        List<Input>? inputs = null,
+        ModelProfile? modelProfile = null,
+        string? modelName = null,
+        CancellationToken token = default)
+    {
+        List<string> lines = await ToStringList(promptName, inputs, modelProfile, modelName, token: token);
+        return lines
+            .Select(Util.StripListMarker)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .ToList();
+    }
+
+    /// <inheritdoc/>
+    public async Task<List<string>> ToStringListClean(
+        string promptName,
+        Input? input,
+        ModelProfile? modelProfile = null,
+        string? modelName = null,
+        CancellationToken token = default)
+    {
+        List<Input>? inputs = input is not null ? [input] : null;
+        return await ToStringListClean(promptName, inputs, modelProfile, modelName, token: token);
     }
 
     /// <inheritdoc/>
@@ -1002,7 +1035,8 @@ public sealed class InferService(
             throw new Exception("Filters can't have filters — recursive loops will occur!");
 
         CompletionResult? result = await Completion(filterPrompt, inputs, null, null, token: token);
-        return result?.Selected != "foobar";
+        // The filter prompt must emit the canary word for safe input; anything else is treated as injection.
+        return !Util.FilterOutputIsSafe(result?.Selected, prompt.FilterCanary, prompt.FilterMatching);
     }
 
     private static void GetGuidance(

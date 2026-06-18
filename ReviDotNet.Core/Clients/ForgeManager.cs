@@ -62,15 +62,16 @@ internal static class ForgeManager
 
             var data = RConfigParser.Read(path);
 
-            if (!data.TryGetValue("general.enabled", out var enabledStr)
+            // RConfigParser joins section + key with an underscore (general_enabled), not a dot.
+            if (!data.TryGetValue("general_enabled", out var enabledStr)
                 || !bool.TryParse(enabledStr, out var enabled)
                 || !enabled)
                 return;
 
-            data.TryGetValue("general.forge-url", out var forgeUrl);
-            data.TryGetValue("general.api-key", out var apiKey);
-            data.TryGetValue("general.client-id", out var clientId);
-            data.TryGetValue("general.timeout-seconds", out var timeoutStr);
+            data.TryGetValue("general_forge-url", out var forgeUrl);
+            data.TryGetValue("general_api-key", out var apiKey);
+            data.TryGetValue("general_client-id", out var clientId);
+            data.TryGetValue("general_timeout-seconds", out var timeoutStr);
 
             if (string.IsNullOrWhiteSpace(forgeUrl)) return;
 

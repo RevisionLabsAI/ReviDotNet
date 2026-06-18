@@ -1,0 +1,232 @@
+@using Revi
+@using ReviDotNet.Forge.Services.Workshop
+@using ReviDotNet.Forge.Services.Workshop.Models
+@inject IAgentWorkshopService WorkshopSvc
+@inject IWorkshopStore Store
+@inject RunningJobsService JobsSvc
+
+@*
+    Interactive chat view for a Mode=Chat session. Each user message runs the agent once, seeded
+    with the full prior conversation; the agent's final output is the reply. A chat box is pinned
+    at the bottom with a Stop button that cancels the in-flight turn.
+*@
+
+<div class="d-flex flex-column" style="height: calc(100vh - 220px);">
+    <!-- Transcript -->
+    <div style="flex: 1 1 auto; overflow-y: auto;" class="pa-1">
+        @if (Session.Turns.Count == 0 && !_running)
+        {
+            <MudPaper Class="pa-6" Outlined="true">
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    Empty chat. Type a message below to start talking to <strong>@Session.AgentName</strong>.
+                </MudText>
+            </MudPaper>
+        }
+
+        @for (int t = 0; t < Session.Turns.Count; t++)
+        {
+            var idx = t;
+            var turn = Session.Turns[idx];
+
+            <!-- user bubble -->
+            <div class="d-flex justify-end mb-2">
+                <MudPaper Class="pa-3" Elevation="0"
+                          Style="max-width: 80%; background-color: var(--mud-palette-primary); color: var(--mud-palette-primary-text); border-radius: 12px 12px 2px 12px;">
+                    <MudText Typo="Typo.body2" Style="white-space: pre-wrap;">@turn.UserMessage</MudText>
+                </MudPaper>
+            </div>
+
+            <!-- agent reply -->
+            <div class="d-flex justify-start mb-3">
+                <div style="max-width: 88%; width: 88%;">
+                    @if (!string.IsNullOrEmpty(turn.Reply))
+                    {
+                        <MudPaper Class="pa-3 mb-1" Outlined="true" Style="border-radius: 12px 12px 12px 2px;">
+                            <MudText Typo="Typo.body2" Style="white-space: pre-wrap;">@turn.Reply</MudText>
+                        </MudPaper>
+                    }
+                    else if (!turn.IsComplete)
+                    {
+                        <div class="d-flex align-center gap-2 pa-2">
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@Session.AgentName is working…</MudText>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(turn.ErrorMessage))
+                    {
+                        <MudAlert Severity="Severity.Error" Dense="true" Class="mb-1">@turn.ErrorMessage</MudAlert>
+                    }
+
+                    @if (EventsFor(idx) is { Count: > 0 } evts)
+                    {
+                        <MudExpansionPanels Elevation="0">
+                            <MudExpansionPanel Dense="true">
+                                <TitleContent>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        <MudIcon Icon="@Icons.Material.Filled.AccountTree" Size="Size.Small" Class="mr-1" />
+                                        Execution trace (@evts.Count events)
+                                    </MudText>
+                                </TitleContent>
+                                <ChildContent>
+                                    @{
+                                        var grouped = GroupedTraceBuilder.Build(evts, turn.RunSessionId ?? "", Session.AgentName);
+                                    }
+                                    @if (grouped is not null)
+                                    {
+                                        <GroupedInstanceView Data="grouped" ShowHeader="false" />
+                                    }
+                                    else
+                                    {
+                                        <AgentEventTrace Events="@evts" />
+                                    }
+                                </ChildContent>
+                            </MudExpansionPanel>
+                        </MudExpansionPanels>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- Composer -->
+    <MudPaper Class="pa-2 mt-2" Outlined="true">
+        <div class="d-flex align-end gap-2">
+            <MudTextField @bind-Value="_input"
+                          Placeholder="@(_running ? "Waiting for the agent…" : "Message the agent…")"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense"
+                          Lines="1"
+                          MaxLines="6"
+                          AutoGrow="true"
+                          Immediate="true"
+                          Disabled="@_running"
+                          FullWidth="true"
+                          OnKeyDown="OnKeyDown" />
+            @if (_running)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.Stop" OnClick="Stop">
+                    Stop
+                </MudButton>
+            }
+            else
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Send"
+                           OnClick="Send" Disabled="@string.IsNullOrWhiteSpace(_input)">
+                    Send
+                </MudButton>
+            }
+        </div>
+    </MudPaper>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public WorkshopSession Session { get; set; } = default!;
+
+    /// <summary>If set, auto-sent as the first message when the chat opens empty.</summary>
+    [Parameter] public string? InitialMessage { get; set; }
+
+    private string _input = string.Empty;
+    private bool _running;
+    private CancellationTokenSource? _cts;
+    private string? _sessionId;
+
+    // Per-turn live event buffers (index → events). Not persisted; replies live on Session.Turns.
+    private readonly Dictionary<int, List<RlogEvent>> _turnEvents = new();
+
+    private List<RlogEvent>? EventsFor(int turnIndex) => _turnEvents.TryGetValue(turnIndex, out var e) ? e : null;
+
+    protected override void OnParametersSet()
+    {
+        if (!string.Equals(_sessionId, Session.Id, StringComparison.Ordinal))
+        {
+            _sessionId = Session.Id;
+            _turnEvents.Clear();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_running && Session.Turns.Count == 0 && !string.IsNullOrWhiteSpace(InitialMessage))
+        {
+            string first = InitialMessage!;
+            InitialMessage = null;
+            await SendMessage(first);
+        }
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        // Enter sends; Shift+Enter inserts a newline.
+        if (e.Key == "Enter" && !e.ShiftKey && !_running && !string.IsNullOrWhiteSpace(_input))
+            await Send();
+    }
+
+    private async Task Send()
+    {
+        string text = _input.Trim();
+        if (string.IsNullOrEmpty(text)) return;
+        _input = string.Empty;
+        await SendMessage(text);
+    }
+
+    private async Task SendMessage(string text)
+    {
+        if (_running) return;
+
+        var turn = new ChatTurn { UserMessage = text };
+        Session.Turns.Add(turn);
+        int turnIndex = Session.Turns.Count - 1;
+        _turnEvents[turnIndex] = new List<RlogEvent>();
+
+        // Assemble the conversation: all prior turns (user + assistant) then this new user message.
+        var history = new List<Message>();
+        for (int i = 0; i < turnIndex; i++)
+        {
+            var prior = Session.Turns[i];
+            history.Add(new Message("user", prior.UserMessage));
+            if (!string.IsNullOrEmpty(prior.Reply))
+                history.Add(new Message("assistant", prior.Reply!));
+        }
+        history.Add(new Message("user", text));
+
+        _running = true;
+        _cts = new CancellationTokenSource();
+        string jobId = JobsSvc.Register(JobKind.AgentRun, $"Chat · {Session.AgentName}", () => _cts?.Cancel());
+        StateHasChanged();
+
+        try
+        {
+            await foreach (var update in WorkshopSvc.RunChatTurnAsync(Session.AgentName, history, Session.Attachments, _cts.Token))
+            {
+                turn.RunSessionId ??= update.SessionId;
+                if (update.Event != null) _turnEvents[turnIndex].Add(update.Event);
+                if (update.FinalResult != null) turn.Reply = update.FinalResult.FinalOutput ?? "(no output)";
+                if (!string.IsNullOrEmpty(update.ErrorMessage)) turn.ErrorMessage = update.ErrorMessage;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            turn.ErrorMessage ??= "Stopped.";
+        }
+        catch (Exception ex)
+        {
+            turn.ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            turn.IsComplete = true;
+            if (turn.RunSessionId is { } sid && !Session.SessionIds.Contains(sid))
+                Session.SessionIds.Add(sid);
+            _running = false;
+            JobsSvc.Complete(jobId);
+            _cts?.Dispose();
+            _cts = null;
+            Store.NotifyChanged();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void Stop() => _cts?.Cancel();
+}

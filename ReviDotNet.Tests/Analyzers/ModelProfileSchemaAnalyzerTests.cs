@@ -79,5 +79,51 @@ token-limit = 100000
 
             await AnalyzerTestHelper.RunAsync<ModelProfileSchemaAnalyzer>(code, files);
         }
+
+        // D37: a 'listed'/'both' input type with no single-item/multi-item template warns at build time.
+
+        [Fact]
+        public async Task ReportsWarning_OnListedInputTypeWithoutTemplates()
+        {
+            string code = "class C { void M() {} }";
+            (string path, string content)[] files =
+            {
+                ("RConfigs/Models/Inference/notmpl.rcfg", @"[[general]]
+name = m
+model-string = id
+provider-name = prov
+
+[[input]]
+default-instruction-input-type = listed
+")
+            };
+
+            DiagnosticResult expected = DiagnosticResult.CompilerWarning(ModelProfileSchemaAnalyzer.DiagnosticId)
+                .WithSpan("RConfigs/Models/Inference/notmpl.rcfg", 7, 1, 7, 1)
+                .WithArguments("single-item and multi-item");
+
+            await AnalyzerTestHelper.RunAsync<ModelProfileSchemaAnalyzer>(code, files, expected);
+        }
+
+        [Fact]
+        public async Task NoWarning_WhenInputTemplatesPresent()
+        {
+            string code = "class C { void M() {} }";
+            (string path, string content)[] files =
+            {
+                ("RConfigs/Models/Inference/withtmpl.rcfg", @"[[general]]
+name = m
+model-string = id
+provider-name = prov
+
+[[input]]
+default-instruction-input-type = listed
+single-item = {label}: {text}
+multi-item = Input #{iterator}: {label}: {text}
+")
+            };
+
+            await AnalyzerTestHelper.RunAsync<ModelProfileSchemaAnalyzer>(code, files);
+        }
     }
 }

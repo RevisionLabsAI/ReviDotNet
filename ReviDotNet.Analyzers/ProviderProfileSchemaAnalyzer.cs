@@ -92,10 +92,11 @@ namespace ReviDotNet.Analyzers
                 if (TryGet(doc, "general", "protocol", out RcfgValue protocol))
                 {
                     string raw = protocol.Raw.Trim();
-                    string[] allowed = { "openai", "vllm", "gemini", "llamaapi", "claude" };
+                    // Mirror the runtime Protocol enum (which includes Perplexity).
+                    string[] allowed = { "openai", "vllm", "gemini", "perplexity", "llamaapi", "claude" };
                     if (!allowed.Contains(raw.ToLowerInvariant()))
                     {
-                        ReportError(context, file, protocol.Line, raw, "general.protocol", suffix: " (allowed: OpenAI, vLLM, Gemini, LLamaAPI, Claude)");
+                        ReportError(context, file, protocol.Line, raw, "general.protocol", suffix: " (allowed: OpenAI, vLLM, Gemini, Perplexity, LLamaAPI, Claude)");
                     }
                 }
                 else
@@ -140,16 +141,18 @@ namespace ReviDotNet.Analyzers
                     string raw = gtype.Raw.Trim().ToLowerInvariant();
                     // Matches the GuidanceSchemaType vocabulary: ProviderProfile.DefaultGuidanceType is the
                     // provider's default schema strategy, so it supports the same auto/manual variants a prompt does.
+                    // Include the runtime-accepted aliases: `defer` (provider-default deferral) and the bare
+                    // `json`/`regex`/`gbnf` forms that RConfigParser maps to the *Manual variants.
                     string[] allowed = {
-                        "disabled", "default",
-                        "regex-manual", "regex-auto",
-                        "json-manual", "json-auto",
-                        "gnbf-manual", "gnbf-auto"
+                        "disabled", "default", "defer",
+                        "regex-manual", "regex-auto", "regex",
+                        "json-manual", "json-auto", "json",
+                        "gnbf-manual", "gnbf-auto", "gbnf"
                     };
                     if (!allowed.Contains(raw))
                     {
                         ReportError(context, file, gtype.Line, gtype.Raw.Trim(), "guidance.default-guidance-type",
-                            suffix: " (allowed: disabled, default, regex-manual, regex-auto, json-manual, json-auto, gnbf-manual, gnbf-auto)");
+                            suffix: " (allowed: disabled, default, defer, regex-manual, regex-auto, regex, json-manual, json-auto, json, gnbf-manual, gnbf-auto, gbnf)");
                     }
                 }
 

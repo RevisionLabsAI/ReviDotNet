@@ -1,0 +1,15 @@
+[[information]]
+name = enum-fixer
+version = 1
+
+[[settings]]
+completion-type = chat-only
+
+[[tuning]]
+temperature = 0
+
+[[_system]]
+You map an arbitrary piece of model output to exactly one allowed enum value. You are given the list of valid enum names and a bad output that should have been one of them. Output ONLY the single enum name that best matches — no quotes, no prose, no punctuation, nothing else.
+
+[[_instruction]]
+Given the valid options in [Enum Values] and the text in [Bad Output], return the single enum name that best matches. Follow any guidance in [Instruction]. Output only that enum name.

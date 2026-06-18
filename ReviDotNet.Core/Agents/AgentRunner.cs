@@ -37,6 +37,13 @@ public class AgentRunner
     private readonly IPromptManager _prompts;
     private readonly IToolManager _tools;
 
+    /// <summary>
+    /// Optional pre-seeded conversation for an interactive chat turn. When supplied, the run starts
+    /// from this conversation (prior turns plus the new user message) instead of synthesising an
+    /// initial user message from <see cref="_inputs"/>. Null/empty for a normal fixed run.
+    /// </summary>
+    private readonly IReadOnlyList<Message>? _seedHistory;
+
     /// <summary>Unique id for this agent activation. Tagged on every emitted log event.</summary>
     public string SessionId { get; }
 
@@ -70,7 +77,8 @@ public class AgentRunner
 
     /// <summary>Creates an <see cref="AgentRunner"/> using the injected service managers (preferred path).</summary>
     public AgentRunner(AgentProfile profile, Dictionary<string, object> inputs, CancellationToken token,
-        AgentRunContext ctx, IModelManager models, IPromptManager prompts, IToolManager tools)
+        AgentRunContext ctx, IModelManager models, IPromptManager prompts, IToolManager tools,
+        IReadOnlyList<Message>? seedHistory = null)
     {
         _profile = profile;
         _inputs = inputs;
@@ -79,6 +87,7 @@ public class AgentRunner
         _models = models;
         _prompts = prompts;
         _tools = tools;
+        _seedHistory = seedHistory;
 
         SessionId = Guid.NewGuid().ToString("n");
 
@@ -103,9 +112,12 @@ public class AgentRunner
         // Transition into the entry state (no state-transition event for the seed entry)
         TransitionToState(_profile.EntryState!, isEntry: true);
 
-        // Seed the conversation with the initial user inputs
-        string initialMessage = BuildInitialUserMessage();
-        _conversationHistory.Add(new Message("user", initialMessage));
+        // Seed the conversation: a chat turn supplies the full conversation (prior turns + the new
+        // user message); a fixed run synthesises one initial user message from the agent's inputs.
+        if (_seedHistory is { Count: > 0 })
+            _conversationHistory.AddRange(_seedHistory);
+        else
+            _conversationHistory.Add(new Message("user", BuildInitialUserMessage()));
 
         while (true)
         {
@@ -147,20 +159,35 @@ public class AgentRunner
                 object1: messages,
                 object1Name: "messages");
 
-            try
+            // Retry a failed LLM call up to the state's retry-limit guardrail before giving up.
+            int retryLimit = _currentState.Guardrails.RetryLimit ?? 0;
+            int llmAttempt = 0;
+            while (true)
             {
-                llmResult = await CallLlmAsync(messages);
-            }
-            catch (OperationCanceledException)
-            {
-                LogStep(AgentReviLogger.Step.Error, "LLM call cancelled", parent: requestLog, level: LogLevel.Warning);
-                return Terminate(AgentExitReason.Cancelled);
-            }
-            catch (Exception ex)
-            {
-                Util.Log($"AgentRunner '{_profile.Name}': LLM call failed: {ex.Message}");
-                LogStep(AgentReviLogger.Step.Error, $"LLM call failed: {ex.Message}", parent: requestLog, level: LogLevel.Error);
-                return Terminate(AgentExitReason.Error);
+                try
+                {
+                    llmResult = await CallLlmAsync(messages);
+                    break;
+                }
+                catch (OperationCanceledException)
+                {
+                    LogStep(AgentReviLogger.Step.Error, "LLM call cancelled", parent: requestLog, level: LogLevel.Warning);
+                    return Terminate(AgentExitReason.Cancelled);
+                }
+                catch (Exception ex)
+                {
+                    if (llmAttempt < retryLimit)
+                    {
+                        llmAttempt++;
+                        Util.Log($"AgentRunner '{_profile.Name}': LLM call failed (retry {llmAttempt}/{retryLimit}): {ex.Message}");
+                        LogStep(AgentReviLogger.Step.Error, $"LLM call failed (retry {llmAttempt}/{retryLimit}): {ex.Message}", parent: requestLog, level: LogLevel.Warning);
+                        continue;
+                    }
+
+                    Util.Log($"AgentRunner '{_profile.Name}': LLM call failed: {ex.Message}");
+                    LogStep(AgentReviLogger.Step.Error, $"LLM call failed: {ex.Message}", parent: requestLog, level: LogLevel.Error);
+                    return Terminate(AgentExitReason.Error);
+                }
             }
 
             _currentStateSteps++;
@@ -212,15 +239,34 @@ public class AgentRunner
                     object1Name: "thinking");
             }
 
+            // ── Surface the assistant message as its own event (mirrors thinking) so
+            //    trace consumers don't have to re-parse it out of the raw llm-response. ──
+            if (!string.IsNullOrWhiteSpace(stepResponse.Content))
+            {
+                LogStep(
+                    AgentReviLogger.Step.Content,
+                    "Model message",
+                    parent: requestLog,
+                    object1: stepResponse.Content,
+                    object1Name: "content");
+            }
+
             // ── Execute tool calls IN PARALLEL ───────────────────────────────
+            // A tool is allowed if the state lists it, or it's a file-access tool and the run has
+            // attachments (so authors needn't list list-files/read-file just to use uploaded files).
+            bool filesAttached = _ctx.Files is { Files.Count: > 0 };
+            bool IsToolAllowed(string name) =>
+                _currentState.Tools.Contains(name, StringComparer.OrdinalIgnoreCase)
+                || (filesAttached && FileAccessTools.Names.Contains(name));
+
             var allowedCalls = stepResponse.ToolCalls
                 .Where(tc => !string.IsNullOrWhiteSpace(tc.Name))
-                .Where(tc => _currentState.Tools.Contains(tc.Name, StringComparer.OrdinalIgnoreCase))
+                .Where(tc => IsToolAllowed(tc.Name))
                 .ToList();
 
             var disallowedCalls = stepResponse.ToolCalls
                 .Where(tc => !string.IsNullOrWhiteSpace(tc.Name))
-                .Where(tc => !_currentState.Tools.Contains(tc.Name, StringComparer.OrdinalIgnoreCase))
+                .Where(tc => !IsToolAllowed(tc.Name))
                 .ToList();
 
             foreach (var disallowed in disallowedCalls)
@@ -229,19 +275,45 @@ public class AgentRunner
             if (allowedCalls.Count > 0)
             {
                 // Check tool call limit before executing
-                int remaining = (_currentState.Guardrails.ToolCallLimit ?? int.MaxValue) - _currentStateToolCalls;
+                int remaining = Math.Max(0, (_currentState.Guardrails.ToolCallLimit ?? int.MaxValue) - _currentStateToolCalls);
                 var callsToRun = allowedCalls.Take(remaining).ToList();
+                var droppedCalls = allowedCalls.Skip(callsToRun.Count).ToList();
 
-                if (callsToRun.Count < allowedCalls.Count)
-                    Util.Log($"AgentRunner '{_profile.Name}': Tool call limit reached in state '{_currentStateName}'. {allowedCalls.Count - callsToRun.Count} call(s) dropped.");
+                // Surface dropped-over-limit calls as an event (previously a silent Util.Log).
+                if (droppedCalls.Count > 0)
+                {
+                    Util.Log($"AgentRunner '{_profile.Name}': Tool call limit reached in state '{_currentStateName}'. {droppedCalls.Count} call(s) dropped.");
+                    LogStep(
+                        AgentReviLogger.Step.ToolDropped,
+                        $"{droppedCalls.Count} tool call(s) dropped — tool-call-limit ({_currentState.Guardrails.ToolCallLimit}) reached in state '{_currentStateName}'",
+                        parent: requestLog,
+                        object1: droppedCalls.Select(tc => new { name = tc.Name, input = tc.Input }).ToList(),
+                        object1Name: "dropped",
+                        level: LogLevel.Warning);
+                }
 
                 if (callsToRun.Count > 0)
                 {
-                    // Execute all allowed tool calls concurrently. Each task pushes its own
+                    // Execute allowed tool calls concurrently, bounded by the state's
+                    // max-parallel-tools guardrail (null = no cap). Excess calls queue on the
+                    // semaphore and start as slots free. Each task pushes its own
                     // AgentRunContext so InvokeAgentTool sees the correct parent log.
-                    ToolCallResult[] toolResults = await Task.WhenAll(
-                        callsToRun.Select(tc => DispatchToolWithLogging(tc))
-                    );
+                    int maxParallel = _currentState.Guardrails.MaxParallelTools ?? callsToRun.Count;
+                    if (maxParallel < 1) maxParallel = 1;
+                    var gate = new SemaphoreSlim(maxParallel, maxParallel);
+
+                    ToolCallResult[] toolResults;
+                    try
+                    {
+                        toolResults = await Task.WhenAll(
+                            callsToRun.Select(tc => DispatchToolWithLogging(tc, requestLog, gate))
+                        );
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        LogStep(AgentReviLogger.Step.Error, "Tool execution cancelled", level: LogLevel.Warning);
+                        return Terminate(AgentExitReason.Cancelled);
+                    }
 
                     _currentStateToolCalls += callsToRun.Count;
 
@@ -315,7 +387,9 @@ public class AgentRunner
 
             if (string.Equals(nextState, _currentStateName, StringComparison.OrdinalIgnoreCase))
             {
-                // Self-loop: don't reset step/tool counters, don't increment cycle
+                // Self-loop: stay in the same activation context (keep accumulating step/tool/cost counters),
+                // but count it as a re-activation so cycle-limit bounds self-looping states as documented.
+                _currentStateCycles++;
                 continue;
             }
 
@@ -589,6 +663,21 @@ public class AgentRunner
         if (!string.IsNullOrWhiteSpace(_currentState.Instruction))
             systemParts.Add(SubstituteInputs(_currentState.Instruction));
 
+        // When the run has attached files, tell the agent they exist and how to read them. The raw
+        // contents are never dumped here — the agent uses list-files / read-file (a reader model
+        // reads each file against a focused query) to pull only what it needs.
+        if (_ctx.Files is { Files.Count: > 0 } registry)
+        {
+            var fb = new System.Text.StringBuilder();
+            fb.AppendLine("ATTACHED FILES — the user attached these files to this session:");
+            foreach (var f in registry.Files)
+                fb.AppendLine($"- {f.Name} ({f.MediaType}, {f.Size:N0} bytes){(f.IsImage ? " [image]" : "")}");
+            fb.Append("Do not assume their contents. Use the `list-files` tool to enumerate them and the "
+                + "`read-file` tool ({\"file\":\"<name>\",\"query\":\"<what you need>\"}) to have a reader model "
+                + "read a file (text or image) and answer a focused question. Use `search-files` to query across all of them.");
+            systemParts.Add(fb.ToString());
+        }
+
         string systemText = string.Join("\n\n---\n\n", systemParts);
         if (!string.IsNullOrWhiteSpace(systemText))
             messages.Add(new Message("system", systemText));
@@ -687,44 +776,65 @@ public class AgentRunner
     // ==============
 
     /// <summary>
-    /// Wraps a single tool dispatch with tool-call / tool-result events and pushes
+    /// Wraps a single tool dispatch with tool-call / tool-start / tool-result events and pushes
     /// an AgentRunContext so InvokeAgentTool sees the correct parent log.
+    ///   • The tool-call event nests under <paramref name="stepLog"/> (the step's llm-request) and
+    ///     is emitted immediately, so the call is observable as "queued" while it waits for a slot.
+    ///   • <paramref name="gate"/> bounds how many calls from this step run concurrently; a
+    ///     tool-start event marks the queued → running transition once a slot is acquired.
     /// </summary>
-    private async Task<ToolCallResult> DispatchToolWithLogging(AgentToolCall tc)
+    private async Task<ToolCallResult> DispatchToolWithLogging(AgentToolCall tc, Rlog stepLog, SemaphoreSlim gate)
     {
         Rlog toolCallRlog = LogStep(
             AgentReviLogger.Step.ToolCall,
             $"Tool call: {tc.Name}",
+            parent: stepLog,
             object1: tc.Input,
             object1Name: "input",
             object2: tc.Name,
             object2Name: "tool");
 
-        ToolCallResult result;
-        AgentRunContext childCtx = _ctx.Child(toolCallRlog);
-        using (AgentRunContext.Push(childCtx))
+        await gate.WaitAsync(_token);
+        try
         {
-            result = await ExecuteToolAsync(tc.Name, tc.Input);
+            // Slot acquired: the call moves from queued to running.
+            LogStep(
+                AgentReviLogger.Step.ToolStart,
+                $"Tool started: {tc.Name}",
+                parent: toolCallRlog);
+
+            ToolCallResult result;
+            // Carry the current state's max-agent-depth guardrail so InvokeAgentTool enforces the
+            // per-state override rather than only the runner-wide default.
+            AgentRunContext childCtx = _ctx.Child(toolCallRlog, _currentState.Guardrails.MaxAgentDepth);
+            using (AgentRunContext.Push(childCtx))
+            {
+                result = await ExecuteToolAsync(tc.Name, tc.Input);
+            }
+
+            AgentReviLogger.LogStep(
+                parent: toolCallRlog,
+                agentName: _profile.Name ?? "(unnamed)",
+                sessionId: SessionId,
+                stepType: AgentReviLogger.Step.ToolResult,
+                stateName: _currentStateName,
+                cycle: _currentStateCycles,
+                depth: _ctx.Depth,
+                message: result.Failed
+                    ? $"Tool result (failed): {tc.Name}"
+                    : $"Tool result: {tc.Name}",
+                object1: result.Output,
+                object1Name: "output",
+                object2: new { failed = result.Failed, error = result.ErrorMessage },
+                object2Name: "status",
+                level: result.Failed ? LogLevel.Warning : LogLevel.Info);
+
+            return result;
         }
-
-        AgentReviLogger.LogStep(
-            parent: toolCallRlog,
-            agentName: _profile.Name ?? "(unnamed)",
-            sessionId: SessionId,
-            stepType: AgentReviLogger.Step.ToolResult,
-            stateName: _currentStateName,
-            cycle: _currentStateCycles,
-            depth: _ctx.Depth,
-            message: result.Failed
-                ? $"Tool result (failed): {tc.Name}"
-                : $"Tool result: {tc.Name}",
-            object1: result.Output,
-            object1Name: "output",
-            object2: new { failed = result.Failed, error = result.ErrorMessage },
-            object2Name: "status",
-            level: result.Failed ? LogLevel.Warning : LogLevel.Info);
-
-        return result;
+        finally
+        {
+            gate.Release();
+        }
     }
 
     private async Task<ToolCallResult> ExecuteToolAsync(string toolName, string input)

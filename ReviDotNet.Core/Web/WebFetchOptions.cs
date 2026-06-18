@@ -17,6 +17,13 @@ public sealed record WebFetchOptions
     public RenderMode RenderMode { get; init; } = RenderMode.Auto;
 
     /// <summary>
+    /// Which representation <see cref="WebDocument.Content"/> returns. All three representations
+    /// (<see cref="WebDocument.Markdown"/>, <see cref="WebDocument.Html"/>, <see cref="WebDocument.Text"/>)
+    /// are always populated; this selects the default one. Defaults to <see cref="WebOutputFormat.Markdown"/>.
+    /// </summary>
+    public WebOutputFormat OutputFormat { get; init; } = WebOutputFormat.Markdown;
+
+    /// <summary>
     /// Ceiling on fetch tier the escalator may use. Defaults to <see cref="WebFetchTier.Browser"/> so that
     /// registering <c>ReviDotNet.Scraping</c> enables HTTP→browser escalation automatically (harmless in
     /// Core-only setups, which have no browser fetcher). Set to <see cref="WebFetchTier.Http"/> to forbid
@@ -40,9 +47,13 @@ public sealed record WebFetchOptions
     public string? UserAgent { get; init; }
 
     /// <summary>
-    /// Whether to obey robots.txt for the fetch. <c>true</c> (polite) by default; callers with a clear
-    /// basis (e.g. first-party targets) may set this to <c>false</c> to maximize retrieval success.
-    /// Enforced once the crawl infrastructure (robots cache) is wired; ignored by the bare HTTP fetcher.
+    /// Whether to obey robots.txt. <c>true</c> (polite) by default; callers with a clear basis (e.g.
+    /// first-party targets) may set this to <c>false</c> to maximize retrieval success.
+    /// <para>
+    /// <b>Scope:</b> this is honored only by <see cref="IWebContentService.CrawlAsync"/> (the crawler checks
+    /// robots.txt and Crawl-delay before each page). It is a <b>no-op for single-URL
+    /// <see cref="IWebContentService.FetchAsync"/></b> — an explicitly requested fetch is not robots-gated.
+    /// </para>
     /// </summary>
     public bool RespectRobots { get; init; } = true;
 

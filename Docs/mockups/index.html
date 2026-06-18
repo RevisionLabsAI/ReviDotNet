@@ -28,7 +28,30 @@
 
   /* Variation gallery */
   .gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; margin-bottom: 44px; }
-  @media (max-width: 760px) { .gallery { grid-template-columns: 1fr; } }
+  .gallery.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 760px) { .gallery, .gallery.cols-3 { grid-template-columns: 1fr; } }
+  /* compact preview for the cleaner-Grouped cards */
+  .cv { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+  .cv-act { display: flex; align-items: center; gap: 6px; font-size: .58rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-2); }
+  .cv-act .d { width: 7px; height: 7px; border-radius: 50%; background: var(--success); flex: 0 0 auto; }
+  .cv-step { height: 10px; border-radius: 5px; background: var(--bg-soft); }
+  .cv-cubes { display: flex; gap: 3px; margin-top: 2px; }
+  .cv-cube { width: 13px; height: 13px; border-radius: 3px; flex: 0 0 auto; }
+  .cv-cube.dn { background: color-mix(in srgb, var(--success) 50%, #000); }
+  .cv-cube.rn { background: color-mix(in srgb, var(--info) 34%, #0b0e15); }
+  .cv-cube.fl { background: color-mix(in srgb, var(--error) 54%, #000); }
+  .cv-cube.qd { background: transparent; border: 1.5px dashed var(--border-2); }
+  .cv-cube.dr { background: var(--hover); border: 1px solid var(--border-2); }
+  .cv--minimal .cv-step { background: none; border-radius: 0; height: 14px; border-bottom: 1px solid var(--border); }
+  .cv--soft .cv-step { background: var(--surface); border-radius: 8px; box-shadow: var(--shadow-1); height: 13px; }
+  .cv--soft .cv-cube { border-radius: 5px; }
+  .cv--mono .cv-act { font-family: var(--font-mono); }
+  .cv--mono .cv-cube { width: 11px; height: 11px; border-radius: 2px; }
+  .cv--paper .cv-step { background: none; border-radius: 0; height: 14px; border-bottom: 1px solid var(--border); }
+  .cv--slate .cv-step { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; height: 13px; }
+  .cv--paper .cv-cube.dn, .cv--slate .cv-cube.dn { background: rgba(var(--success-rgb), .25); }
+  .cv--paper .cv-cube.rn, .cv--slate .cv-cube.rn { background: rgba(var(--info-rgb), .25); }
+  .cv--paper .cv-cube.fl, .cv--slate .cv-cube.fl { background: rgba(var(--error-rgb), .25); }
   .gcard {
     display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border);
     border-radius: var(--r-lg); overflow: hidden; box-shadow: var(--shadow-1); color: inherit;
@@ -110,6 +133,32 @@
   .legrow { display: flex; align-items: center; gap: 9px; padding: 4px 0; font-size: .84rem; }
   .legrow .sw { width: 11px; height: 11px; border-radius: 3px; flex: 0 0 auto; }
   .legrow .mono { color: var(--text-3); margin-left: auto; font-size: .72rem; }
+
+  /* Featured (evolved model) */
+  .feature { position: relative; display: grid; grid-template-columns: 320px 1fr; background: var(--surface); border: 1px solid rgba(var(--primary-rgb), .45); border-radius: var(--r-lg); overflow: hidden; box-shadow: var(--shadow-2); margin-bottom: 42px; color: inherit; transition: border-color .15s ease, box-shadow .15s ease; }
+  .feature:hover { text-decoration: none; box-shadow: var(--shadow-3); border-color: var(--primary); }
+  @media (max-width: 760px) { .feature { grid-template-columns: 1fr; } }
+  .feature .fprev { background: var(--bg-soft); border-right: 1px solid var(--border); padding: 18px; display: flex; flex-direction: column; gap: 11px; justify-content: center; }
+  @media (max-width: 760px) { .feature .fprev { border-right: none; border-bottom: 1px solid var(--border); } }
+  .feature .fbody { padding: 20px 22px; }
+  .ribbon { display: inline-flex; align-items: center; gap: 6px; font-size: .63rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #fff; background: linear-gradient(135deg, var(--primary), var(--tertiary)); padding: 4px 10px; border-radius: var(--r-pill); }
+  .feature .ftitle { font-size: 1.3rem; font-weight: 800; letter-spacing: -.02em; margin: 11px 0 8px; display: flex; align-items: center; gap: 10px; }
+  .feature .ftitle .go { color: var(--text-3); width: 20px; height: 20px; transition: transform .15s ease, color .15s ease; }
+  .feature:hover .ftitle .go { color: var(--primary); transform: translateX(3px); }
+  .feature .fdesc { font-size: .9rem; color: var(--text-2); line-height: 1.6; margin: 0 0 14px; }
+  .feature .fpts { display: flex; flex-direction: column; gap: 7px; }
+  .feature .fpt { display: flex; gap: 9px; align-items: flex-start; font-size: .85rem; }
+  .feature .fpt .dt { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); margin-top: 7px; flex: 0 0 auto; }
+  .fstep { background: var(--surface); border: 1px solid var(--border); border-radius: 9px; box-shadow: inset 3px 0 0 var(--info), var(--shadow-1); padding: 9px 11px; font-size: .64rem; color: var(--text-2); }
+  .fstep.sub { box-shadow: inset 3px 0 0 var(--ev-sub), var(--shadow-1); }
+  .fstep .fh { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
+  .fstep .fno { font-family: var(--font-mono); font-weight: 700; color: var(--info); font-size: .6rem; }
+  .fstep.sub .fno { color: var(--ev-sub); }
+  .fcubes { display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; }
+  .fcube { aspect-ratio: 1; border-radius: 2.5px; background: var(--success); }
+  .fcube.r { background: var(--info); } .fcube.f { background: var(--error); }
+  .fcube.q { background: transparent; border: 1px dashed var(--border-2); }
+  .fcube.sel { outline: 1.5px solid var(--primary); outline-offset: 1.5px; }
 </style>
 </head>
 <body>
@@ -151,9 +200,121 @@
     <p>All four use the same live trace: the <b class="mono">research / web-report</b> agent (model <b class="mono">gemini-2-5-flash</b>) summarizing &amp; fact-checking three articles. It has scraped two pages (one <b style="color:var(--error)">403 → retried</b>), extracted 4 claims, and is now <b style="color:var(--info)">mid-run</b> inside a <b class="mono">fact-checker</b> sub-agent — so you can see done, failed, running, and queued states side by side.</p>
   </div>
 
+  <!-- Featured: evolved model -->
+  <a class="feature" href="05-grouped.html">
+    <div class="fprev">
+      <div class="fstep">
+        <div class="fh"><span class="fno">STEP 2</span> gather · 50 web-scrape</div>
+        <div class="fcubes">
+          <i class="fcube"></i><i class="fcube"></i><i class="fcube"></i><i class="fcube"></i><i class="fcube"></i><i class="fcube"></i><i class="fcube f"></i><i class="fcube"></i><i class="fcube"></i><i class="fcube"></i>
+          <i class="fcube"></i><i class="fcube"></i><i class="fcube"></i><i class="fcube"></i><i class="fcube"></i><i class="fcube"></i><i class="fcube"></i><i class="fcube"></i><i class="fcube"></i><i class="fcube"></i>
+          <i class="fcube"></i><i class="fcube"></i><i class="fcube f sel"></i><i class="fcube"></i><i class="fcube"></i><i class="fcube r"></i><i class="fcube"></i><i class="fcube r"></i><i class="fcube r"></i><i class="fcube q"></i>
+        </div>
+      </div>
+      <div class="fstep sub">
+        <div class="fh"><span class="fno">STEP 3</span> verify · 10 fact-checkers</div>
+        <div class="fcubes">
+          <i class="fcube"></i><i class="fcube"></i><i class="fcube"></i><i class="fcube"></i><i class="fcube"></i><i class="fcube"></i><i class="fcube f"></i><i class="fcube r"></i><i class="fcube r"></i><i class="fcube q"></i>
+        </div>
+      </div>
+    </div>
+    <div class="fbody">
+      <span class="ribbon">★ The model you asked for</span>
+      <div class="ftitle">05 · Grouped — steps &amp; cubes <svg class="ic go"><use href="#i-arrow"/></svg></div>
+      <p class="fdesc">Same-step tools, messages &amp; sub-agents are grouped and collapsed under their step, nested beneath the caller. Built for fan-out: when a group exceeds <b>5 calls</b> it becomes a grid of status cubes — <b style="color:var(--success)">green done</b>, <b style="color:var(--info)">blue running</b>, <b style="color:var(--error)">red failed</b>, dashed queued.</p>
+      <div class="fpts">
+        <div class="fpt"><span class="dt"></span><span><b>Scales to 50+</b> — 50 web-scrapes and 10 sub-agents in one run, no endless scroll.</span></div>
+        <div class="fpt"><span class="dt"></span><span><b>Radio-select</b> — one cube expands at a time; hover any cube for a status tooltip.</span></div>
+        <div class="fpt"><span class="dt"></span><span><b>Recursive</b> — a sub-agent cube expands into its own stepped trace, with its own cubes.</span></div>
+      </div>
+    </div>
+  </a>
+
+  <!-- Cleaner takes on the Grouped model -->
+  <h2 class="sec">Grouped — other looks</h2>
+  <p class="sec-sub">Same engine and every feature as the Grouped view above — five visual treatments, from calm &amp; editorial to dense &amp; technical. They all share <span class="mono">grouped-core.js</span>, so behaviour is identical; only the styling changes.</p>
+  <div class="gallery cols-3">
+
+    <a class="gcard" href="10-grouped-paper.html">
+      <div class="gprev"><div class="cv cv--paper">
+        <div class="cv-act"><span class="d"></span>gather · cycle 2</div>
+        <div class="cv-step" style="width:86%"></div>
+        <div class="cv-step" style="width:64%"></div>
+        <div class="cv-cubes"><i class="cv-cube dn"></i><i class="cv-cube dn"></i><i class="cv-cube fl"></i><i class="cv-cube dn"></i><i class="cv-cube rn"></i><i class="cv-cube qd"></i><i class="cv-cube dr"></i></div>
+      </div></div>
+      <div class="gbody">
+        <div class="gnum">10</div>
+        <div class="gtitle">Paper <svg class="ic go"><use href="#i-arrow"/></svg></div>
+        <p class="gdesc">Calm &amp; editorial — no gradients or glow, a muted palette, and typographic steps. Status reads as quiet coloured text. The least "dashboard".</p>
+        <div class="gtags"><span class="gtag best">Calmest</span><span class="gtag">Editorial</span><span class="gtag">Muted</span></div>
+      </div>
+    </a>
+
+    <a class="gcard" href="11-grouped-slate.html">
+      <div class="gprev"><div class="cv cv--slate">
+        <div class="cv-act"><span class="d"></span>gather · cycle 2</div>
+        <div class="cv-step" style="width:84%"></div>
+        <div class="cv-step" style="width:62%"></div>
+        <div class="cv-cubes"><i class="cv-cube dn"></i><i class="cv-cube dn"></i><i class="cv-cube fl"></i><i class="cv-cube dn"></i><i class="cv-cube rn"></i><i class="cv-cube qd"></i><i class="cv-cube dr"></i></div>
+      </div></div>
+      <div class="gbody">
+        <div class="gnum">11</div>
+        <div class="gtitle">Slate <svg class="ic go"><use href="#i-arrow"/></svg></div>
+        <p class="gdesc">Quiet &amp; neutral — subtle hairline cards, desaturated accents, a flat avatar, and light status chips. Calm but still structured.</p>
+        <div class="gtags"><span class="gtag best">Quiet</span><span class="gtag">Neutral</span><span class="gtag">Cards</span></div>
+      </div>
+    </a>
+
+    <a class="gcard" href="06-grouped-minimal.html">
+      <div class="gprev"><div class="cv cv--minimal">
+        <div class="cv-act"><span class="d"></span>gather · cycle 2</div>
+        <div class="cv-step" style="width:82%"></div>
+        <div class="cv-step" style="width:60%"></div>
+        <div class="cv-cubes"><i class="cv-cube dn"></i><i class="cv-cube dn"></i><i class="cv-cube fl"></i><i class="cv-cube dn"></i><i class="cv-cube rn"></i><i class="cv-cube qd"></i><i class="cv-cube dr"></i></div>
+      </div></div>
+      <div class="gbody">
+        <div class="gnum">06</div>
+        <div class="gtitle">Minimal <svg class="ic go"><use href="#i-arrow"/></svg></div>
+        <p class="gdesc">Flat and hairline-based — no cards or accent stripes, just whitespace and a slim status tick per step. The least chrome.</p>
+        <div class="gtags"><span class="gtag best">Calmest</span><span class="gtag">Flat</span><span class="gtag">Airy</span></div>
+      </div>
+    </a>
+
+    <a class="gcard" href="07-grouped-soft.html">
+      <div class="gprev"><div class="cv cv--soft">
+        <div class="cv-act"><span class="d"></span>gather · cycle 2</div>
+        <div class="cv-step" style="width:84%"></div>
+        <div class="cv-step" style="width:64%"></div>
+        <div class="cv-cubes"><i class="cv-cube dn"></i><i class="cv-cube dn"></i><i class="cv-cube fl"></i><i class="cv-cube dn"></i><i class="cv-cube rn"></i><i class="cv-cube qd"></i><i class="cv-cube dr"></i></div>
+      </div></div>
+      <div class="gbody">
+        <div class="gnum">07</div>
+        <div class="gtitle">Soft <svg class="ic go"><use href="#i-arrow"/></svg></div>
+        <p class="gdesc">Rounded, borderless cards on gently tinted activation bands; status shown as a quiet left dot. Warm and friendly.</p>
+        <div class="gtags"><span class="gtag best">Friendliest</span><span class="gtag">Rounded</span><span class="gtag">Tinted</span></div>
+      </div>
+    </a>
+
+    <a class="gcard" href="08-grouped-mono.html">
+      <div class="gprev"><div class="cv cv--mono">
+        <div class="cv-act"><span class="d"></span>GATHER · CYCLE 2</div>
+        <div class="cv-step" style="width:80%"></div>
+        <div class="cv-step" style="width:58%"></div>
+        <div class="cv-cubes"><i class="cv-cube dn"></i><i class="cv-cube dn"></i><i class="cv-cube dn"></i><i class="cv-cube fl"></i><i class="cv-cube dn"></i><i class="cv-cube rn"></i><i class="cv-cube dn"></i><i class="cv-cube qd"></i><i class="cv-cube dr"></i></div>
+      </div></div>
+      <div class="gbody">
+        <div class="gnum">08</div>
+        <div class="gtitle">Mono <svg class="ic go"><use href="#i-arrow"/></svg></div>
+        <p class="gdesc">Engineered / console feel — monospace labels, thin rules, a single indigo accent, and a denser cube grid.</p>
+        <div class="gtags"><span class="gtag best">Most technical</span><span class="gtag">Monospace</span><span class="gtag">Dense</span></div>
+      </div>
+    </a>
+
+  </div>
+
   <!-- Variations -->
-  <h2 class="sec">The four variations</h2>
-  <p class="sec-sub">Same data, same interactions — different layout, density, and nesting model.</p>
+  <h2 class="sec">Four style explorations</h2>
+  <p class="sec-sub">The same idea in different visual languages — pick the look, then layer on the grouping &amp; cube model above. Each uses one shared live trace.</p>
   <div class="gallery">
 
     <a class="gcard" href="01-conversational.html">

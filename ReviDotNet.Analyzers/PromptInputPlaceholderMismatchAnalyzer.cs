@@ -81,13 +81,11 @@ namespace ReviDotNet.Analyzers
             if (resolved is not IMethodSymbol methodSymbol)
                 return;
 
-            if (methodSymbol.ContainingType.Name != "Infer")
-                return;
-            string? nsName = methodSymbol.ContainingType.ContainingNamespace?.Name;
-            if (nsName != "Revi" && nsName != "ReviDotNet")
+            // Match the static Infer class AND the injected IInferService/InferService surface.
+            if (!ReviApiRecognizer.IsInferSurface(methodSymbol))
                 return;
 
-            string[] targetMethods = { "ToObject", "ToEnum", "ToString", "ToStringList", "ToStringListLimited", "ToBool", "ToJObject", "Completion" };
+            string[] targetMethods = { "ToObject", "ToEnum", "ToString", "ToStringList", "ToStringListClean", "ToStringListLimited", "ToBool", "ToJObject", "Completion" };
             if (!targetMethods.Contains(methodSymbol.Name))
                 return;
 
@@ -261,27 +259,52 @@ namespace ReviDotNet.Analyzers
         }
 
         /// <summary>
-        /// Parse all ${name} placeholders from a .pmt file content.
-        /// Returns a case-insensitive set of identifierized names.
+        /// Parse <c>{name}</c> placeholders from a .pmt file's <c>[[_system]]</c> and <c>[[_instruction]]</c>
+        /// sections — the only places the runtime substitutes inputs (via Util.Identifierize on each Input label).
+        /// Matches the runtime's single-brace <c>{Identifier}</c> syntax (NOT <c>${name}</c>) and returns a
+        /// case-insensitive set of identifierized names. Scanning is limited to the fillable sections and to
+        /// identifier-like content so JSON object braces in example bodies are not mistaken for placeholders.
         /// </summary>
         private static HashSet<string> ParsePlaceholders(string content)
         {
             HashSet<string> result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            Regex rx = new Regex(@"\$\{\s*([a-zA-Z0-9 _\-\.]+?)\s*\}", RegexOptions.Multiline);
-            foreach (Match m in rx.Matches(content))
+            Regex rx = new Regex(@"\{\s*([A-Za-z0-9 _\-]+?)\s*\}", RegexOptions.Multiline);
+
+            foreach (string section in ExtractFillableSections(content))
             {
-                if (!m.Success)
-                    continue;
-                string name = m.Groups[1].Value;
-                string lowered = name.Trim().ToLowerInvariant();
-                string id = Regex.Replace(lowered, "[^a-z0-9]+", "-").Trim('-');
-                if (!string.IsNullOrEmpty(id))
+                foreach (Match m in rx.Matches(section))
                 {
-                    result.Add(id);
-                    result.Add(lowered);
+                    if (!m.Success)
+                        continue;
+                    string name = m.Groups[1].Value;
+                    string lowered = name.Trim().ToLowerInvariant();
+                    string id = Regex.Replace(lowered, "[^a-z0-9]+", "-").Trim('-');
+                    if (!string.IsNullOrEmpty(id))
+                    {
+                        result.Add(id);
+                        result.Add(lowered);
+                    }
                 }
             }
+
             return result;
+        }
+
+        /// <summary>
+        /// Returns the bodies of the <c>[[_system]]</c> and <c>[[_instruction]]</c> raw sections of a .pmt file,
+        /// which are the sections in which the runtime performs <c>{placeholder}</c> substitution.
+        /// </summary>
+        private static IEnumerable<string> ExtractFillableSections(string content)
+        {
+            foreach (string sectionName in new[] { "_system", "_instruction" })
+            {
+                Regex rx = new Regex(
+                    @"\[\[\s*" + sectionName + @"\s*\]\](?<body>.*?)(?:\n\s*\[\[|\z)",
+                    RegexOptions.Singleline | RegexOptions.IgnoreCase);
+                Match m = rx.Match(content);
+                if (m.Success)
+                    yield return m.Groups["body"].Value;
+            }
         }
 
         /// <summary>
@@ -313,35 +336,20 @@ namespace ReviDotNet.Analyzers
         /// </summary>
         private static string? TryParseInformationName(string content)
         {
-            Regex rx = new Regex(@"^\s*information_name\s*[:=]\s*(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+            // Mirror the runtime RConfigParser exactly: split on '=' only (not ':'), and do not strip quotes.
+            Regex rx = new Regex(@"^\s*information_name\s*=\s*(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
             Match m = rx.Match(content);
-            string? value;
             if (m.Success)
-            {
-                value = m.Groups[1].Value.Trim();
-            }
-            else
-            {
-                Regex sectionRx = new Regex(@"\[\[\s*information\s*\]\](?<body>.*?)(?:\n\s*\[\[|\z)", RegexOptions.Singleline | RegexOptions.IgnoreCase);
-                Match s = sectionRx.Match(content);
-                if (!s.Success)
-                    return null;
+                return m.Groups[1].Value.Trim();
 
-                string body = s.Groups["body"].Value;
-                Regex nameRx = new Regex(@"^\s*name\s*[:=]\s*(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
-                Match nm = nameRx.Match(body);
-                if (!nm.Success)
-                    return null;
-                value = nm.Groups[1].Value.Trim();
-            }
+            Regex sectionRx = new Regex(@"\[\[\s*information\s*\]\](?<body>.*?)(?:\n\s*\[\[|\z)", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            Match s = sectionRx.Match(content);
+            if (!s.Success)
+                return null;
 
-            if ((value.StartsWith("\"", StringComparison.Ordinal) && value.EndsWith("\"", StringComparison.Ordinal)) ||
-                (value.StartsWith("'", StringComparison.Ordinal) && value.EndsWith("'", StringComparison.Ordinal)))
-            {
-                value = value.Substring(1, value.Length - 2);
-            }
-
-            return value;
+            Regex nameRx = new Regex(@"^\s*name\s*=\s*(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+            Match nm = nameRx.Match(s.Groups["body"].Value);
+            return nm.Success ? nm.Groups[1].Value.Trim() : null;
         }
     }
 }

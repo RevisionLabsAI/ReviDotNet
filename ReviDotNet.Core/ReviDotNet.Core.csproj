@@ -19,6 +19,12 @@
         <None Include="../README.md" Pack="true" PackagePath="" />
     </ItemGroup>
 
+    <!-- Built-in default prompts (json-fixer, enum-fixer) shipped as embedded resources so remediation
+         works out of the box. PromptManagerService overlays these as a baseline; app prompts override by name. -->
+    <ItemGroup>
+        <EmbeddedResource Include="RConfigs/Prompts/**/*.pmt" />
+    </ItemGroup>
+
     <ItemGroup>
         <PackageReference Include="AngleSharp" Version="1.4.0" />
         <PackageReference Include="Ben.Demystifier" Version="0.4.1" />

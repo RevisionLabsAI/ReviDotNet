@@ -33,6 +33,13 @@ public class AgentGuardrails
     [RConfigProperty("tool-call-limit")]
     public int? ToolCallLimit { get; set; }
 
+    /// <summary>
+    /// Maximum number of tool calls from a single step that may execute concurrently.
+    /// Excess calls queue and start as slots free. Null means no cap (all run at once).
+    /// </summary>
+    [RConfigProperty("max-parallel-tools")]
+    public int? MaxParallelTools { get; set; }
+
     /// <summary>Maximum number of retries on a failed LLM call before giving up.</summary>
     [RConfigProperty("retry-limit")]
     public int? RetryLimit { get; set; }

@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Forge · Agent Instance — Grouped / Mono</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="grouped.css?v=2" />
+<style>
+  /* ── Mono: engineered/console — monospace accents, thin rules, single indigo accent, denser ── */
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 24px 22px 110px; }
+
+  /* Header — compact, thin top accent */
+  .inst { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); padding: 18px 20px 16px; margin-bottom: 20px; overflow: hidden; }
+  .inst::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 2px; background: var(--primary); }
+  .inst-top { display: flex; align-items: center; gap: 13px; }
+  .inst-ava { width: 40px; height: 40px; border-radius: 10px; flex: 0 0 auto; color: #fff; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--primary), var(--tertiary)); }
+  .inst-ava svg { width: 22px; height: 22px; }
+  .inst-name { font-size: 1.08rem; font-weight: 700; letter-spacing: -.01em; }
+  .inst-sub { font-size: .76rem; color: var(--text-2); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 3px; }
+  .inst-status { margin-left: auto; }
+  .inst-task { margin-top: 13px; font-size: .86rem; line-height: 1.55; color: var(--text-2); padding-top: 12px; border-top: 1px solid var(--border); }
+  .inst-task .lbl { font-size: .62rem; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--text-3); margin-right: 8px; }
+  /* thin mono stat strip */
+  .tiles { display: flex; gap: 0; flex-wrap: wrap; margin-top: 14px; border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+  .tile-stat { flex: 1 1 0; min-width: 120px; display: flex; align-items: center; gap: 10px; padding: 11px 14px; border: none; border-left: 1px solid var(--border); background: none; }
+  .tile-stat:first-child { border-left: none; }
+  .tile-stat .ti { width: 30px; height: 30px; border-radius: 8px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; color: var(--accent, var(--primary)); background: rgba(var(--accent-rgb, var(--primary-rgb)), .13); }
+  .tile-stat .ti svg { width: 16px; height: 16px; }
+  .tile-body { display: flex; flex-direction: column; line-height: 1.1; }
+  .tile-stat .v { font-family: var(--font-mono); font-weight: 700; font-size: 1.05rem; letter-spacing: -.02em; }
+  .tile-stat .l { font-size: .64rem; color: var(--text-2); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+  .meters { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 14px; }
+  .meter-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
+  .meter-l { font-size: .64rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-2); }
+  .meter-v { font-family: var(--font-mono); font-size: .74rem; font-weight: 600; }
+  .meter-bar { height: 5px; border-radius: 999px; background: var(--bg-soft); overflow: hidden; border: 1px solid var(--border); }
+  .meter-bar > span { display: block; height: 100%; background: var(--success); }
+  .meter-bar.warn > span { background: var(--warning); }
+  .meter-bar.over > span { background: var(--error); }
+  @media (max-width: 640px) { .meters { grid-template-columns: 1fr; } .tiles { flex-direction: column; } .tile-stat { border-left: none; border-top: 1px solid var(--border); } .tile-stat:first-child { border-top: none; } }
+
+  /* Stream */
+  .stream { display: flex; flex-direction: column; gap: 18px; }
+
+  /* Activation — thin frame with an indigo left rail */
+  .activation { border: 1px solid var(--border); border-left: 2px solid var(--primary); border-radius: 0 var(--r) var(--r) 0; overflow: hidden; background: var(--surface); }
+  .activation > summary { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+  .activation:not([open]) > summary { border-bottom: none; }
+  .activation > summary:hover { background: var(--hover); }
+  .act-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: var(--text-3); }
+  .act--done .act-dot { background: var(--success); }
+  .act--running .act-dot { background: var(--info); box-shadow: 0 0 0 3px rgba(var(--info-rgb), .18); }
+  .act--queued .act-dot { background: var(--text-3); }
+  .act-state { font-family: var(--font-mono); font-weight: 700; font-size: .82rem; letter-spacing: .02em; text-transform: uppercase; }
+  .act-cycle { font-family: var(--font-mono); font-size: .7rem; color: var(--text-3); }
+  .act-sp { flex: 1 1 auto; }
+  .act-r { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+  .act-steps { font-family: var(--font-mono); font-size: .7rem; color: var(--text-2); }
+  .act-body { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+
+  /* Steps — thin rows, mono number with a status square */
+  .step { border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; background: var(--surface); --accent: var(--text-3); }
+  .step--done { --accent: var(--success); } .step--running { --accent: var(--info); }
+  .step--failed { --accent: var(--error); } .step--queued { --accent: var(--text-3); }
+  .step > summary { display: flex; align-items: center; gap: 11px; padding: 9px 12px; }
+  .step > summary:hover { background: var(--hover); }
+  .stepno { font-family: var(--font-mono); font-weight: 700; font-size: .74rem; color: var(--text); flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; }
+  .stepno::before { content: ""; width: 7px; height: 7px; border-radius: 2px; background: var(--accent); flex: 0 0 auto; }
+  .step-h { flex: 1 1 auto; min-width: 0; }
+  .step-t { font-weight: 600; font-size: .88rem; }
+  .step-r { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+  .step .body { padding: 2px 12px 13px; }
+  .thinking { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; color: var(--text-2); font-size: .83rem; font-style: italic; }
+  .thinking .ic { width: 14px; height: 14px; color: var(--ev-think); flex: 0 0 auto; margin-top: 2px; }
+  .stepmsg { margin-top: 11px; font-size: .9rem; line-height: 1.58; }
+
+  /* Call list (≤5) */
+  .calllist { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
+  .call { border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; background: var(--surface); --accent: var(--ev-tool); --accent-rgb: var(--ev-tool-rgb); }
+  .call--subagent { --accent: var(--ev-sub); --accent-rgb: var(--ev-sub-rgb); }
+  .call > summary { display: flex; align-items: center; gap: 10px; padding: 8px 11px; }
+  .call > summary:hover { background: var(--hover); }
+  .call .tile { width: 26px; height: 26px; border-radius: 7px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; color: var(--accent); background: rgba(var(--accent-rgb), .13); }
+  .call .tile svg { width: 14px; height: 14px; }
+  .call-h { flex: 1 1 auto; min-width: 0; }
+  .call-t { font-weight: 600; font-size: .85rem; display: flex; gap: 8px; align-items: center; }
+  .call .kind { font-family: var(--font-mono); font-size: .75rem; color: var(--accent); }
+  .call-s { font-size: .79rem; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .call-r { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; }
+  .call-b { padding: 2px 11px 11px 35px; }
+
+  /* Transition — mono inline */
+  .tmark { display: flex; align-items: center; gap: 10px; }
+  .tmark .tline { flex: 1 1 auto; height: 1px; background: var(--border); }
+  .tmark .sig { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: .7rem; font-weight: 700; color: var(--secondary); }
+  .tmark .sig svg { width: 12px; height: 12px; }
+
+  /* Sub-agent mini */
+  .mini { border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-2); padding: 11px; }
+  .mini-h { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px dashed var(--border-2); }
+  .mini-h .ava { width: 28px; height: 28px; border-radius: 8px; flex: 0 0 auto; color: #fff; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--ev-sub), color-mix(in srgb, var(--ev-sub) 55%, #000)); }
+  .mini-h .ava svg { width: 15px; height: 15px; }
+  .mini-h .n { font-weight: 700; font-size: .86rem; }
+  .mini-h .s { font-size: .76rem; color: var(--text-2); }
+  .mini-stream { display: flex; flex-direction: column; gap: 7px; }
+
+  /* Cubes — denser console grid */
+  .cubes { grid-template-columns: repeat(auto-fill, 20px); gap: 6px; }
+  .cube { width: 20px; height: 20px; border-radius: 5px; }
+  .cm-check { width: 13px; height: 13px; }
+  .cm-watch, .cm-drop { width: 11px; height: 11px; }
+  .cmark.cx::before, .cmark.cx::after { width: 10px; margin: -1px 0 0 -5px; }
+  .cm-bars i { height: 11px; width: 2px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a class="brand" href="index.html" title="Back to gallery">
+    <span class="mark"><svg class="ic"><use href="#i-agent"/></svg></span>
+    <span style="display:flex;flex-direction:column;line-height:1.1">
+      <span class="eyebrow">Forge mockup · Grouped</span><span class="name">Mono</span>
+    </span>
+  </a>
+  <span class="spacer"></span>
+  <button class="btn btn-ghost" onclick="setAllOpen(true)"><svg class="ic"><use href="#i-expand"/></svg>Expand all</button>
+  <button class="btn btn-ghost" onclick="setAllOpen(false)">Collapse all</button>
+  <button class="btn" onclick="toggleTheme()"><svg class="ic"><use href="#i-theme"/></svg><span data-theme-label>Dark</span></button>
+  <a class="btn" href="index.html"><svg class="ic"><use href="#i-arrow"/></svg>Gallery</a>
+</div>
+
+<div class="wrap"><div id="app"></div></div>
+
+<script src="mockup.js?v=2"></script>
+<script src="grouped-core.js?v=3"></script>
+</body>
+</html>

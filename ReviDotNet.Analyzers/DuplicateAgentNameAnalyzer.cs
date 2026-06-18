@@ -91,37 +91,20 @@ namespace ReviDotNet.Analyzers
 
         private static string? TryParseInformationName(string content)
         {
-            System.Text.RegularExpressions.Regex rx = new System.Text.RegularExpressions.Regex(@"^\s*information_name\s*[:=]\s*(.+)$", System.Text.RegularExpressions.RegexOptions.Multiline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            // Mirror the runtime RConfigParser exactly: split on '=' only (not ':'), and do not strip quotes.
+            System.Text.RegularExpressions.Regex rx = new System.Text.RegularExpressions.Regex(@"^\s*information_name\s*=\s*(.+)$", System.Text.RegularExpressions.RegexOptions.Multiline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
             System.Text.RegularExpressions.Match m = rx.Match(content);
-            string? value;
-
             if (m.Success)
-            {
-                value = m.Groups[1].Value.Trim();
-            }
-            else
-            {
-                System.Text.RegularExpressions.Regex sectionRx = new System.Text.RegularExpressions.Regex(@"\[\[\s*information\s*\]\](?<body>.*?)(?:\n\s*\[\[|\z)", System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                System.Text.RegularExpressions.Match s = sectionRx.Match(content);
-                if (!s.Success)
-                    return null;
+                return m.Groups[1].Value.Trim();
 
-                string body = s.Groups["body"].Value;
-                System.Text.RegularExpressions.Regex nameRx = new System.Text.RegularExpressions.Regex(@"^\s*name\s*[:=]\s*(.+)$", System.Text.RegularExpressions.RegexOptions.Multiline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                System.Text.RegularExpressions.Match nm = nameRx.Match(body);
-                if (!nm.Success)
-                    return null;
+            System.Text.RegularExpressions.Regex sectionRx = new System.Text.RegularExpressions.Regex(@"\[\[\s*information\s*\]\](?<body>.*?)(?:\n\s*\[\[|\z)", System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            System.Text.RegularExpressions.Match s = sectionRx.Match(content);
+            if (!s.Success)
+                return null;
 
-                value = nm.Groups[1].Value.Trim();
-            }
-
-            if ((value.StartsWith("\"", StringComparison.Ordinal) && value.EndsWith("\"", StringComparison.Ordinal)) ||
-                (value.StartsWith("'", StringComparison.Ordinal) && value.EndsWith("'", StringComparison.Ordinal)))
-            {
-                value = value.Substring(1, value.Length - 2);
-            }
-
-            return value;
+            System.Text.RegularExpressions.Regex nameRx = new System.Text.RegularExpressions.Regex(@"^\s*name\s*=\s*(.+)$", System.Text.RegularExpressions.RegexOptions.Multiline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            System.Text.RegularExpressions.Match nm = nameRx.Match(s.Groups["body"].Value);
+            return nm.Success ? nm.Groups[1].Value.Trim() : null;
         }
 
         private static string ExtractAgentFolderPrefix(string fullPath)

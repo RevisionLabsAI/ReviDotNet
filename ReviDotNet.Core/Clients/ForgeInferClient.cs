@@ -128,7 +128,7 @@ public class ForgeInferClient : IDisposable
             ClientId = _config.ClientId,
             PromptName = prompt.Name,
             Inputs = inputs?.Select(i => new ForgeInput(i.Label, i.Text)).ToList(),
-            MinTier = Enum.TryParse<ModelTier>(prompt.MinTier, out var tier) ? tier : null,
+            MinTier = Enum.TryParse<ModelTier>(prompt.MinTier, ignoreCase: true, out var tier) ? tier : null,
             PreferredModels = prompt.PreferredModels,
             BlockedModels = prompt.BlockedModels,
             CompletionType = Enum.TryParse<CompletionType>(prompt.CompletionType, out var ct) ? ct : null,

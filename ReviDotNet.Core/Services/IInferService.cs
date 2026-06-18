@@ -153,6 +153,27 @@ public interface IInferService
         CancellationToken token = default);
 
     /// <summary>
+    /// Like <see cref="ToStringList(string,List{Input}?,ModelProfile?,string?,int,int?,CancellationToken)"/>
+    /// but additionally strips a leading list marker from each item — a bullet (<c>-</c>, <c>*</c>, <c>+</c>)
+    /// or an ordinal (<c>1.</c>, <c>2)</c>). Use this when the model returns a markdown/numbered list and you
+    /// want clean values; use <c>ToStringList</c> when you want the lines verbatim (after trimming).
+    /// </summary>
+    Task<List<string>> ToStringListClean(
+        string promptName,
+        List<Input>? inputs = null,
+        ModelProfile? modelProfile = null,
+        string? modelName = null,
+        CancellationToken token = default);
+
+    /// <summary>Single-input convenience overload for <see cref="ToStringListClean(string,List{Input}?,ModelProfile?,string?,CancellationToken)"/>.</summary>
+    Task<List<string>> ToStringListClean(
+        string promptName,
+        Input? input,
+        ModelProfile? modelProfile = null,
+        string? modelName = null,
+        CancellationToken token = default);
+
+    /// <summary>
     /// Streams a completion and returns lines; optionally stops early when
     /// <paramref name="maxLines"/> is reached or <paramref name="evaluator"/> returns true.
     /// </summary>

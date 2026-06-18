@@ -1,0 +1,23 @@
+@* A single collapsible call row, used when a step dispatched 5 or fewer calls. *@
+<details class="ev call call--@GroupedFormat.KindKey(Call.Kind)">
+    <summary>
+        <span class="tile"><Ic Id="@Call.Icon" /></span>
+        <span class="call-h">
+            <span class="call-t">
+                <span class="kind">@Call.Name</span>
+                @if (!string.IsNullOrEmpty(Call.Version))
+                {
+                    <span class="pill pill-soft pill-mono">@Call.Version</span>
+                }
+            </span>
+            <span class="call-s">@Call.Summary</span>
+        </span>
+        <span class="call-r"><StPill Status="Call.Status" Ms="Call.DurationMs" /> <Ic Class="ic chev" Id="i-chevron-r" /></span>
+    </summary>
+    <div class="call-b"><GroupedCallDetail Call="Call" OwnerDisplay="@OwnerDisplay" /></div>
+</details>
+
+@code {
+    [Parameter, EditorRequired] public CallView Call { get; set; } = default!;
+    [Parameter] public string OwnerDisplay { get; set; } = "";
+}

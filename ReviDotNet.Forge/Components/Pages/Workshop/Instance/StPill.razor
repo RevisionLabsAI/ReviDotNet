@@ -1,0 +1,7 @@
+@* Status pill: coloured dot + label. A done call passes its duration so the pill reads "1.5s". *@
+<span class="st @GroupedFormat.StatusClass(Status)"><span class="dot"></span>@GroupedFormat.StatusLabel(Status, Ms)</span>
+
+@code {
+    [Parameter, EditorRequired] public CallStatus Status { get; set; }
+    [Parameter] public long? Ms { get; set; }
+}

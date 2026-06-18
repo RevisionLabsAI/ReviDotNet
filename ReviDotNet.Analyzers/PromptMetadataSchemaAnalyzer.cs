@@ -186,7 +186,9 @@ namespace ReviDotNet.Analyzers
             // Enums in settings
             if (settings.TryGetValue("guidance-schema-type", out PmtValue gst))
             {
-                string[] allowed = { "disabled", "default", "regex-manual", "regex-auto", "json-manual", "json-auto", "gnbf-manual", "gnbf-auto" };
+                // Match the runtime vocabulary: include `defer` and the bare `json`/`regex`/`gbnf`
+                // aliases (which map to the *Manual variants) that RConfigParser accepts and Forge emits.
+                string[] allowed = { "disabled", "default", "defer", "regex-manual", "regex-auto", "regex", "json-manual", "json-auto", "json", "gnbf-manual", "gnbf-auto", "gbnf" };
                 string norm(string s) => s.Replace("-", string.Empty).ToLowerInvariant();
                 HashSet<string> allowedNorm = new HashSet<string>(allowed.Select(norm));
                 string rawNorm = norm(gst.Raw);

@@ -1,0 +1,117 @@
+@* The "Grouped" agent-instance watching view (ported from the 05-grouped mockup): a run header
+   (identity, task, stat tiles, budget meters) above a stream of state-activation cards. Each
+   activation groups its steps; steps group their tool calls / sub-agents, fanning out to a
+   status-cube grid past 5 calls. Follows Forge's light/dark via the cascaded ForgeDarkMode flag. *@
+<div class="gi-root" data-gi-theme="@(IsDarkMode ? "dark" : "light")">
+    <GroupedIcons />
+    <div class="gi-wrap">
+
+        @* ---- header (suppressed when embedded as a per-run / per-turn trace) ---- *@
+        @if (ShowHeader)
+        {
+        <div class="inst">
+            <div class="inst-top">
+                <span class="inst-ava"><Ic Id="i-agent" /></span>
+                <div class="inst-id" style="flex:1 1 auto;min-width:0">
+                    <div class="inst-name">@Meta.Agent</div>
+                    <div class="inst-sub">
+                        <span class="pill pill-soft pill-mono">@Meta.Version</span>
+                        <span class="pill pill-soft"><Ic Id="i-bolt" />@Meta.Model</span>
+                        <span class="mono faint">session @Meta.Session</span>
+                        <span class="faint">· started @Meta.Started</span>
+                        @if (Data.TotalRunMs > 0)
+                        {
+                            <span class="faint">· @(Meta.Status == CallStatus.Running ? "running " : "ran ")@GroupedFormat.Ran(Data.TotalRunMs)</span>
+                        }
+                    </div>
+                </div>
+                <span class="st @GroupedFormat.StatusClass(Meta.Status) inst-status"
+                      title="Run status — shows the AgentExitReason on completion (Completed / GuardrailViolation / BudgetExceeded / …)">
+                    <span class="dot"></span>@Meta.StatusText
+                </span>
+            </div>
+
+            <div class="inst-task"><span class="lbl">Task</span> @Meta.Task</div>
+
+            <div class="tiles">
+                @foreach (var t in Meta.Tiles)
+                {
+                    <div class="tile-stat" style="--accent:var(--@t.Accent);--accent-rgb:var(--@(t.Accent)-rgb)">
+                        <span class="ti"><Ic Id="@t.Icon" /></span>
+                        <span class="tile-body">
+                            <span class="v">@t.Value</span>
+                            <span class="l">@t.Label</span>
+                        </span>
+                    </div>
+                }
+            </div>
+
+            <div class="meters">
+                @foreach (var m in Meta.Meters)
+                {
+                    <div class="meter">
+                        <div class="meter-top">
+                            <span class="meter-l">@m.Label</span>
+                            <span class="meter-v">@m.Value</span>
+                        </div>
+                        <div class="meter-bar @(m.Pct >= 100 ? "over" : m.Pct >= 80 ? "warn" : "")">
+                            <span style="width:@(m.Pct)%"></span>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+        }
+
+        @* ---- activation stream ---- *@
+        <div class="stream">
+            @foreach (var act in Data.Activations)
+            {
+                <details class="ev activation act--@GroupedFormat.StatusKey(act.Status)" open>
+                    <summary>
+                        <span class="act-dot"></span>
+                        <span class="act-state">@act.State</span>
+                        <span class="act-cycle">Cycle @act.Cycle</span>
+                        <span class="act-sp"></span>
+                        <span class="act-r">
+                            @if (act.DurationMs > 0)
+                            {
+                                <span class="act-ran">@GroupedFormat.Ran(act.DurationMs)</span>
+                            }
+                            <StPill Status="act.Status" />
+                            <Ic Class="ic chev" Id="i-chevron-r" />
+                        </span>
+                    </summary>
+                    <div class="act-body">
+                        @foreach (var st in act.Steps)
+                        {
+                            <GroupedStep Step="st" />
+                        }
+                        @if (!string.IsNullOrEmpty(act.EndSignal))
+                        {
+                            <div class="tmark">
+                                <span class="tline"></span>
+                                <span class="sig"><Ic Id="i-arrow" />@act.EndSignal@(act.NextState is { } ns ? " → " + ns : "")</span>
+                                <span class="tline"></span>
+                            </div>
+                        }
+                    </div>
+                </details>
+            }
+        </div>
+
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public GroupedInstanceData Data { get; set; } = default!;
+
+    /// <summary>When false, the run header (identity, tiles, meters) is hidden — used when the view is
+    /// embedded as a per-run / per-turn trace where that context is already shown by the host.</summary>
+    [Parameter] public bool ShowHeader { get; set; } = true;
+
+    /// <summary>Light/dark, cascaded from MainLayout so the view tracks Forge's theme toggle.</summary>
+    [CascadingParameter(Name = "ForgeDarkMode")] public bool IsDarkMode { get; set; }
+
+    private InstanceMeta Meta => Data.Meta;
+}

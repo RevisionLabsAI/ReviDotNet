@@ -12,6 +12,11 @@ namespace Revi;
 /// One scored identity (cookie jar + optional headers/proxy) in a <see cref="SessionPool"/>, modelled
 /// on Crawlee's <c>Session</c>. The asymmetric scoring (a success undoes only half of a failure) makes
 /// the pool quick to retire an identity that starts getting blocked and slow to trust it again.
+/// <para>
+/// <b>Status: standalone primitive — NOT consumed by any production fetch path</b> (unit-test-only
+/// today). See <see cref="SessionPool"/> for details; the live Core/Scraping fetchers do not use
+/// per-request session identities or cookie jars.
+/// </para>
 /// </summary>
 public sealed class ScrapeSession
 {

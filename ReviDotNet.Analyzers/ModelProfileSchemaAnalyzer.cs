@@ -57,8 +57,17 @@ namespace ReviDotNet.Analyzers
             isEnabledByDefault: true,
             description: "Model .rcfg contains values that are unusual or out of recommended bounds.");
 
+        private static readonly DiagnosticDescriptor MissingInputTemplateRule = new DiagnosticDescriptor(
+            DiagnosticId,
+            "Missing input template",
+            "[[input]] uses a 'listed'/'both' input type but is missing the {0} template; Listed inputs will throw at inference time",
+            Category,
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true,
+            description: "When default-system-input-type or default-instruction-input-type is 'listed' or 'both', the model must define single-item and multi-item templates, otherwise Infer.ListInputs throws at inference time.");
+
         /// <inheritdoc />
-        public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(ErrorRule, WarningRule);
+        public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(ErrorRule, WarningRule, MissingInputTemplateRule);
 
         /// <inheritdoc />
         public override void Initialize(AnalysisContext context)
@@ -150,7 +159,42 @@ namespace ReviDotNet.Analyzers
                 ValidateMaybeNumber(context, file, doc, "override-tuning", "presence-penalty");
                 ValidateMaybeNumber(context, file, doc, "override-tuning", "frequency-penalty");
                 ValidateMaybeNumber(context, file, doc, "override-tuning", "repetition-penalty");
+
+                // [[input]]: a 'listed'/'both' input type requires single-item/multi-item templates.
+                ValidateInputTemplates(context, file, doc);
             }
+        }
+
+        /// <summary>
+        /// Warns when an `[[input]]` input type is `listed`/`both` but the model omits the
+        /// `single-item`/`multi-item` templates — which causes a runtime failure when inputs are listed.
+        /// </summary>
+        private static void ValidateInputTemplates(CompilationAnalysisContext context, AdditionalText file, RcfgDoc doc)
+        {
+            bool RequiresTemplates(string key)
+                => TryGet(doc, "input", key, out RcfgValue v)
+                   && (v.Raw.Trim().Equals("listed", StringComparison.OrdinalIgnoreCase)
+                       || v.Raw.Trim().Equals("both", StringComparison.OrdinalIgnoreCase));
+
+            if (!RequiresTemplates("default-system-input-type") && !RequiresTemplates("default-instruction-input-type"))
+                return;
+
+            bool hasSingle = TryGet(doc, "input", "single-item", out _);
+            bool hasMulti = TryGet(doc, "input", "multi-item", out _);
+            if (hasSingle && hasMulti)
+                return;
+
+            int line = 1;
+            if (TryGet(doc, "input", "default-instruction-input-type", out RcfgValue li))
+                line = li.Line;
+            else if (TryGet(doc, "input", "default-system-input-type", out RcfgValue ls))
+                line = ls.Line;
+
+            string missing = (!hasSingle && !hasMulti) ? "single-item and multi-item"
+                : (!hasSingle ? "single-item" : "multi-item");
+
+            Location loc = CreateFileLineLocation(file.Path ?? string.Empty, Math.Max(line, 1));
+            context.ReportDiagnostic(Diagnostic.Create(MissingInputTemplateRule, loc, missing));
         }
 
         private static void ValidateRequiredNonEmpty(CompilationAnalysisContext context, AdditionalText file, RcfgDoc doc, string section, string key)
