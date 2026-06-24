@@ -8,6 +8,12 @@
       "port": 5000
     },
     {
+      "name": "ForgeWT",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "C:/Users/Bryan/Projects/ReviDotNet/.claude/worktrees/feature-agents/ReviDotNet.Forge/ReviDotNet.Forge.csproj", "--no-build", "--urls", "http://localhost:5000"],
+      "port": 5000
+    },
+    {
       "name": "mockups",
       "runtimeExecutable": "python",
       "runtimeArgs": ["Docs/mockups/serve.py"],
