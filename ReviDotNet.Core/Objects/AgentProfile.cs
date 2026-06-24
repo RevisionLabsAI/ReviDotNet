@@ -92,6 +92,13 @@ public class AgentProfile
     // Stored during ToObject(), consumed by Init()
     private string? _rawLoopDsl;
 
+    /// <summary>
+    /// Canonical state-name grammar: a letter followed by letters, digits, or hyphens. Underscores are
+    /// forbidden because state discovery splits keys on '_', so an underscore'd state name is undiscoverable.
+    /// Shared by <see cref="ValidateGraph"/> (and mirrored by the REVI011 analyzer).
+    /// </summary>
+    internal static readonly Regex ValidStateName = new(@"^[A-Za-z][A-Za-z0-9-]*$", RegexOptions.Compiled);
+
 
     // ==========================
     //  Init (called by RConfigParser.ToObject<T> post-deserialization)
@@ -127,6 +134,94 @@ public class AgentProfile
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
             ValidSignalsByState[node.StateName] = signals;
         }
+
+        // Surface graph mistakes at load time (warn-only — never blocks loading).
+        foreach (var warning in ValidateGraph())
+            Util.Log($"Warning: {warning}");
+    }
+
+    /// <summary>
+    /// Validates the parsed loop graph against the discovered states and returns human-readable warnings
+    /// (never throws). Catches: loop nodes / transition targets referencing an undefined state, state names
+    /// with an illegal grammar (e.g. underscores), dead edges after an unconditional fallback, and duplicate
+    /// signal tokens within a state. Returns an empty list for a clean graph.
+    /// </summary>
+    public List<string> ValidateGraph()
+    {
+        var warnings = new List<string>();
+        var discovered = new HashSet<string>(States.Select(s => s.Name ?? ""), StringComparer.OrdinalIgnoreCase);
+
+        bool IsSpecial(string target) =>
+            target.Equals("[end]", StringComparison.OrdinalIgnoreCase) ||
+            target.Equals("self", StringComparison.OrdinalIgnoreCase);
+
+        foreach (var node in LoopGraph)
+        {
+            string state = node.StateName;
+
+            if (!ValidStateName.IsMatch(state))
+                warnings.Add($"Agent '{Name}': loop state name '{state}' is invalid — state names must be letters, digits, and hyphens (no underscores), or it cannot be discovered from its [[state.*]] section.");
+            else if (!discovered.Contains(state))
+                warnings.Add($"Agent '{Name}': loop declares state '{state}' which has no matching [[state.{state}]] definition.");
+
+            bool sawUnconditional = false;
+            var seenSignals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var t in node.Transitions)
+            {
+                string target = t.TargetState ?? "";
+
+                if (sawUnconditional)
+                    warnings.Add($"Agent '{Name}': in state '{state}', the transition to '{target}' is unreachable — it comes after an unconditional (no [when:]) fallback.");
+
+                if (!IsSpecial(target))
+                {
+                    if (!ValidStateName.IsMatch(target))
+                        warnings.Add($"Agent '{Name}': in state '{state}', transition target '{target}' is not a valid state name (letters, digits, hyphens; no underscores).");
+                    else if (!discovered.Contains(target))
+                        warnings.Add($"Agent '{Name}': in state '{state}', transition target '{target}' is not a defined state.");
+                }
+
+                if (string.IsNullOrEmpty(t.Signal))
+                    sawUnconditional = true;
+                else if (!seenSignals.Add(t.Signal))
+                    warnings.Add($"Agent '{Name}': in state '{state}', signal '{t.Signal}' is declared more than once — only the first transition for it is reachable.");
+            }
+        }
+
+        return warnings;
+    }
+
+    /// <summary>
+    /// Warns about state sections (<c>[[_state.X.instruction]]</c>, <c>[[_state.X.settings]]</c>,
+    /// <c>[[state.X.guardrails]]</c>) whose state name was never discovered as a plain
+    /// <c>state.X_&lt;field&gt;</c> key — typically because the name contains an underscore or the state has
+    /// no plain field. Such a state is silently ignored. Returns warnings (does not log).
+    /// </summary>
+    internal static List<string> CollectDiscoveryWarnings(
+        Dictionary<string, string> data, ISet<string> discoveredStates, string? agentName)
+    {
+        var warnings = new List<string>();
+        var sectionRefs = new[]
+        {
+            new Regex(@"^_state\.(?<n>.+?)\.(?:instruction|settings)$", RegexOptions.IgnoreCase),
+            new Regex(@"^state\.(?<n>.+?)\.guardrails_", RegexOptions.IgnoreCase),
+        };
+
+        var flagged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var key in data.Keys)
+        {
+            foreach (var rx in sectionRefs)
+            {
+                var m = rx.Match(key);
+                if (!m.Success) continue;
+                string name = m.Groups["n"].Value;
+                if (!discoveredStates.Contains(name) && flagged.Add(name))
+                    warnings.Add($"Agent '{agentName}': a section for state '{name}' exists but no discoverable 'state.{name}_<field>' key was found, so the state is ignored (state names cannot contain underscores).");
+            }
+        }
+
+        return warnings;
     }
 
 
@@ -189,6 +284,10 @@ public class AgentProfile
             profile.States.Add(state);
         }
 
+        // Warn about state sections whose name was never discovered (underscore'd / fieldless states).
+        foreach (var warning in CollectDiscoveryWarnings(data, stateNames, profile.Name))
+            Util.Log($"Warning: {warning}");
+
         // Call Init() to validate and parse the loop graph
         try
         {
@@ -196,7 +295,7 @@ public class AgentProfile
         }
         catch (Exception e)
         {
-            Util.Log($"AgentProfile.Init failed for '{profile.Name}': {e.Message}");
+            Util.Log($"Warning: AgentProfile.Init failed for '{profile.Name}': {e.Message}");
         }
 
         return profile;

@@ -194,8 +194,15 @@ Each step response is expected as JSON:
 }
 ```
 
+> **You do not need to restate this contract in `[[_system]]`.** The runner auto-appends a `RESPONSE FORMAT` block to the system message on **every** step (the schema is also enforced via guidance for providers that support it). That block is generated from the current state and includes:
+> - the exact JSON shape above (including the optional `thinking` field), and
+> - **the legal transition signals for the current state** (computed from the `[[_loop]]` edges — you don't list them by hand), and
+> - **the tools available from this state**, each with its description and expected input format (see *Tools* above; rendered from the tool definitions, so there's nothing to copy from `tool-files.md`).
+>
+> So a `[[_system]]` block only needs the agent's persona/task — not the JSON contract, the signal list, or the tool input shapes.
+
 - `signal`: Used to resolve next transition.
-- `thinking` (optional `string`|`null`): the model's reasoning. Surfaced as a separate `Thinking` trace event (not part of `content`/`FinalOutput`). Mention it in your `[[_system]]` JSON-shape instructions if you want the model to reason before deciding.
+- `thinking` (optional `string`|`null`): the model's reasoning. Surfaced as a separate `Thinking` trace event (not part of `content`/`FinalOutput`). The auto-appended `RESPONSE FORMAT` block already invites the model to use it.
 - `tool_calls`: Filtered to the tools allowed by the current state's `tools` list (matching is **case-insensitive**). Calls naming a disallowed tool — or calls beyond the state's `tool-call-limit` — are **silently dropped** (logged via `Util.Log` only; the model gets **no** error feedback, so it may "think" the tool ran). The surviving allowed calls execute **in parallel** (`Task.WhenAll`), and their results are appended to the conversation.
 - `content`: Stored and becomes `FinalOutput` when agent reaches `[end]`.
 
@@ -276,3 +283,4 @@ Related analyzer rules:
 - `REVI006`: referenced agent name not found
 - `REVI007`: duplicate effective agent names
 - `REVI008`: non-constant agent name in `Agent.Run` / `Agent.ToString` / `Agent.FindAgent`
+- `REVI011`: agent state-graph problems — an underscore in a state name (undiscoverable), a loop node / transition target / entry with no `[[state.*]]` definition, a dead edge after an unconditional fallback, or a duplicate signal. The runtime also logs these as warnings at load time.

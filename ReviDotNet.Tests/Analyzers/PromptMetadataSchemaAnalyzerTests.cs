@@ -5,6 +5,7 @@
 // ===================================================================
 
 using System.Threading.Tasks;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Testing;
 using ReviDotNet.Analyzers;
 using ReviDotNet.Tests.Analyzers;
@@ -181,7 +182,7 @@ name = ok
 version = 1
 
 [[settings]]
-guidance-schema-type = default
+guidance-schema-type = defer
 
 [[tuning]]
 temperature = 1.0
@@ -194,6 +195,29 @@ Proceed normally.
             };
 
             await AnalyzerTestHelper.RunAsync<PromptMetadataSchemaAnalyzer>(code, files);
+        }
+
+        // T11: guidance-schema-type = default is the skip sentinel — warn and steer to defer/disabled.
+        [Fact]
+        public async Task Warns_OnGuidanceSchemaTypeDefault()
+        {
+            string code = "class C { void M() {} }";
+            (string path, string content)[] files =
+            {
+                ("RConfigs/Prompts/Sample.pmt", @"[[information]]
+name = ok
+[[settings]]
+guidance-schema-type = default
+[[_system]]
+sys
+")
+            };
+
+            DiagnosticResult expected = new DiagnosticResult(PromptMetadataSchemaAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+                .WithSpan("RConfigs/Prompts/Sample.pmt", 4, 1, 4, 1)
+                .WithArguments("default");
+
+            await AnalyzerTestHelper.RunAsync<PromptMetadataSchemaAnalyzer>(code, files, expected);
         }
     }
 }

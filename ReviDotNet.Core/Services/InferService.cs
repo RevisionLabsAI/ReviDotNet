@@ -1055,6 +1055,7 @@ public sealed class InferService(
         if (!model.Provider.SupportsGuidance ?? false)
         {
             Util.Log($"GetGuidance: Provider {model.Provider.Name} does not support guidance");
+            GuidanceCapability.WarnIfIneffective(prompt, model, guidanceType, guidanceString);
             return;
         }
 
@@ -1106,6 +1107,8 @@ public sealed class InferService(
         {
             Util.Log($"Guidance Exception: {e.Message}");
         }
+
+        GuidanceCapability.WarnIfIneffective(prompt, model, guidanceType, guidanceString);
     }
 
     private static int? GetEffectiveInactivityTimeoutSeconds(Prompt prompt, ModelProfile model)

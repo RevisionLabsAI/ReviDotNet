@@ -723,10 +723,7 @@ public class AgentRunner
             ? string.Join(", ", sigs)
             : "(none declared for this state)";
 
-        var toolNames = new List<string>(_currentState.Tools);
-        if (_ctx.Files is { Files.Count: > 0 })
-            toolNames.AddRange(new[] { "list-files", "read-file", "search-files" });
-        string tools = toolNames.Count > 0 ? string.Join(", ", toolNames) : "(none available — use an empty tool_calls array)";
+        string toolGuide = BuildToolGuide();
 
         return
             "RESPONSE FORMAT — reply with EXACTLY ONE JSON object and nothing else: no markdown code "
@@ -735,11 +732,48 @@ public class AgentRunner
             + "\"content\": <string>, \"thinking\": <string|null>}\n"
             + $"- \"signal\": the state transition to take now. Valid signals from this state: {signals}. "
             + "Use null to take no transition this step.\n"
-            + $"- \"tool_calls\": tools to run this step; each \"input\" is a single string the tool parses. "
-            + $"Available tools: {tools}. Use [] when calling none.\n"
+            + "- \"tool_calls\": tools to run this step; each \"input\" is a single string in the format the "
+            + "tool expects (see below). Use [] when calling none. Available tools:\n"
+            + toolGuide + "\n"
             + "- \"content\": your message or result for this step.\n"
             + "- \"thinking\": optional brief reasoning, or null.";
     }
+
+    /// <summary>
+    /// Renders the tools available from the current state — name + description + expected input format —
+    /// so the model has the exact tool names and input shapes without the author hand-copying them into the
+    /// prompt. Descriptions come from <see cref="IBuiltInTool.Description"/> (built-in), the custom
+    /// <see cref="ToolProfile.Description"/> (.tool files), or a built-in fallback for the file tools.
+    /// </summary>
+    private string BuildToolGuide()
+    {
+        var names = new List<string>(_currentState.Tools);
+        if (_ctx.Files is { Files.Count: > 0 })
+            names.AddRange(new[] { "list-files", "read-file", "search-files" });
+
+        if (names.Count == 0)
+            return "  (none available — use an empty tool_calls array)";
+
+        var sb = new System.Text.StringBuilder();
+        foreach (var name in names)
+        {
+            string? desc = _tools.GetBuiltIn(name)?.Description
+                ?? _tools.GetCustom(name)?.Description
+                ?? FileToolDescription(name);
+            sb.AppendLine(string.IsNullOrWhiteSpace(desc) ? $"  - {name}" : $"  - {name}: {desc}");
+        }
+        return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>Static descriptions (with input format) for the session file tools when not registered as built-ins.</summary>
+    private static string? FileToolDescription(string name) => name switch
+    {
+        "list-files" => "Lists the attached files (name, media type, size). Input: an empty string.",
+        "read-file" => "Has a reader model read one attached file (text or image) and answer a focused question. "
+                       + "Input JSON: {\"file\":\"<name>\",\"query\":\"<what you need>\"}.",
+        "search-files" => "Searches across all attached files for relevant content. Input: a search query string.",
+        _ => null,
+    };
 
     /// <summary>
     /// Replaces <c>{identifier}</c> placeholders in the given text with the corresponding

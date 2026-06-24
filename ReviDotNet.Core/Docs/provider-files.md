@@ -36,6 +36,21 @@ Settings for constrained output/guidance.
 | `supports-guidance` | boolean | Whether the provider supports structured output guidance (e.g., JSON Schema, GBNF). |
 | `default-guidance-type`| enum | Default schema strategy used when a prompt defers via `[[settings]] guidance-schema-type = defer`. One of `disabled`, `json-auto`, `json-manual`, `regex-auto`, `regex-manual`, `gnbf-auto`, `gnbf-manual`. *Auto* generates a schema from the requested output type; *manual* uses the `[[_default-guidance-string]]` raw section below. |
 
+#### Guidance capability matrix (which protocol enforces which decode mode)
+
+Even with `supports-guidance = true`, each provider **protocol** only enforces certain decode modes on the wire. A strategy whose decode mode isn't supported is **silently dropped** (no constraint applied) — but ReviDotNet now logs a runtime warning when a prompt *explicitly* requests a strategy the provider can't enforce (it stays silent for prompts that don't request guidance). Pick a strategy your target protocol can actually enforce:
+
+| Protocol | JSON (`json-*`) | Regex (`regex-*`) | Grammar/GBNF (`gnbf-*`) |
+| :--- | :---: | :---: | :---: |
+| OpenAI | ✅ | ❌ | ❌ |
+| Perplexity | ✅ | ❌ | ❌ |
+| Gemini | ✅ | ❌ | ❌ |
+| vLLM | ✅ | ✅ | ❌ |
+| LLamaAPI | ✅ | ❌ | ✅ |
+| Claude | ❌ (chat-only — `supports-guidance` forced false) | ❌ | ❌ |
+
+> The GBNF/`gnbf-*` strategies are not yet wired to a schema source and currently apply no constraint on any protocol; a prompt that selects one is warned at runtime.
+
 #### `[[_default-guidance-string]]` (Optional raw section)
 
 The default guidance schema/string used by *manual* `default-guidance-type` strategies. Because its key begins with `_`, it is a **raw section** — write it as its own `[[_default-guidance-string]]` block with the schema as the body, **not** as a `_default-guidance-string = …` line under `[[guidance]]` (that key-value form is silently ignored). It is consumed only on the provider-default deferral path (`guidance-schema-type = defer`).

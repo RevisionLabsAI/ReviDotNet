@@ -1650,6 +1650,7 @@ internal class Infer
 		if (!model.Provider.SupportsGuidance ?? false)
 		{
 			Util.Log($"GetGuidance: Provider {model.Provider.Name} does not support guidance");
+			GuidanceCapability.WarnIfIneffective(prompt, model, guidanceType, guidanceString);
 			return;
 		}
 
@@ -1706,6 +1707,8 @@ internal class Infer
 		{
 			Util.Log($"Guidance Exception: {e.Message}");
 		}
+
+		GuidanceCapability.WarnIfIneffective(prompt, model, guidanceType, guidanceString);
 	}
 	#endregion
 }
