@@ -144,10 +144,7 @@ else
 
             <MudTabPanel Text="Source preview" Icon="@Icons.Material.Filled.Code">
                 <div class="pa-2">
-                    <MudPaper Class="pa-3" Outlined="true"
-                              Style="font-family: monospace; font-size: 0.8rem; white-space: pre-wrap; max-height: 600px; overflow: auto;">
-                        @SerializeCurrent()
-                    </MudPaper>
+                    <RconfigSource Text="@SerializeCurrent()" />
                 </div>
             </MudTabPanel>
 

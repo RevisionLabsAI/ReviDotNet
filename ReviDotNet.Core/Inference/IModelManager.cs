@@ -14,6 +14,12 @@ public interface IModelManager
     /// <summary>Loads model profiles from the application assembly.</summary>
     Task LoadAsync(Assembly assembly, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Additively loads model profiles from <paramref name="rootDirectory"/>/<c>Models/Inference/</c> on disk
+    /// (an extra <c>RConfigs</c> root). Existing models are kept on a name clash; a missing folder is a no-op.
+    /// </summary>
+    void LoadDirectory(string rootDirectory);
+
     /// <summary>Returns the model profile with the given name, or null if not found.</summary>
     ModelProfile? Get(string name);
 

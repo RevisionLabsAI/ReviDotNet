@@ -44,6 +44,14 @@ public sealed class ProviderManagerService : IProviderManager
     }
 
     /// <inheritdoc/>
+    public void LoadDirectory(string rootDirectory)
+    {
+        string path = Path.Combine(rootDirectory, "Providers") + Path.DirectorySeparatorChar;
+        if (!Directory.Exists(path)) return;
+        LoadFromFileSystem(path);
+    }
+
+    /// <inheritdoc/>
     public ProviderProfile? Get(string name)
         => _providers.FirstOrDefault(p => p.Name == name);
 

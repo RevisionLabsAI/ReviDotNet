@@ -14,6 +14,12 @@ public interface IAgentManager
     /// <summary>Loads agent profiles from the application assembly.</summary>
     Task LoadAsync(Assembly assembly, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Additively loads agent profiles from <paramref name="rootDirectory"/>/<c>Agents/</c> on disk (an
+    /// extra <c>RConfigs</c> root). Existing agents are kept on a name clash; a missing folder is a no-op.
+    /// </summary>
+    void LoadDirectory(string rootDirectory);
+
     /// <summary>Returns the agent profile with the given name, or null if not found.</summary>
     AgentProfile? Get(string name);
 

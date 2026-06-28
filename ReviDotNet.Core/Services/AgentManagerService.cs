@@ -44,6 +44,14 @@ public sealed class AgentManagerService : IAgentManager
     }
 
     /// <inheritdoc/>
+    public void LoadDirectory(string rootDirectory)
+    {
+        string path = Path.Combine(rootDirectory, "Agents") + Path.DirectorySeparatorChar;
+        if (!Directory.Exists(path)) return;
+        LoadFromFileSystem(path);
+    }
+
+    /// <inheritdoc/>
     public AgentProfile? Get(string name)
         => _agents.FirstOrDefault(a => a.Name == name);
 
@@ -78,6 +86,10 @@ public sealed class AgentManagerService : IAgentManager
 
                 if (agent?.Name is null)
                     continue;
+
+                // Stamp the originating file so the source can be read back / written even when it lives
+                // outside the app's own RConfigs (e.g. an additional RConfig folder).
+                agent.SourcePath = Path.GetFullPath(file);
 
                 CheckAdd(agent, embedded: false);
             }

@@ -367,3 +367,46 @@ code, kbd, samp, pre, .forge-mono {
     right: 0.9rem;
     top: 0.6rem;
 }
+
+/* ----------------------------------------------------------- RConfig syntax highlighting
+   Read-only highlighted view of .rcfg / .agent / .pmt / .tool source — rendered by
+   Components/Shared/RconfigSource.razor via Services/RconfigHighlighter.cs, mirroring the shared
+   IDE grammar in ide/revi-syntax. The block is a self-contained dark code panel so the palette
+   reads clearly under either app theme. Simple, clear scheme (VS Code Dark+ inspired):
+   blue = keys/sections, purple = raw-section keywords & loop control, green = comments/numbers,
+   teal = constants/signals, amber = placeholders, yellow = states. */
+.revi-hl {
+    margin: 0;
+    padding: 0.85rem 1rem;
+    border-radius: 8px;
+    background: #1b1f27;
+    color: #d6dae0;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    font-family: "JetBrains Mono", "Cascadia Code", "Fira Code", Consolas, "Courier New", monospace;
+    font-size: 0.8rem;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+    tab-size: 2;
+}
+
+/* Structure */
+.revi-hl .revi-section { color: #57b6e6; font-weight: 600; } /* [[general]] [[state.x]] */
+.revi-hl .revi-raw     { color: #c98bdb; font-weight: 600; } /* [[_system]] [[_loop]] [[_exin_1]] */
+.revi-hl .revi-punct   { color: #6f7785; }                   /* [[ ]] [ ] : */
+.revi-hl .revi-key     { color: #9cdcfe; }                   /* key (before =) */
+.revi-hl .revi-eq      { color: #6f7785; }                   /* = */
+.revi-hl .revi-comment { color: #6a9b58; font-style: italic; }
+
+/* Values */
+.revi-hl .revi-bool    { color: #4fa6d6; }                   /* true / false */
+.revi-hl .revi-const   { color: #4ec9b0; }                   /* environment / disabled */
+.revi-hl .revi-num     { color: #b5cea8; }                   /* numbers */
+.revi-hl .revi-ph      { color: #e5c07b; }                   /* {placeholder} */
+.revi-hl .revi-label   { color: #e0c46c; font-weight: 600; } /* [Label] in [[_exin_N]] */
+
+/* Loop DSL */
+.revi-hl .revi-arrow   { color: #d782c4; }                   /* -> */
+.revi-hl .revi-state   { color: #dcdcaa; }                   /* state names / targets / [end] */
+.revi-hl .revi-when    { color: #c98bdb; }                   /* when */
+.revi-hl .revi-signal  { color: #4ec9b0; }                   /* SIGNAL in [when: SIGNAL] */

@@ -123,6 +123,8 @@ internal static class Agent
         public ModelProfile? Find(ModelTier? minTier, bool needsPromptCompletion, List<string>? blockedModels) => ModelManager.Find(minTier, needsPromptCompletion, blockedModels);
         public void Add(ModelProfile model) => ModelManager.Add(model);
         public Task LoadAsync(System.Reflection.Assembly assembly, CancellationToken cancellationToken = default) { ModelManager.Load(assembly); return Task.CompletedTask; }
+        // Additional-directory loading is a DI-host feature (RegistryInitService); the standalone path doesn't use it.
+        public void LoadDirectory(string rootDirectory) { }
     }
 
     private sealed class StaticPromptAdapter : IPromptManager
@@ -132,6 +134,8 @@ internal static class Agent
         public void AddOrUpdate(Prompt prompt) => PromptManager.AddOrUpdate(prompt);
         public void LoadFromFile(string filePath) => PromptManager.LoadFromFile(filePath);
         public Task LoadAsync(System.Reflection.Assembly assembly, CancellationToken cancellationToken = default) { PromptManager.Load(assembly); return Task.CompletedTask; }
+        // Additional-directory loading is a DI-host feature (RegistryInitService); the standalone path doesn't use it.
+        public void LoadDirectory(string rootDirectory) { }
     }
 
     private sealed class StaticToolAdapter : IToolManager
@@ -143,5 +147,7 @@ internal static class Agent
         public void Register(IBuiltInTool tool) => ToolManager.Register(tool);
         public bool Unregister(string name) => ToolManager.Unregister(name);
         public Task LoadAsync(System.Reflection.Assembly assembly, CancellationToken cancellationToken = default) { ToolManager.Load(assembly); return Task.CompletedTask; }
+        // Additional-directory loading is a DI-host feature (RegistryInitService); the standalone path doesn't use it.
+        public void LoadDirectory(string rootDirectory) { }
     }
 }

@@ -62,6 +62,25 @@ public sealed class PromptManagerService : IPromptManager
     }
 
     /// <inheritdoc/>
+    public void LoadDirectory(string rootDirectory)
+    {
+        string path = Path.Combine(rootDirectory, "Prompts") + Path.DirectorySeparatorChar;
+        if (!Directory.Exists(path)) return;
+
+        foreach (string file in Directory.EnumerateFiles(path, "*.pmt", SearchOption.AllDirectories))
+        {
+            try
+            {
+                LoadPromptFromFile(file, path);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Failed to load prompt '{file}': {ex.Message}");
+            }
+        }
+    }
+
+    /// <inheritdoc/>
     public Prompt? Get(string name)
         => _prompts.FirstOrDefault(p => p.Name == name);
 

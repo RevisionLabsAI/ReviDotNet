@@ -186,6 +186,7 @@ work
     private sealed class StubModels : IModelManager
     {
         public Task LoadAsync(System.Reflection.Assembly assembly, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public void LoadDirectory(string rootDirectory) { }
         public ModelProfile? Get(string name) => null;
         public List<ModelProfile> GetAll() => new();
         public ModelProfile? Find(string? minTier, bool needsPromptCompletion = false) => null;

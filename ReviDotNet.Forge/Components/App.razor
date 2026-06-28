@@ -11,8 +11,10 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
     <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
-    <link href="app.css" rel="stylesheet" />
-    <link href="grouped-instance.css" rel="stylesheet" />
+    @* Static files aren't fingerprinted (UseStaticFiles, not MapStaticAssets), so a query-string version
+       cache-busts the local stylesheets. Bump ?v when app.css / grouped-instance.css change. *@
+    <link href="app.css?v=2" rel="stylesheet" />
+    <link href="grouped-instance.css?v=2" rel="stylesheet" />
     <HeadOutlet @rendermode="@InteractiveServer" />
     <title>ReviDotNet Forge</title>
 </head>

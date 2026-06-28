@@ -24,12 +24,23 @@ public static class ReviServiceCollectionExtensions
     /// The application assembly used to locate embedded RConfig resources.
     /// Defaults to <see cref="Assembly.GetEntryAssembly()"/> when null.
     /// </param>
+    /// <param name="configureOptions">
+    /// Optional hook to configure <see cref="ReviRegistryOptions"/> — e.g. to register additional
+    /// on-disk RConfig folders loaded after the embedded/app set.
+    /// </param>
     /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
     public static IServiceCollection AddReviDotNet(
         this IServiceCollection services,
-        Assembly? appAssembly = null)
+        Assembly? appAssembly = null,
+        Action<ReviRegistryOptions>? configureOptions = null)
     {
         Assembly resolvedAssembly = appAssembly ?? Assembly.GetEntryAssembly()!;
+
+        // Registry options (additional config folders, etc.). Built once and registered so the
+        // startup initializer can read it; defaults are empty when no configure hook is supplied.
+        var options = new ReviRegistryOptions();
+        configureOptions?.Invoke(options);
+        services.AddSingleton(options);
 
         // Logging — use TryAdd so callers can substitute their own implementations
         services.TryAddSingleton<IReviLogger, ReviLogger>();

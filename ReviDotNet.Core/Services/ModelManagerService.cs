@@ -48,6 +48,14 @@ public sealed class ModelManagerService : IModelManager
     }
 
     /// <inheritdoc/>
+    public void LoadDirectory(string rootDirectory)
+    {
+        string path = Path.Combine(rootDirectory, "Models", "Inference") + Path.DirectorySeparatorChar;
+        if (!Directory.Exists(path)) return;
+        LoadFromFileSystem(path);
+    }
+
+    /// <inheritdoc/>
     public ModelProfile? Get(string name)
         => _models.FirstOrDefault(m => m.Name == name);
 

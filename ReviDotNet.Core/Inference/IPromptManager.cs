@@ -14,6 +14,13 @@ public interface IPromptManager
     /// <summary>Loads prompt files from the application assembly.</summary>
     Task LoadAsync(Assembly assembly, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Additively loads prompts from <paramref name="rootDirectory"/>/<c>Prompts/</c> on disk (an extra
+    /// <c>RConfigs</c> root). Existing prompts are kept unless the loaded one has a higher version; a
+    /// missing folder is a no-op.
+    /// </summary>
+    void LoadDirectory(string rootDirectory);
+
     /// <summary>Returns the prompt with the given name, or null if not found.</summary>
     Prompt? Get(string name);
 
