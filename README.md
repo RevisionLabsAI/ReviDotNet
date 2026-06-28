@@ -66,6 +66,11 @@ The core docs are in this repo:
 - Inference API: `ReviDotNet.Core/Docs/inference.md`
 - Analyzers: `ReviDotNet.Core/Docs/analyzers.md`
 
+Subsystem docs at the repo root:
+
+- ReviLogger (trace tree): `ReviLogger.md`
+- Refinery (agent self-improvement toolkit): `Refinery.md`
+
 ## Quick start
 
 1) Add ReviDotNet to your solution
