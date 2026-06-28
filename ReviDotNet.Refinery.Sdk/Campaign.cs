@@ -69,6 +69,13 @@ public sealed record SuiteAggregate
     /// <summary>Number of runs aggregated.</summary>
     public int RunCount { get; init; }
 
+    /// <summary>
+    /// How many of the runs actually had at least one invariant evaluated. When 0, the structural
+    /// <see cref="InvariantPassRate"/> is meaningless (nothing was gated) — surface this so a suite that
+    /// checks nothing can't masquerade as 100% passing.
+    /// </summary>
+    public int GatedRunCount { get; init; }
+
     /// <summary>Per-invariant pass rate.</summary>
     public IReadOnlyDictionary<string, double> InvariantPassRateById { get; init; } = new Dictionary<string, double>();
 }

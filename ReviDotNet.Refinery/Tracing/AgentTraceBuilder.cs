@@ -9,43 +9,23 @@ using System.Text.Json;
 namespace Revi.Refinery;
 
 /// <summary>
-/// Projects captured <see cref="RlogEvent"/>s plus an <see cref="AgentResult"/> into a typed
-/// <see cref="AgentTrace"/>. Reads ReviDotNet's agent tags
-/// (<c>agent-session:</c>, <c>agent-state:</c>, <c>agent-depth:</c>) and the per-event identifier
-/// (the step type, e.g. <c>tool-call</c>) to reconstruct the run.
+/// Projects the captured <see cref="RlogEvent"/>s of one run (already isolated per-run by the capture
+/// broker, so it includes the root agent and any sub-agents it invoked) plus its <see cref="AgentResult"/>
+/// into a typed <see cref="AgentTrace"/>. Tokens are summed across all the run's events (root + sub-agents);
+/// the session id comes from the result, falling back to the parent-less run-root event.
 /// </summary>
 public static class AgentTraceBuilder
 {
-    /// <summary>Build a trace for the root (depth-0) agent run captured in <paramref name="events"/>.</summary>
-    public static AgentTrace Build(IReadOnlyList<RlogEvent> events, string agentName, AgentResult result, string? sessionHint = null)
+    /// <summary>Build a trace from a single run's captured events and result.</summary>
+    public static AgentTrace Build(IReadOnlyList<RlogEvent> events, string agentName, AgentResult result)
     {
         List<RlogEvent> ordered = events.OrderBy(e => e.Timestamp).ToList();
 
-        // Determine the root session: the depth-0 start event, else the first session we see.
-        string? root = sessionHint;
-        if (string.IsNullOrEmpty(root))
-        {
-            foreach (RlogEvent e in ordered)
-            {
-                (string? sess, _, int? depth) = ParseTags(e.Tags);
-                if (sess == null) continue;
-                root ??= sess; // fallback: first session seen
-                if (e.Identifier == TraceEventTypes.Start && depth is 0)
-                {
-                    root = sess;
-                    break;
-                }
-            }
-        }
-
-        List<TraceEvent> traceEvents = [];
+        List<TraceEvent> traceEvents = new(ordered.Count);
         int inTok = 0, outTok = 0;
         foreach (RlogEvent e in ordered)
         {
-            (string? sess, string? state, int? depth) = ParseTags(e.Tags);
-            if (root != null && sess != null && sess != root)
-                continue; // restrict to the root run's events
-
+            (_, string? state, int? depth) = ParseTags(e.Tags);
             traceEvents.Add(new TraceEvent
             {
                 Type = e.Identifier ?? string.Empty,
@@ -65,18 +45,40 @@ public static class AgentTraceBuilder
             }
         }
 
+        string sessionId = !string.IsNullOrEmpty(result.SessionId)
+            ? result.SessionId
+            : ResolveRootSession(ordered);
+
         return new AgentTrace
         {
-            SessionId = root ?? string.Empty,
+            SessionId = sessionId,
             AgentName = agentName,
             FinalOutput = result.FinalOutput,
             ExitReason = result.ExitReason.ToString(),
             TotalSteps = result.TotalSteps,
             InputTokens = inTok,
             OutputTokens = outTok,
+            CostUsd = result.Cost,
             StateHistory = result.StateHistory ?? [],
             Events = traceEvents
         };
+    }
+
+    /// <summary>The run root has no parent; use its session, else the first session seen.</summary>
+    private static string ResolveRootSession(IReadOnlyList<RlogEvent> ordered)
+    {
+        RlogEvent? root = ordered.FirstOrDefault(e => string.IsNullOrEmpty(e.ParentId));
+        if (root is not null)
+        {
+            (string? s, _, _) = ParseTags(root.Tags);
+            if (s is not null) return s;
+        }
+        foreach (RlogEvent e in ordered)
+        {
+            (string? s, _, _) = ParseTags(e.Tags);
+            if (s is not null) return s;
+        }
+        return string.Empty;
     }
 
     /// <summary>Parse the agent tag block: <c>agent:X agent-session:Y agent-state:S agent-cycle:C agent-depth:D</c>.</summary>

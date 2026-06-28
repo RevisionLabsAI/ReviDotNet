@@ -4,9 +4,11 @@
 //  See LICENSE.txt in the project root for full license information.
 // ===================================================================
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using FluentAssertions;
+using Revi;
 using Revi.Refinery;
 using Xunit;
 
@@ -137,5 +139,39 @@ public class RefineryUnitTests
         depth.Should().Be(0);
 
         AgentTraceBuilder.ParseTags(null).Should().Be((null, null, null));
+    }
+
+    [Fact]
+    public void AgentTraceBuilder_Build_UsesResultSession_SumsAllTokensIncludingSubAgent()
+    {
+        DateTime T(int s) => new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(s);
+        List<RlogEvent> events =
+        [
+            new() { Identifier = "agent-run-start", ParentId = null, Tags = "agent:root agent-session:root-sess agent-step:start agent-depth:0", Timestamp = T(0) },
+            new() { Identifier = TraceEventTypes.LlmResponse, Tags = "agent:root agent-session:root-sess agent-state:respond agent-depth:0", Object2 = "{\"inputTokens\":100,\"outputTokens\":50,\"model\":\"m\"}", Timestamp = T(1) },
+            new() { Identifier = TraceEventTypes.ToolCall, Tags = "agent:root agent-session:root-sess agent-state:respond agent-depth:0", Object2 = "\"invoke_agent\"", Timestamp = T(2) },
+            // a sub-agent run: different session, depth 1, parented under the root's tool-call
+            new() { Identifier = "agent-run-start", ParentId = "tc-1", Tags = "agent:fact-checker agent-session:sub-sess agent-step:start agent-depth:1", Timestamp = T(3) },
+            new() { Identifier = TraceEventTypes.LlmResponse, Tags = "agent:fact-checker agent-session:sub-sess agent-depth:1", Object2 = "{\"inputTokens\":20,\"outputTokens\":10,\"model\":\"m\"}", Timestamp = T(4) },
+        ];
+        AgentResult result = new()
+        {
+            FinalOutput = "done",
+            ExitReason = AgentExitReason.Completed,
+            TotalSteps = 2,
+            SessionId = "root-sess",
+            Cost = 0.05m,
+            StateHistory = ["respond"]
+        };
+
+        AgentTrace trace = AgentTraceBuilder.Build(events, "root", result);
+
+        trace.SessionId.Should().Be("root-sess");          // from the result, not guessed
+        trace.Completed.Should().BeTrue();
+        trace.InputTokens.Should().Be(120);                // root 100 + sub-agent 20
+        trace.OutputTokens.Should().Be(60);                // root 50 + sub-agent 10
+        trace.CostUsd.Should().Be(0.05m);
+        trace.CalledTool("invoke_agent").Should().BeTrue();
+        trace.Events.Should().HaveCount(5);                // root + sub-agent events both included
     }
 }

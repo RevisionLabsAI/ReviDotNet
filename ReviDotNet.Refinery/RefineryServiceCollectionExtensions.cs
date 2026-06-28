@@ -12,29 +12,52 @@ namespace Revi.Refinery;
 public static class RefineryServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the Refinery engine services (trace capture, judge, runner, controller, in-memory store).
+    /// Registers the Refinery engine services (capture broker + publisher decorator, judge, runner,
+    /// controller, in-memory store).
     /// <para>
-    /// The caller must also include this assembly when loading RConfigs (e.g.
-    /// <c>AddReviDotNet(typeof(Program).Assembly, typeof(RefineryServiceCollectionExtensions).Assembly)</c>)
-    /// so the embedded evaluator prompts are available, and call
-    /// <c>ReviServiceLocator.SetProvider(provider)</c> after building so captured traces flow to the
-    /// registered <see cref="CapturingRlogPublisher"/>.
+    /// <b>Call AFTER the host registers its own <see cref="IRlogEventPublisher"/></b>: this DECORATES the
+    /// existing publisher with a <see cref="CompositeRlogPublisher"/> that also feeds the capture broker, so
+    /// the host's logging/observability is preserved (additive, not replaced). The host must also ensure
+    /// this assembly's embedded RConfigs (the evaluator prompts) are loaded into its ReviDotNet registry,
+    /// and call <c>ReviServiceLocator.SetProvider(provider)</c> after building so agent-run events reach the
+    /// decorator.
     /// </para>
     /// </summary>
     public static IServiceCollection AddRefinery(this IServiceCollection services)
     {
-        services.AddSingleton<CapturingRlogPublisher>();
-        services.AddSingleton<IRlogEventPublisher>(sp => sp.GetRequiredService<CapturingRlogPublisher>());
+        services.AddSingleton<RefineryCaptureBroker>();
+
+        // Decorate any already-registered IRlogEventPublisher (else a no-op inner) with the composite.
+        ServiceDescriptor? prior = services.LastOrDefault(d => d.ServiceType == typeof(IRlogEventPublisher));
+        services.AddSingleton<IRlogEventPublisher>(sp =>
+            new CompositeRlogPublisher(ResolveInner(prior, sp), sp.GetRequiredService<RefineryCaptureBroker>()));
+
         services.AddSingleton<ILlmJudge, LlmJudge>();
         services.AddSingleton<RefinementRunner>();
         services.AddSingleton<RefinementController>();
-        services.TryAddSingletonStore();
+
+        if (services.All(d => d.ServiceType != typeof(ICampaignStore)))
+            services.AddSingleton<ICampaignStore, InMemoryCampaignStore>();
+
         return services;
     }
 
-    private static void TryAddSingletonStore(this IServiceCollection services)
+    private static IRlogEventPublisher ResolveInner(ServiceDescriptor? prior, IServiceProvider sp)
     {
-        if (!services.Any(d => d.ServiceType == typeof(ICampaignStore)))
-            services.AddSingleton<ICampaignStore, InMemoryCampaignStore>();
+        if (prior is null)
+            return new NullRlogSink();
+        if (prior.ImplementationInstance is IRlogEventPublisher instance)
+            return instance;
+        if (prior.ImplementationFactory is { } factory && factory(sp) is IRlogEventPublisher fromFactory)
+            return fromFactory;
+        if (prior.ImplementationType is { } type)
+            return (IRlogEventPublisher)ActivatorUtilities.CreateInstance(sp, type);
+        return new NullRlogSink();
+    }
+
+    private sealed class NullRlogSink : IRlogEventPublisher
+    {
+        public Task PublishLogEventAsync(RlogEvent rlogEvent) => Task.CompletedTask;
+        public void PublishLogEvent(RlogEvent rlogEvent) { }
     }
 }

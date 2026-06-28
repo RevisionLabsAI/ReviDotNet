@@ -991,7 +991,9 @@ public class AgentRunner
             FinalOutput = _lastContent,
             ExitReason = AgentExitReason.Completed,
             StateHistory = new List<string>(_stateTraversalHistory),
-            TotalSteps = _totalSteps
+            TotalSteps = _totalSteps,
+            SessionId = SessionId,
+            Cost = _runTotalCost
         };
         LogEnd(result);
         return result;
@@ -1005,7 +1007,9 @@ public class AgentRunner
             ExitReason = reason,
             StateHistory = new List<string>(_stateTraversalHistory),
             TotalSteps = _totalSteps,
-            GuardrailViolationMessage = guardrailMessage
+            GuardrailViolationMessage = guardrailMessage,
+            SessionId = SessionId,
+            Cost = _runTotalCost
         };
         LogEnd(result);
         return result;

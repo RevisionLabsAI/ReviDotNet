@@ -19,7 +19,12 @@ public static class Aggregator
         if (cards.Count == 0)
             return new SuiteAggregate();
 
-        double passRate = cards.Count(c => c.Verdict == RunVerdict.Pass) / (double)cards.Count;
+        // Compute the structural pass-rate over GATED runs only (runs that actually evaluated ≥1
+        // invariant), so ungated runs can't inflate it to a false 100%. GatedRunCount surfaces the caveat.
+        int gatedCount = cards.Count(c => c.Gated);
+        double passRate = gatedCount > 0
+            ? cards.Count(c => c.Gated && c.Verdict == RunVerdict.Pass) / (double)gatedCount
+            : 1.0;
 
         List<double> qualities = cards
             .Where(c => c.Quality is not null)
@@ -52,6 +57,7 @@ public static class Aggregator
             CostMean = costMean,
             LatencyP90Ms = latP90,
             RunCount = cards.Count,
+            GatedRunCount = gatedCount,
             InvariantPassRateById = byId
         };
     }

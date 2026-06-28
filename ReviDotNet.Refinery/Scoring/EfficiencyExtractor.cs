@@ -10,13 +10,13 @@ namespace Revi.Refinery;
 public static class EfficiencyExtractor
 {
     /// <summary>Build <see cref="EfficiencyMetrics"/> from a trace and the measured wall-clock latency.</summary>
-    public static EfficiencyMetrics Extract(AgentTrace trace, long latencyMs, decimal costUsd = 0m) => new()
+    public static EfficiencyMetrics Extract(AgentTrace trace, long latencyMs) => new()
     {
         TotalSteps = trace.TotalSteps,
         ToolCalls = trace.ToolCalls.Count(),
         InputTokens = trace.InputTokens,
         OutputTokens = trace.OutputTokens,
-        CostUsd = costUsd,
+        CostUsd = trace.CostUsd,
         LatencyMs = latencyMs
     };
 }

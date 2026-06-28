@@ -76,8 +76,11 @@ public sealed record AgentTrace
     /// <summary>Total input tokens reported across the run.</summary>
     public int InputTokens { get; init; }
 
-    /// <summary>Total output tokens reported across the run.</summary>
+    /// <summary>Total output tokens reported across the run (including sub-agent runs).</summary>
     public int OutputTokens { get; init; }
+
+    /// <summary>Total provider-reported USD cost for the run (0 when no cost rates are configured).</summary>
+    public decimal CostUsd { get; init; }
 
     /// <summary>Ordered states visited (including loop repeats).</summary>
     public IReadOnlyList<string> StateHistory { get; init; } = [];
@@ -88,16 +91,16 @@ public sealed record AgentTrace
     /// <summary>All tool-call events.</summary>
     public IEnumerable<TraceEvent> ToolCalls => Events.Where(e => e.Type == TraceEventTypes.ToolCall);
 
-    /// <summary>Tool-call events for a given tool name (Object2 carries the name; matched loosely, case-insensitive).</summary>
+    /// <summary>
+    /// Tool-call events for a given tool name, matched strictly: a tool-call event's Object2 is exactly the
+    /// JSON-quoted tool name, so we compare the unquoted name case-insensitively. Strict matching avoids
+    /// false positives where a tool's <i>arguments</i> happen to mention another tool's name.
+    /// </summary>
     public IEnumerable<TraceEvent> ToolCallsNamed(string toolName)
     {
         string needle = toolName.Trim();
         return ToolCalls.Where(e =>
-        {
-            string name = (e.Object2 ?? string.Empty).Trim().Trim('"');
-            return string.Equals(name, needle, StringComparison.OrdinalIgnoreCase)
-                || (e.Object2 ?? string.Empty).Contains($"\"{needle}\"", StringComparison.OrdinalIgnoreCase);
-        });
+            string.Equals((e.Object2 ?? string.Empty).Trim().Trim('"'), needle, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>Whether a tool with the given name was ever called.</summary>

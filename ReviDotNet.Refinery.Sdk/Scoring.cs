@@ -76,6 +76,12 @@ public sealed record ScoreCard
     /// <summary>The run's session id, for deep-linking to the full trace.</summary>
     public string? SessionId { get; init; }
 
-    /// <summary>Fail if any invariant failed; else Pass.</summary>
+    /// <summary>Whether at least one invariant was actually evaluated for this run.</summary>
+    public bool Gated => Invariants.Count > 0;
+
+    /// <summary>
+    /// Fail if any invariant failed; else Pass. Note a run with no invariants (<see cref="Gated"/> = false)
+    /// is vacuously <see cref="RunVerdict.Pass"/> — check <see cref="Gated"/> before trusting a pass.
+    /// </summary>
     public RunVerdict Verdict => Invariants.All(i => i.Passed) ? RunVerdict.Pass : RunVerdict.Fail;
 }

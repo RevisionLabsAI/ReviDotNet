@@ -9,44 +9,35 @@ using System.Diagnostics;
 namespace Revi.Refinery;
 
 /// <summary>
-/// Runs a registered agent once and returns its result plus a captured <see cref="AgentTrace"/>.
-/// Requires the host to have wired this runner's <see cref="CapturingRlogPublisher"/> as the process's
-/// ReviLog publisher (via <c>ReviServiceLocator.SetProvider</c>). Because a single capture buffer is shared,
-/// runs through one runner instance are serialized.
+/// Runs a registered agent once and returns its result plus a captured <see cref="AgentTrace"/>. Capture is
+/// scoped per-run via <see cref="RefineryCaptureBroker"/> (async-context isolation), so concurrent runs do
+/// not cross-contaminate and a run's sub-agents are included. Requires the host to have registered the
+/// <see cref="CompositeRlogPublisher"/> (done by <c>AddRefinery</c>) and called
+/// <c>ReviServiceLocator.SetProvider</c>.
 /// </summary>
-public sealed class RefinementRunner(IAgentService agents, CapturingRlogPublisher capture)
+public sealed class RefinementRunner(IAgentService agents, RefineryCaptureBroker broker)
 {
     private readonly IAgentService _agents = agents;
-    private readonly CapturingRlogPublisher _capture = capture;
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly RefineryCaptureBroker _broker = broker;
 
     /// <summary>Run the agent once with the given inputs, capturing its trace.</summary>
     public async Task<AgentRun> RunOnceAsync(
         string agentName, IReadOnlyDictionary<string, string> inputs, CancellationToken ct = default)
     {
-        await _gate.WaitAsync(ct);
-        try
-        {
-            _capture.Clear();
-            Dictionary<string, object> dict = inputs.ToDictionary(kv => kv.Key, kv => (object)kv.Value);
+        Dictionary<string, object> dict = inputs.ToDictionary(kv => kv.Key, kv => (object)kv.Value);
 
-            Stopwatch sw = Stopwatch.StartNew();
-            AgentResult result = await _agents.Run(agentName, dict, ct);
-            sw.Stop();
+        using RefineryCaptureBroker.CaptureScope scope = _broker.BeginCapture();
+        Stopwatch sw = Stopwatch.StartNew();
+        AgentResult result = await _agents.Run(agentName, dict, ct);
+        sw.Stop();
 
-            IReadOnlyList<RlogEvent> events = _capture.Drain();
-            AgentTrace trace = AgentTraceBuilder.Build(events, agentName, result);
-            return new AgentRun(result, trace, sw.ElapsedMilliseconds);
-        }
-        finally
-        {
-            _gate.Release();
-        }
+        AgentTrace trace = AgentTraceBuilder.Build(scope.Capture.Events, agentName, result);
+        return new AgentRun(result, trace, sw.ElapsedMilliseconds);
     }
 }
 
 /// <summary>The outcome of a single agent run: the raw result, the typed trace, and wall-clock latency.</summary>
-/// <param name="Result">The agent result (final output, exit reason, steps).</param>
+/// <param name="Result">The agent result (final output, exit reason, steps, session, cost).</param>
 /// <param name="Trace">The captured, typed trace.</param>
 /// <param name="LatencyMs">Wall-clock duration of the run.</param>
 public sealed record AgentRun(AgentResult Result, AgentTrace Trace, long LatencyMs);

@@ -4,7 +4,10 @@ version = 1
 
 [[settings]]
 request-json = true
-guidance-schema-type = json-auto
+# Disabled (not json-auto): json-auto would generate a KEBAB-case schema from the caller's return type and
+# enforce it on guidance-capable providers (OpenAI/Gemini), breaking the snake_case JSON this prompt asks
+# for and the consumer deserializes. Keeping guidance off makes the contract provider-independent.
+guidance-schema-type = disabled
 preferred-models = claude-opus-4-8
 min-tier = A
 

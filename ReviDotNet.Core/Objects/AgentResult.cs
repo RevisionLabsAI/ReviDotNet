@@ -28,4 +28,16 @@ public class AgentResult
 
     /// <summary>Describes which guardrail was violated, when ExitReason is GuardrailViolation.</summary>
     public string? GuardrailViolationMessage { get; set; }
+
+    /// <summary>
+    /// The run's session id (matches the <c>agent-session:</c> tag on every emitted log event), so a
+    /// caller can correlate this result with its captured trace. Empty if not set.
+    /// </summary>
+    public string SessionId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Total provider-reported USD cost across the whole run (sum of every LLM call's input/output tokens
+    /// × the model's per-million rates). 0 when no cost rates are configured.
+    /// </summary>
+    public decimal Cost { get; set; }
 }

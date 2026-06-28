@@ -44,10 +44,10 @@ public interface IRefinementPlugin
 }
 
 /// <summary>An agent the plugin exposes for refinement.</summary>
-/// <param name="Name">The agent's effective name, as resolved by ReviDotNet's agent registry.</param>
-/// <param name="RConfigPaths">Optional on-disk RConfig folders to load this agent's .agent/.pmt from.</param>
+/// <param name="Name">
+/// The agent's effective name, as resolved by the host's ReviDotNet agent registry. The agent's
+/// <c>.agent</c>/<c>.pmt</c> files must be loaded into that registry by the host (e.g. via the host's
+/// RConfig paths / <c>REVI_RCONFIG_PATHS</c>); the engine resolves the agent by this name.
+/// </param>
 /// <param name="Description">Optional human description.</param>
-public sealed record RefinableAgent(
-    string Name,
-    IReadOnlyList<string>? RConfigPaths = null,
-    string? Description = null);
+public sealed record RefinableAgent(string Name, string? Description = null);

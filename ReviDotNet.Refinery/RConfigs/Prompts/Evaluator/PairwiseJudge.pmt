@@ -4,7 +4,8 @@ version = 1
 
 [[settings]]
 request-json = true
-guidance-schema-type = json-auto
+# Disabled (not json-auto) so the snake_case JSON contract is provider-independent — see AgentRunJudge.pmt.
+guidance-schema-type = disabled
 preferred-models = claude-opus-4-8
 min-tier = A
 
