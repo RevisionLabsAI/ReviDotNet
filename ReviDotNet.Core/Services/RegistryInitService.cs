@@ -63,6 +63,17 @@ internal sealed class RegistryInitService : IHostedService
             await _tools.LoadAsync(_appAssembly, cancellationToken);
             await _agents.LoadAsync(_appAssembly, cancellationToken);
 
+            foreach (Assembly extra in _options.AdditionalAssemblies)
+            {
+                _logger.LogInfo($"Loading additional embedded RConfigs from assembly {extra.GetName().Name}");
+                await _providers.LoadAsync(extra, cancellationToken);
+                await _models.LoadAsync(extra, cancellationToken);
+                await _embeddings.LoadAsync(extra, cancellationToken);
+                await _prompts.LoadAsync(extra, cancellationToken);
+                await _tools.LoadAsync(extra, cancellationToken);
+                await _agents.LoadAsync(extra, cancellationToken);
+            }
+
             LoadAdditionalConfigDirectories();
 
             ForgeManager.Load();

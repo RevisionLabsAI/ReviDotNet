@@ -1,0 +1,100 @@
+@page "/refinery"
+@using Revi.Refinery
+@using Revi.Refinery.Hosting
+@inject PluginManager Plugins
+
+<PageTitle>Refinery</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h5">Agent Refinery</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh"
+               OnClick="RefreshAll" Disabled="_busy">Build &amp; reload all</MudButton>
+</MudStack>
+
+@if (_busy)
+{
+    <MudProgressLinear Indeterminate="true" Class="mb-4" />
+}
+
+@if (_plugins.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">
+        No plugins loaded. Set <code>Refinery:Repos</code> (in <code>appsettings</code> / config) to one or
+        more local repo paths, then click <b>Build &amp; reload all</b>. Forge builds each repo's refinement
+        plugin and loads it here.
+    </MudAlert>
+}
+else
+{
+    @foreach (LoadedPlugin p in _plugins)
+    {
+        <MudPaper Class="pa-4 mb-3" Outlined="true">
+            <MudStack Row="true" AlignItems="AlignItems.Center">
+                <MudText Typo="Typo.h6">@p.Name</MudText>
+                <MudText Typo="Typo.body2" Color="@StatusColor(p.Status)">(@p.Status)</MudText>
+                <MudSpacer />
+                <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Sync"
+                           OnClick="@(() => Reload(p.Name))" Disabled="_busy">Reload</MudButton>
+            </MudStack>
+            <MudText Typo="Typo.caption">@p.ProjectPath</MudText>
+
+            @if (!string.IsNullOrEmpty(p.Error))
+            {
+                <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@p.Error</MudAlert>
+            }
+            @if (!string.IsNullOrEmpty(p.Warning))
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">@p.Warning</MudAlert>
+            }
+
+            @if (p.Plugin is not null)
+            {
+                <div class="mt-3">
+                    <MudText Typo="Typo.subtitle2">Agents</MudText>
+                    <MudText Typo="Typo.body2">@string.Join(", ", p.Plugin.GetAgents().Select(a => a.Name))</MudText>
+                </div>
+                <div class="mt-2">
+                    <MudText Typo="Typo.subtitle2">Scenario suites</MudText>
+                    @foreach (ScenarioSuite s in p.Plugin.GetScenarioSuites())
+                    {
+                        <MudText Typo="Typo.body2">@s.Name (@s.AgentName) — @s.Scenarios.Count scenarios</MudText>
+                    }
+                </div>
+                <div class="mt-2">
+                    <MudText Typo="Typo.subtitle2">Invariants</MudText>
+                    <MudText Typo="Typo.body2">@string.Join(", ", p.Plugin.GetInvariantCheckers().Select(i => i.Id))</MudText>
+                </div>
+            }
+        </MudPaper>
+    }
+}
+
+@code {
+    private bool _busy;
+    private List<LoadedPlugin> _plugins = new();
+
+    protected override void OnInitialized() => _plugins = Plugins.Catalog.ToList();
+
+    private async Task RefreshAll()
+    {
+        _busy = true;
+        try { await Plugins.RefreshAllAsync(); _plugins = Plugins.Catalog.ToList(); }
+        finally { _busy = false; }
+    }
+
+    private async Task Reload(string name)
+    {
+        _busy = true;
+        try { await Plugins.ReloadAsync(name); _plugins = Plugins.Catalog.ToList(); }
+        finally { _busy = false; }
+    }
+
+    private static Color StatusColor(PluginStatus s) => s switch
+    {
+        PluginStatus.Loaded => Color.Success,
+        PluginStatus.BuildFailed or PluginStatus.LoadFailed => Color.Error,
+        PluginStatus.Building => Color.Info,
+        _ => Color.Default
+    };
+}

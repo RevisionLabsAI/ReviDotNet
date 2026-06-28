@@ -4,6 +4,8 @@
 //  See LICENSE.txt in the project root for full license information.
 // ===================================================================
 
+using System.Reflection;
+
 namespace Revi;
 
 /// <summary>
@@ -12,6 +14,13 @@ namespace Revi;
 /// </summary>
 public sealed class ReviRegistryOptions
 {
+    /// <summary>
+    /// Additional assemblies to load <em>embedded</em> RConfigs from, after the application assembly. Lets a
+    /// referenced library ship its own prompts/agents/models as embedded resources (e.g. a toolkit's
+    /// evaluator prompts). Loaded after the app's set, so the application's configs win on a name clash.
+    /// </summary>
+    public List<Assembly> AdditionalAssemblies { get; } = new();
+
     /// <summary>
     /// Additional folders to load RConfigs from <em>after</em> the application's own (embedded or on-disk)
     /// set. Each entry is treated as an <c>RConfigs</c> root and may contain any of the standard subfolders —

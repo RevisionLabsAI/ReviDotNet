@@ -13,6 +13,8 @@ using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using MudBlazor.Services;
 using Revi;
+using Revi.Refinery;
+using Revi.Refinery.Hosting;
 using ReviDotNet.Forge.Api;
 using ReviDotNet.Forge.Components;
 using ReviDotNet.Forge.Services;
@@ -127,6 +129,12 @@ else
             new NullRlogEventPublisher(),
             sp.GetRequiredService<IWorkshopEventBus>()));
 }
+
+// Refinery: decorate the IRlogEventPublisher registered above with a per-run capture broker (must be
+// AFTER it is registered so the host's logging/Observer UI is preserved), and register the plugin host +
+// engine. Repos to build/load come from the "Refinery" config section (Refinery:Repos).
+builder.Services.AddRefinery();
+builder.Services.AddRefineryHosting(builder.Configuration);
 // Additional on-disk RConfig folders loaded INTO Forge IN ADDITION to its own embedded set ("also load":
 // Forge's own configs load first and always win on a name clash; these folders only add what's new). Each
 // is an RConfigs root (Providers/, Models/Inference/, Models/Embedding/, Prompts/, Agents/, Tools/) — handy
@@ -140,7 +148,12 @@ var extraRConfigPaths = ReadAdditionalRConfigPaths(builder.Configuration);
 
 builder.Services.AddReviDotNet(
     typeof(Program).Assembly,
-    options => options.AdditionalConfigDirectories.AddRange(extraRConfigPaths));
+    options =>
+    {
+        options.AdditionalConfigDirectories.AddRange(extraRConfigPaths);
+        // Load the Refinery toolkit's embedded RConfigs (the evaluator judge prompts) into Forge's registry.
+        options.AdditionalAssemblies.Add(typeof(RefineryServiceCollectionExtensions).Assembly);
+    });
 
 static List<string> ReadAdditionalRConfigPaths(IConfiguration config)
 {
@@ -256,6 +269,7 @@ if (useAuthentication)
 }
 
 app.MapForgeApi();
+app.MapRefineryApi();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
