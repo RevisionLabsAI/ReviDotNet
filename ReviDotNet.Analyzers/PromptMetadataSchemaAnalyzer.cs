@@ -63,8 +63,14 @@ namespace ReviDotNet.Analyzers
 
         private static readonly LocalizableString TitleUnknownKey = "Unknown key in section";
         private static readonly LocalizableString MessageUnknownKey = "Key '{0}' is not recognized in section {1}";
-        private static readonly LocalizableString DescriptionUnknownKey = 
+        private static readonly LocalizableString DescriptionUnknownKey =
             "Remove or rename unknown keys to match the documented schema in prompt-files.md.";
+
+        private static readonly LocalizableString TitleGuidanceDefault = "guidance-schema-type = default applies no guidance";
+        private static readonly LocalizableString MessageGuidanceDefault =
+            "'{0}' is the skip sentinel and applies no output guidance. Use 'defer' to inherit the provider's default strategy, or 'disabled' to be explicit.";
+        private static readonly LocalizableString DescriptionGuidanceDefault =
+            "guidance-schema-type = default leaves the setting unset (no constraint). Use 'defer' or 'disabled'.";
 
         private static readonly DiagnosticDescriptor MissingRule = new DiagnosticDescriptor(
             DiagnosticId,
@@ -102,9 +108,18 @@ namespace ReviDotNet.Analyzers
             isEnabledByDefault: true,
             description: DescriptionUnknownKey);
 
+        private static readonly DiagnosticDescriptor GuidanceDefaultRule = new DiagnosticDescriptor(
+            DiagnosticId,
+            TitleGuidanceDefault,
+            MessageGuidanceDefault,
+            Category,
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true,
+            description: DescriptionGuidanceDefault);
+
         /// <inheritdoc />
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
-            ImmutableArray.Create(MissingRule, InvalidEnumRule, OutOfRangeRule, UnknownKeyRule);
+            ImmutableArray.Create(MissingRule, InvalidEnumRule, OutOfRangeRule, UnknownKeyRule, GuidanceDefaultRule);
 
         /// <inheritdoc />
         public override void Initialize(AnalysisContext context)
@@ -197,6 +212,12 @@ namespace ReviDotNet.Analyzers
                 {
                     string allowStr = string.Join(", ", allowed);
                     Diagnostic d = Diagnostic.Create(InvalidEnumRule, CreateFileLineLocation(file.Path, gst.Line), gst.Raw, "settings.guidance-schema-type", allowStr);
+                    context.ReportDiagnostic(d);
+                }
+                else if (rawNorm == "default")
+                {
+                    // Allowed, but it is the skip sentinel — applies no guidance. Steer to defer/disabled.
+                    Diagnostic d = Diagnostic.Create(GuidanceDefaultRule, CreateFileLineLocation(file.Path, gst.Line), gst.Raw);
                     context.ReportDiagnostic(d);
                 }
             }

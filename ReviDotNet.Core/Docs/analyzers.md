@@ -26,6 +26,10 @@ This is the full set of rules (most are on by default):
   - Reports when multiple `.pmt` files resolve to the same effective prompt name.
 - REVI009 — Unpaired few-shot example (Warning)
   - Flags a `.pmt` file with an `[[_exin_N]]` that has no matching `[[_exout_N]]` (or vice versa). The runtime pairs examples by index and silently drops a half-pair, so an off-by-one or typo in the index would otherwise lose a whole exemplar with no feedback.
+- REVI010 — Guidance schema / strategy mismatch (Warning)
+  - Cross-checks a `.pmt` file's `[[_schema]]` block against its `settings.guidance-schema-type`: a `*-manual` strategy with no `[[_schema]]`, an orphaned `[[_schema]]` under a `*-auto`/`disabled` strategy, or a `json-manual` schema that isn't structurally valid JSON. (`PromptMetadataSchemaAnalyzer`/`REVI006` separately warns when `guidance-schema-type = default`, the skip sentinel.)
+- REVI011 — Agent state-graph validation (Warning)
+  - Validates a `.agent` file's state graph: a state name with an underscore (undiscoverable), a loop node or transition target with no `[[state.*]]` definition, an entry state with no definition, a dead edge after an unconditional fallback, or a duplicate signal in one state. Mirrors the load-time warnings the runtime now emits from `AgentProfile`.
 - REVI006 — Agent not found
   - Ensures a referenced agent name exists among your `.agent` files under `RConfigs/Agents` (any depth).
   - Uses runtime-equivalent name resolution: lower-cased folder prefix + `[[information]] name` from the `.agent` file.
@@ -216,6 +220,25 @@ orphaned — there is no [[_exout_2]]
 How to fix:
 - Add the missing half (`[[_exout_2]]` above), or
 - Renumber/remove the stray section so every `_exin_N` has exactly one `_exout_N` with the same index.
+
+### REVI010 — Guidance schema / strategy mismatch
+
+- Category: Configuration
+- Default severity: Warning
+- Triggers when, in a `.pmt` file:
+  - `settings.guidance-schema-type` is a `*-manual` strategy but there is no `[[_schema]]` section,
+  - an `[[_schema]]` section is present while the strategy is `*-auto`/`disabled`/`default`/`defer`/unset (the block is ignored — orphaned), or
+  - the strategy is `json-manual` and the `[[_schema]]` body is not structurally valid JSON (unbalanced braces/brackets, or not an object/array).
+
+How to fix: pair a `*-manual` strategy with a valid `[[_schema]]`, switch to a `*-auto` strategy, or remove the orphaned schema.
+
+### REVI011 — Agent state-graph validation
+
+- Category: Configuration
+- Default severity: Warning
+- Triggers when, in a `.agent` file: a state name (header or loop edge) contains an underscore; a loop node, transition target, or `loop.entry` references a state with no `[[state.*]]` section; a transition appears after an unconditional (no `[when:]`) fallback (a dead edge); or a signal is declared more than once within one state. The same conditions are logged as warnings by the runtime at load time.
+
+How to fix: rename underscore'd states to hyphenated names, define (or correct the spelling of) referenced states, remove unreachable transitions, and de-duplicate signals.
 
 ### REVI006 — Agent not found
 

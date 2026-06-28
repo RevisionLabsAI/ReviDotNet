@@ -590,7 +590,18 @@ public class Prompt
 
                 // Skip adding this property to the object/leave null if marked default
                 if (value.ToLower() == "default")
+                {
+                    // 'default' is the global skip-sentinel, so guidance-schema-type = default applies
+                    // NO guidance — a silent footgun. Steer the author to the explicit alternatives.
+                    if (attribute.Name == "settings_guidance-schema-type")
+                    {
+                        data.TryGetValue("information_name", out var pname);
+                        Util.Log($"Warning: guidance-schema-type = default in prompt '{pname}' applies no " +
+                                 "guidance (it is the skip sentinel). Use 'defer' to inherit the provider's " +
+                                 "default strategy, or 'disabled' to be explicit.");
+                    }
                     continue;
+                }
 
                 // 'few-shot-examples = all' means "use every defined example" — represented as null,
                 // which the message builders treat as "all". Parsing "all" as an int would otherwise throw.
