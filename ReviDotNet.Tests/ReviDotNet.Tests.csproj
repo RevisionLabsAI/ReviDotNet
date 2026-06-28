@@ -21,5 +21,6 @@
     <ProjectReference Include="..\ReviDotNet.Analyzers\ReviDotNet.Analyzers.csproj" />
     <ProjectReference Include="..\ReviDotNet.Refinery\ReviDotNet.Refinery.csproj" />
     <ProjectReference Include="..\ReviDotNet.Refinery.Sdk\ReviDotNet.Refinery.Sdk.csproj" />
+    <ProjectReference Include="..\ReviDotNet.Refinery.Hosting\ReviDotNet.Refinery.Hosting.csproj" />
   </ItemGroup>
 </Project>

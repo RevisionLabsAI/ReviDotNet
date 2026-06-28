@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <LangVersion>12</LangVersion>
+        <RootNamespace>ReviDotNet.Refinery.TestPlugin</RootNamespace>
+        <NoWarn>$(NoWarn);CS1591</NoWarn>
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+
+    <!-- A minimal IRefinementPlugin used to validate discovery + build + collectible-ALC loading.
+         References ONLY the Sdk (the shared contract), exactly like a real plugin should for the parts
+         that cross the boundary. -->
+    <ItemGroup>
+        <ProjectReference Include="../ReviDotNet.Refinery.Sdk/ReviDotNet.Refinery.Sdk.csproj" />
+    </ItemGroup>
+
+</Project>
