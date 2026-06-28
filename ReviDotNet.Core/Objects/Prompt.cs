@@ -69,6 +69,15 @@ public class Prompt
     [JsonProperty("use-search-grounding"), RConfigProperty("settings_use-search-grounding")]
     public bool? UseSearchGrounding { get; set; }
 
+    /// <summary>
+    /// Per-request thinking / reasoning amount, as a common word (<c>low</c>/<c>medium</c>/<c>high</c>, or
+    /// <c>off</c> to disable). Overrides the model's default <c>thinking</c> when set; the model's
+    /// <c>thinking-conversion-*</c> table still translates it to the provider-specific value. Lets a
+    /// task that needs more (or less) reasoning request it without changing the model profile.
+    /// </summary>
+    [JsonProperty("thinking"), RConfigProperty("settings_thinking")]
+    public string? Thinking { get; set; }
+
     [JsonProperty("preferred-models"), RConfigProperty("settings_preferred-models")]
     public List<string>? PreferredModels { get; set; }
 

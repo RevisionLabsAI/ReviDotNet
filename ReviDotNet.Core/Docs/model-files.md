@@ -40,6 +40,53 @@ Core operational parameters for the model.
 | `supports-response-completion` | boolean | `null` | Whether this specific model supports the Responses API completion endpoint. Overrides provider-level defaults when set. |
 | `cost-per-million-input-tokens` | decimal | `null` | USD cost per 1,000,000 prompt/input tokens. Used by `AgentRunner` to enforce `cost-budget` guardrails. When unset, this model contributes 0 to cost tracking (suitable for free or locally-hosted models). |
 | `cost-per-million-output-tokens` | decimal | `null` | USD cost per 1,000,000 completion/output tokens. Used by `AgentRunner` to enforce `cost-budget` guardrails. When unset, this model contributes 0 to cost tracking. |
+| `thinking` | string | `null` | The model's **default** thinking/reasoning amount. Use one of the five **common words** — `minimal`, `low`, `medium`, `high`, `max` — or `none` (also `off`) to disable, translated per-provider via the `thinking-conversion-*` table; a raw provider value (an effort string or numeric token budget) may also be given. Set this on every model config (reasoning models a level, others `none`). A prompt's `thinking` **overrides** it; a prompt that leaves `thinking` unset inherits this default. See "Native thinking / reasoning" below. |
+| `thinking-conversion-minimal` | string | `null` | Value for the floor word `minimal` (least the model offers): OpenAI `minimal`, a small Gemini budget, or Claude `low`. Unset = pass `minimal` through (valid only where the provider accepts it, e.g. OpenAI). |
+| `thinking-conversion-low` | string | `null` | Value for `low`. Unset = pass `low` through. |
+| `thinking-conversion-medium` | string | `null` | Value for `medium`. Unset = pass through. |
+| `thinking-conversion-high` | string | `null` | Value for `high`. Unset = pass through. |
+| `thinking-conversion-max` | string | `null` | Value for the ceiling word `max` (most the model offers): Claude `max`, the largest Gemini budget, or OpenAI `high` (capped — no effort above high). Unset = pass `max` through (valid only where the provider accepts it, e.g. Claude). |
+
+### Native thinking / reasoning
+
+Thinking is configured with a **five-word common vocabulary** — `minimal` < `low` < `medium` < `high` <
+`max` (plus `none`/`off` to disable) — so prompts and agents are provider-agnostic. `minimal` is the
+*floor* (least thinking a model offers) and `max` is the *ceiling* (most). Each model's
+`thinking-conversion-*` table translates the common word into the value its provider expects, and
+ReviDotNet emits it in the correct wire format per protocol:
+
+| Provider | Wire format | Real levels (verified) |
+| :--- | :--- | :--- |
+| **Claude** (Anthropic) | Adaptive: `thinking:{type:"adaptive"}` + `output_config:{effort:<word>}`. Classic: a numeric value → `thinking:{type:"enabled", budget_tokens:N}` (4.5-era). Forces `temperature=1`, drops `top_p`, raises `max_tokens` above a numeric budget. | Opus 4.8 effort: `low`,`medium`,`high`,`xhigh`,`max` (5) |
+| **Gemini** (Google) | `generationConfig.thinkingConfig` — numeric → `thinkingBudget` (Gemini 2.5); word → `thinkingLevel` (Gemini 3). | 2.5-flash: **continuous** budget `0..24576` (`0`=off, `-1`=dynamic); no discrete levels |
+| **OpenAI** | Chat Completions `reasoning_effort`; reasoning models also need `max-token-type = MaxCompletionTokens`. | GPT-5: `minimal`,`low`,`medium`,`high` (4) |
+
+Because providers have different tier counts, the common words map onto each model's range via its table —
+`minimal` collapses to the provider's lowest where there's no sub-`low` tier (Claude), and `max` caps at
+the provider's highest where there's nothing above `high` (OpenAI).
+
+**Resolution & defaults:** a **prompt's** `thinking` (in the `.pmt` `[[settings]]`) overrides the
+**model's** `thinking`; a prompt that leaves `thinking` unset **inherits the model's default**. The chosen
+word is then translated by the **model's** `thinking-conversion-*` table (the prompt has no table of its
+own). Set a `thinking` default on every model config — a level for reasoning models, `none` for the rest.
+`none`/`off`/`disabled`/`0`/empty disable thinking entirely (on the model default or per prompt).
+
+Example — the five words mapped onto a Claude model's effort levels and a Gemini model's token budgets:
+
+```ini
+# claude-opus-4-8.rcfg            # gemini-2-5-flash.rcfg
+[[settings]]                      [[settings]]
+thinking = high                   thinking = high
+thinking-conversion-minimal = low thinking-conversion-minimal = 512
+thinking-conversion-low = low     thinking-conversion-low = 2048
+thinking-conversion-medium = medium  thinking-conversion-medium = 8192
+thinking-conversion-high = high   thinking-conversion-high = 16384
+thinking-conversion-max = max     thinking-conversion-max = 24576
+```
+
+> Set a reasoning `thinking` level only on models whose `model-string` supports it (`claude-opus-4-8`,
+> `gemini-2.5-flash`, `gpt-5`); use `thinking = none` on the rest. A non-reasoning model rejects the
+> parameter, so don't enable it as the default there.
 
 ### `[[override-settings]]` (Optional)
 Allows this model to override default settings normally found in `.pmt` files.

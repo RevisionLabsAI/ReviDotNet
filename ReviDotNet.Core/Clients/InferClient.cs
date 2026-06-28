@@ -220,6 +220,7 @@ public class InferClient : IDisposable
         GuidanceType? guidanceType = GuidanceType.Disabled,
         string? guidanceString = null,
         bool? useSearchGrounding = null,
+        string? thinking = null,
         CancellationToken cancellationToken = default,
         int? inactivityTimeoutSeconds = null)
     {
@@ -248,7 +249,8 @@ public class InferClient : IDisposable
             stopSequences,
             guidanceType,
             guidanceString,
-            useSearchGrounding);
+            useSearchGrounding,
+            thinking);
         
         // Use appropriate endpoint based on protocol
         string endpoint;
@@ -306,10 +308,11 @@ public class InferClient : IDisposable
         int? inputTokens = serverResponse.TryGetValue("input_tokens", out string? itStr) && int.TryParse(itStr, out int itVal) ? itVal : null;
         int? outputTokens = serverResponse.TryGetValue("output_tokens", out string? otStr) && int.TryParse(otStr, out int otVal) ? otVal : null;
         string? model = serverResponse.TryGetValue("model", out string? m) && !string.IsNullOrEmpty(m) ? m : null;
+        string? thinking = serverResponse.TryGetValue("thinking", out string? th) && !string.IsNullOrEmpty(th) ? th : null;
 
         outputs.Add(selected);
 
-        return new CompletionResult { FullPrompt = prompt, Outputs = outputs, Selected = selected, FinishReason = finishReason, InputTokens = inputTokens, OutputTokens = outputTokens, Model = model };
+        return new CompletionResult { FullPrompt = prompt, Outputs = outputs, Selected = selected, FinishReason = finishReason, InputTokens = inputTokens, OutputTokens = outputTokens, Model = model, Thinking = thinking };
     }
     #endregion
     
@@ -354,6 +357,7 @@ public class InferClient : IDisposable
         GuidanceType? guidanceType = GuidanceType.Disabled,
         string? guidanceString = null,
         bool? useSearchGrounding = null,
+        string? thinking = null,
         CancellationToken cancellationToken = default,
         int? inactivityTimeoutSeconds = null)
     {
@@ -380,7 +384,8 @@ public class InferClient : IDisposable
             stopSequences,
             guidanceType,
             guidanceString,
-            useSearchGrounding);
+            useSearchGrounding,
+            thinking);
 
         string endpoint;
         if (_config.Protocol == Protocol.Gemini)
@@ -481,6 +486,7 @@ public class InferClient : IDisposable
         GuidanceType? guidanceType = GuidanceType.Disabled,
         string? guidanceString = null,
         bool? useSearchGrounding = null,
+        string? thinking = null,
         CancellationToken cancellationToken = default,
         int? inactivityTimeoutSeconds = null)
     {
@@ -511,7 +517,8 @@ public class InferClient : IDisposable
             stopSequences,
             guidanceType,
             guidanceString,
-            useSearchGrounding);
+            useSearchGrounding,
+            thinking);
 
         string endpoint = "v1/responses";
 
@@ -598,6 +605,7 @@ public class InferClient : IDisposable
         GuidanceType? guidanceType = GuidanceType.Disabled,
         string? guidanceString = null,
         bool? useSearchGrounding = null,
+        string? thinking = null,
         CancellationToken cancellationToken = default,
         int? inactivityTimeoutSeconds = null)
     {
@@ -633,7 +641,8 @@ public class InferClient : IDisposable
             stopSequences,
             guidanceType,
             guidanceString,
-            useSearchGrounding);
+            useSearchGrounding,
+            thinking);
         
         // Use appropriate endpoint based on protocol
         string endpoint;
@@ -727,6 +736,7 @@ public class InferClient : IDisposable
         GuidanceType? guidanceType = GuidanceType.Disabled,
         string? guidanceString = null,
         bool? useSearchGrounding = null,
+        string? thinking = null,
         CancellationToken cancellationToken = default,
         int? inactivityTimeoutSeconds = null)
     {
@@ -753,7 +763,8 @@ public class InferClient : IDisposable
             stopSequences,
             guidanceType,
             guidanceString,
-            useSearchGrounding);
+            useSearchGrounding,
+            thinking);
 
         string endpoint;
         if (_config.Protocol == Protocol.Gemini)

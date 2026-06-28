@@ -1,0 +1,36 @@
+[[general]]
+name = claude-opus-4-8
+enabled = true
+model-string = claude-opus-4-8
+provider-name = claude
+
+[[settings]]
+tier = A
+token-limit = 200000
+supports-prompt-completion = true
+supports-response-completion = true
+# Default thinking amount for this model; a prompt's `thinking` overrides it, and a prompt that leaves
+# `thinking` unset inherits this default. Use `none` to disable thinking by default.
+thinking = high
+# Map the 5 common words onto claude-opus-4-8's adaptive effort levels (valid: low/medium/high/xhigh/max).
+# Claude has no sub-`low` tier, so `minimal` floors to `low`; `max` reaches the model's ceiling.
+thinking-conversion-minimal = low
+thinking-conversion-low = low
+thinking-conversion-medium = medium
+thinking-conversion-high = high
+thinking-conversion-max = max
+
+[[override-settings]]
+max-tokens = 32000
+
+[[override-tuning]]
+temperature = 1
+frequency-penalty = disabled
+presence-penalty = disabled
+repetition-penalty = disabled
+
+[[chat-completion]]
+system-message = true
+prompt-in-system = false
+system-in-user = true
+prompt-in-user = true

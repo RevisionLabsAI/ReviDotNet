@@ -97,6 +97,87 @@ public class ModelProfile
     [RConfigProperty("settings_cost-per-million-output-tokens")]
     public decimal? CostPerMillionOutputTokens { get; set; }
 
+    /// <summary>
+    /// Default amount of native thinking / reasoning for this model. Use one of the five <b>common
+    /// words</b> — <c>minimal</c>, <c>low</c>, <c>medium</c>, <c>high</c>, <c>max</c> — or <c>none</c>
+    /// (also <c>off</c>) to disable, and let the per-model <c>thinking-conversion-*</c> table translate it
+    /// to whatever this provider expects. A raw provider value (an effort string or a numeric token
+    /// budget) may also be given directly. Every model config should set this default; a prompt's
+    /// <c>thinking</c> setting overrides it per request, and a prompt that leaves <c>thinking</c> unset
+    /// inherits this model default. The resolved value is emitted in the correct shape per provider:
+    /// Claude adaptive effort or classic <c>budget_tokens</c>; Gemini <c>thinkingConfig</c>
+    /// (<c>thinkingBudget</c> or <c>thinkingLevel</c>); OpenAI <c>reasoning_effort</c>.
+    /// </summary>
+    [RConfigProperty("settings_thinking")]
+    public string? Thinking { get; set; }
+
+    /// <summary>Provider-specific value this model uses for the common word <c>minimal</c> — the floor
+    /// (least thinking the model offers), e.g. OpenAI <c>minimal</c>, a small Gemini budget, or (since
+    /// Claude has no sub-<c>low</c> tier) Claude <c>low</c>. Null = pass <c>minimal</c> through unchanged
+    /// (only valid where the provider accepts it, e.g. OpenAI) — set this for Claude/Gemini.</summary>
+    [RConfigProperty("settings_thinking-conversion-minimal")]
+    public string? ThinkingConversionMinimal { get; set; }
+
+    /// <summary>Provider-specific value this model uses for the common word <c>low</c> (e.g. <c>2048</c>
+    /// for a Gemini token budget, or <c>low</c> for a Claude/OpenAI effort). Null = pass <c>low</c> through.</summary>
+    [RConfigProperty("settings_thinking-conversion-low")]
+    public string? ThinkingConversionLow { get; set; }
+
+    /// <summary>Provider-specific value this model uses for the common word <c>medium</c>. Null = pass through.</summary>
+    [RConfigProperty("settings_thinking-conversion-medium")]
+    public string? ThinkingConversionMedium { get; set; }
+
+    /// <summary>Provider-specific value this model uses for the common word <c>high</c>.
+    /// Null = pass <c>high</c> through.</summary>
+    [RConfigProperty("settings_thinking-conversion-high")]
+    public string? ThinkingConversionHigh { get; set; }
+
+    /// <summary>Provider-specific value this model uses for the common word <c>max</c> — the ceiling
+    /// (most thinking the model offers), e.g. Claude <c>max</c>, the largest Gemini budget, or (since
+    /// OpenAI has no <c>max</c> effort) OpenAI <c>high</c>. Null = pass <c>max</c> through unchanged
+    /// (only valid where the provider accepts it, e.g. Claude) — set this for OpenAI/Gemini.</summary>
+    [RConfigProperty("settings_thinking-conversion-max")]
+    public string? ThinkingConversionMax { get; set; }
+
+    /// <summary>
+    /// Translates a thinking amount to this model's provider-specific value. Recognizes the common words
+    /// <c>low</c>/<c>medium</c>/<c>high</c> (mapped via the <c>thinking-conversion-*</c> table when set,
+    /// else passed through so providers that accept those words directly still work), treats
+    /// <c>off</c>/<c>none</c>/<c>disabled</c>/<c>0</c>/<c>false</c> and empty as "no thinking" (returns
+    /// null), and passes any other raw value (e.g. a numeric budget or a provider-specific effort) through
+    /// unchanged.
+    /// </summary>
+    /// <param name="amount">The requested amount (common word or raw provider value).</param>
+    /// <returns>The provider-specific value to send, or null to disable thinking.</returns>
+    public string? ResolveThinking(string? amount)
+    {
+        if (string.IsNullOrWhiteSpace(amount))
+            return null;
+
+        string trimmed = amount.Trim();
+        switch (trimmed.ToLowerInvariant())
+        {
+            case "off":
+            case "none":
+            case "disabled":
+            case "0":
+            case "false":
+                return null;
+            case "minimal":
+                return string.IsNullOrWhiteSpace(ThinkingConversionMinimal) ? "minimal" : ThinkingConversionMinimal.Trim();
+            case "low":
+                return string.IsNullOrWhiteSpace(ThinkingConversionLow) ? "low" : ThinkingConversionLow.Trim();
+            case "medium":
+                return string.IsNullOrWhiteSpace(ThinkingConversionMedium) ? "medium" : ThinkingConversionMedium.Trim();
+            case "high":
+                return string.IsNullOrWhiteSpace(ThinkingConversionHigh) ? "high" : ThinkingConversionHigh.Trim();
+            case "max":
+                return string.IsNullOrWhiteSpace(ThinkingConversionMax) ? "max" : ThinkingConversionMax.Trim();
+            default:
+                return trimmed; // raw value (numeric budget or provider-specific effort)
+        }
+    }
+
     // Setting Overrides
     [RConfigProperty("override-settings_filter")]
     public string? Filter { get; set; }

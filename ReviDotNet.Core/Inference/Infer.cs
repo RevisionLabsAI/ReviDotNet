@@ -97,6 +97,7 @@ internal class Infer
 						guidanceType: guidanceType,
 						guidanceString: guidanceString,
 						useSearchGrounding: (bool?)SelectParam(model.UseSearchGrounding, prompt.UseSearchGrounding),
+						thinking: ComputeThinking(prompt, model),
 						cancellationToken: token,
                         inactivityTimeoutSeconds: inactivityTimeoutSeconds);
 					break;
@@ -129,6 +130,7 @@ internal class Infer
 						guidanceType: guidanceType,
 						guidanceString: guidanceString,
 						useSearchGrounding: (bool?)SelectParam(model.UseSearchGrounding, prompt.UseSearchGrounding),
+						thinking: ComputeThinking(prompt, model),
 						cancellationToken: token,
                         inactivityTimeoutSeconds: inactivityTimeoutSeconds);
 					break;
@@ -403,6 +405,7 @@ internal class Infer
 						guidanceType: guidanceType,
 						guidanceString: guidanceString,
 						useSearchGrounding: (bool?)SelectParam(model.UseSearchGrounding, prompt.UseSearchGrounding),
+						thinking: ComputeThinking(prompt, model),
 						cancellationToken: token,
                         inactivityTimeoutSeconds: inactivityTimeoutSeconds);
 					break;
@@ -433,6 +436,7 @@ internal class Infer
 						guidanceType: guidanceType,
 						guidanceString: guidanceString,
 						useSearchGrounding: (bool?)SelectParam(model.UseSearchGrounding, prompt.UseSearchGrounding),
+						thinking: ComputeThinking(prompt, model),
 						cancellationToken: token,
                         inactivityTimeoutSeconds: inactivityTimeoutSeconds);
 					break;
@@ -1447,6 +1451,14 @@ internal class Infer
 		return RlonValidation.CompareSchema(output, schema);
 	}*/
 	
+	private static string? ComputeThinking(Prompt prompt, ModelProfile model)
+	{
+		// The thinking amount is task-specific, so a prompt-level setting overrides the model default;
+		// the model's conversion table always translates the chosen common word to the provider value.
+		string? amount = !string.IsNullOrWhiteSpace(prompt.Thinking) ? prompt.Thinking : model.Thinking;
+		return model.ResolveThinking(amount);
+	}
+
 	private static bool? ComputeUseSearchGrounding(Prompt prompt, ModelProfile model)
 	{
 		// Model override takes precedence if provided

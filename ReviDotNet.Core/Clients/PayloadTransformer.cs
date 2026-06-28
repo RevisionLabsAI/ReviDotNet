@@ -217,9 +217,26 @@ public class PayloadTransformer
             }
         }
         
+        // Native thinking. A numeric value is a token budget (Gemini 2.5 thinkingConfig.thinkingBudget);
+        // a word is a level (Gemini 3 thinkingConfig.thinkingLevel). The model's thinking-conversion table
+        // is expected to yield a numeric budget for 2.5-era models.
+        if (payload.TryGetValue("thinking_mode", out var geminiThinking))
+        {
+            string mode = geminiThinking?.ToString()?.Trim() ?? string.Empty;
+            if (!string.IsNullOrEmpty(mode))
+            {
+                var thinkingConfig = new Dictionary<string, object>();
+                if (int.TryParse(mode, out int budget))
+                    thinkingConfig["thinkingBudget"] = budget;
+                else
+                    thinkingConfig["thinkingLevel"] = mode.ToLowerInvariant();
+                generationConfig["thinkingConfig"] = thinkingConfig;
+            }
+        }
+
         if (generationConfig.Any())
             geminiPayload["generationConfig"] = generationConfig;
-        
+
         // Handle single prompt (Gemini has no top-level "prompt" field; use contents.parts[].text)
         if (payload.TryGetValue("prompt", out var promptValue) && promptValue is string prompt)
         {
@@ -305,7 +322,45 @@ public class PayloadTransformer
             outPayload["max_tokens"] = maxTokens;
         else
             outPayload["max_tokens"] = 1024;
-        
+
+        // Native thinking / reasoning. The mode is either an effort level (e.g. "high") which uses the
+        // adaptive thinking API of newer models (Opus 4.8+):
+        //     { "thinking": { "type": "adaptive" }, "output_config": { "effort": "high" } }
+        // or a numeric token budget which uses the classic extended-thinking API (Claude 4.5-era):
+        //     { "thinking": { "type": "enabled", "budget_tokens": N } }
+        // Either way thinking requires temperature = 1 and disallows top_p; reasoning tokens count
+        // toward the output budget, so for the budget API max_tokens is raised above the budget.
+        if (payload.TryGetValue("thinking_mode", out var thinkObj))
+        {
+            string thinkingMode = thinkObj?.ToString()?.Trim() ?? string.Empty;
+            if (!string.IsNullOrEmpty(thinkingMode))
+            {
+                if (int.TryParse(thinkingMode, out int thinkingBudget) && thinkingBudget > 0)
+                {
+                    outPayload["thinking"] = new Dictionary<string, object>
+                    {
+                        { "type", "enabled" },
+                        { "budget_tokens", thinkingBudget }
+                    };
+                    int currentMax = outPayload.TryGetValue("max_tokens", out var mtObj)
+                        && int.TryParse(mtObj?.ToString(), out int mt) ? mt : 0;
+                    if (currentMax <= thinkingBudget)
+                        outPayload["max_tokens"] = thinkingBudget + 4096; // leave room for the answer
+                }
+                else
+                {
+                    outPayload["thinking"] = new Dictionary<string, object> { { "type", "adaptive" } };
+                    outPayload["output_config"] = new Dictionary<string, object>
+                    {
+                        { "effort", thinkingMode.ToLowerInvariant() }
+                    };
+                }
+
+                outPayload["temperature"] = 1;   // required with thinking enabled
+                outPayload.Remove("top_p");      // not permitted with thinking enabled
+            }
+        }
+
         // Stream flag
         if (payload.TryGetValue("stream", out var streamObj))
             outPayload["stream"] = streamObj;
@@ -387,7 +442,8 @@ public class PayloadTransformer
         string[]? stopSequences,
         GuidanceType? guidanceType,
         string? guidanceString,
-        bool? useSearchGrounding)
+        bool? useSearchGrounding,
+        string? thinking = null)
     {
         if (temperature.HasValue) parameters.Add("temperature", temperature.Value);
         if (topK.HasValue) parameters.Add("top_k", topK.Value);
@@ -397,6 +453,25 @@ public class PayloadTransformer
         if (presencePenalty.HasValue) parameters.Add("presence_penalty", presencePenalty.Value);
         if (repetitionPenalty.HasValue) parameters.Add("repetition_penalty", repetitionPenalty.Value);
         if (stopSequences is { Length: > 0 }) parameters.Add("stop", stopSequences);
+
+        // Native thinking / reasoning. The resolved value is already provider-specific (the model's
+        // thinking-conversion table translated the common word). Emit it in the right shape per provider:
+        //  - Claude / Gemini: stash under "thinking_mode"; TransformTo{Claude,Gemini}Payload formats it.
+        //  - OpenAI: reasoning models take a top-level "reasoning_effort" (low|medium|high|minimal).
+        // Gated to thinking-capable protocols so others never see an unknown key in the verbatim payload.
+        if (!string.IsNullOrWhiteSpace(thinking))
+        {
+            switch (_config.Protocol)
+            {
+                case Protocol.Claude:
+                case Protocol.Gemini:
+                    parameters["thinking_mode"] = thinking;
+                    break;
+                case Protocol.OpenAI:
+                    parameters["reasoning_effort"] = thinking;
+                    break;
+            }
+        }
 
         GuidanceType? chosenType = guidanceType ?? _config.DefaultGuidanceType;
         string? chosenString = guidanceString ?? _config.DefaultGuidanceString;

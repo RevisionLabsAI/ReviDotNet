@@ -198,19 +198,21 @@ internal class InferenceHttpClient : IDisposable
         // Handle Anthropic Claude response format
         if (_config.Protocol == Protocol.Claude)
         {
-            // Anthropic messages response: { content:[{type:"text", text:"..."}], stop_reason, usage:{input_tokens, output_tokens} }
+            // Anthropic messages response. With extended thinking enabled the content array contains
+            // `thinking` block(s) before the final `text` block, e.g.
+            // { content:[{type:"thinking", thinking:"..."}, {type:"text", text:"..."}], stop_reason, usage:{...} }
+            // Capture the first text block (the answer / agent JSON) and any thinking block separately.
             if (data.TryGetValue("content", out var contentElem) && contentElem.ValueKind == JsonValueKind.Array)
             {
                 foreach (var item in contentElem.EnumerateArray())
                 {
-                    if (item.ValueKind == JsonValueKind.Object && item.TryGetProperty("type", out var typeEl) && typeEl.GetString() == "text")
-                    {
-                        if (item.TryGetProperty("text", out var textEl))
-                        {
-                            result["text"] = textEl.GetString() ?? string.Empty;
-                            break;
-                        }
-                    }
+                    if (item.ValueKind != JsonValueKind.Object || !item.TryGetProperty("type", out var typeEl))
+                        continue;
+                    string? blockType = typeEl.GetString();
+                    if (blockType == "text" && !result.ContainsKey("text") && item.TryGetProperty("text", out var textEl))
+                        result["text"] = textEl.GetString() ?? string.Empty;
+                    else if (blockType == "thinking" && !result.ContainsKey("thinking") && item.TryGetProperty("thinking", out var thinkEl))
+                        result["thinking"] = thinkEl.GetString() ?? string.Empty;
                 }
             }
             if (data.TryGetValue("stop_reason", out var stopReason))

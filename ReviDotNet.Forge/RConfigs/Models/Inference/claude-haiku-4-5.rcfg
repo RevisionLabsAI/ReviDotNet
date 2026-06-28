@@ -9,6 +9,9 @@ tier = B
 token-limit = 200000
 supports-prompt-completion = true
 supports-response-completion = true
+# Default: no thinking. A prompt may still request it (Claude supports thinking); add a
+# thinking-conversion-* table here first if you enable it as the model default.
+thinking = none
 
 [[override-tuning]]
 temperature = 1

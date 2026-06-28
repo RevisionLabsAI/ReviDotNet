@@ -7,3 +7,5 @@ provider-name = openai
 [[settings]]
 tier = C
 token-limit = 128000
+# gpt-4o-mini is not a reasoning model; default off.
+thinking = none

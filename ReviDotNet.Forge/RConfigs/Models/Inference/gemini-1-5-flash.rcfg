@@ -7,6 +7,8 @@ provider-name = gemini
 [[settings]]
 tier = C
 token-limit = 1048576
+# Gemini 1.5 has no thinking support; default off.
+thinking = none
 
 [[override-settings]]
 use-search-grounding = disabled

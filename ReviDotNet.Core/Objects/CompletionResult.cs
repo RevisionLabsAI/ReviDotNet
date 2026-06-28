@@ -46,4 +46,12 @@ public class CompletionResult
     /// Gemini <c>modelVersion</c>). Null if the provider did not return it.
     /// </summary>
     public string? Model { get; set; }
+
+    /// <summary>
+    /// Native extended-thinking / reasoning text returned by the provider (Anthropic Claude
+    /// <c>thinking</c> content blocks) when extended thinking is enabled via a model's
+    /// <c>thinking-budget</c>. Null when the provider returned no reasoning. This is distinct from any
+    /// "thinking" field a model may write into its own structured JSON output.
+    /// </summary>
+    public string? Thinking { get; set; }
 }

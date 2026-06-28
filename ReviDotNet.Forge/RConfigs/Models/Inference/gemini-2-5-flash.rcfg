@@ -8,6 +8,16 @@ provider-name = gemini
 tier = B
 token-limit = 1048576
 supports-response-completion = true
+# Default thinking amount; a prompt overrides it, an unset prompt inherits it, `none` disables (budget 0).
+# Gemini 2.5 controls thinking with a numeric token budget, so the 5 common words map onto budgets
+# (gemini-2.5-flash accepts 0..24576; -1 = dynamic). A numeric value emits
+# generationConfig.thinkingConfig.thinkingBudget; a word would emit thinkingLevel (Gemini 3).
+thinking = high
+thinking-conversion-minimal = 512
+thinking-conversion-low = 2048
+thinking-conversion-medium = 8192
+thinking-conversion-high = 16384
+thinking-conversion-max = 24576
 
 [[override-settings]]
 use-search-grounding = disabled
