@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <LangVersion>12</LangVersion>
+        <RootNamespace>Revi.Refinery</RootNamespace>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <NoWarn>$(NoWarn);CS1591</NoWarn>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="../ReviDotNet.Core/ReviDotNet.Core.csproj" />
+        <ProjectReference Include="../ReviDotNet.Refinery.Sdk/ReviDotNet.Refinery.Sdk.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="ReviDotNet.Tests" />
+    </ItemGroup>
+
+    <!-- The self-improvement prompts (evaluator judges, etc.) ship with the toolkit. -->
+    <ItemGroup>
+        <EmbeddedResource Include="RConfigs/Prompts/**/*.pmt" />
+    </ItemGroup>
+
+</Project>

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <LangVersion>12</LangVersion>
+        <RootNamespace>Revi.Refinery</RootNamespace>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <NoWarn>$(NoWarn);CS1591</NoWarn>
+    </PropertyGroup>
+
+    <!-- The plugin contract + boundary DTOs. Small and stable: this is the assembly shared (with ReviDotNet.Core)
+         across the host/plugin boundary, so its public surface must stay version-tolerant.
+         TODO: publish ReviDotNet.Refinery.Sdk + ReviDotNet.Core as versioned NuGet packages so plugin repos
+         can pin a known version instead of relying on submodule lockstep. -->
+    <ItemGroup>
+        <ProjectReference Include="../ReviDotNet.Core/ReviDotNet.Core.csproj" />
+    </ItemGroup>
+
+</Project>

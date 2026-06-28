@@ -19,5 +19,7 @@
     <ProjectReference Include="..\ReviDotNet.Core\ReviDotNet.Core.csproj" />
     <ProjectReference Include="..\ReviDotNet.Scraping\ReviDotNet.Scraping.csproj" />
     <ProjectReference Include="..\ReviDotNet.Analyzers\ReviDotNet.Analyzers.csproj" />
+    <ProjectReference Include="..\ReviDotNet.Refinery\ReviDotNet.Refinery.csproj" />
+    <ProjectReference Include="..\ReviDotNet.Refinery.Sdk\ReviDotNet.Refinery.Sdk.csproj" />
   </ItemGroup>
 </Project>
