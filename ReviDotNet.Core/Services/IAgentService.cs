@@ -25,6 +25,28 @@ public interface IAgentService
         AgentRunContext ctx,
         CancellationToken token = default);
 
+    /// <summary>
+    /// Runs the <paramref name="profile"/> directly without an <see cref="IAgentManager"/> name
+    /// lookup, so no shared registry slot is mutated. Intended for per-run isolation (e.g. the
+    /// Refinery evaluating candidate agents concurrently):
+    /// <list type="bullet">
+    ///   <item><paramref name="toolOverride"/>, when non-null, is used as the run's tool registry
+    ///         instead of the injected <see cref="IToolManager"/> — giving each run a private,
+    ///         non-shared tool set.</item>
+    ///   <item><paramref name="modelOverride"/>, when non-null, is used as the model for every
+    ///         LLM call instead of resolving per-state from the model registry.</item>
+    /// </list>
+    /// The existing name-based <see cref="Run(string, Dictionary{string, object}, AgentRunContext, CancellationToken)"/>
+    /// overload and its behaviour are unchanged.
+    /// </summary>
+    Task<AgentResult> Run(
+        AgentProfile profile,
+        IReadOnlyDictionary<string, object> inputs,
+        AgentRunContext? context = null,
+        CancellationToken token = default,
+        IToolManager? toolOverride = null,
+        ModelProfile? modelOverride = null);
+
     /// <summary>Convenience overload: passes a single string as inputs["input"].</summary>
     Task<AgentResult> Run(
         string agentName,

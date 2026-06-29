@@ -34,6 +34,32 @@ public sealed class RefinementRunner(IAgentService agents, RefineryCaptureBroker
         AgentTrace trace = AgentTraceBuilder.Build(scope.Capture.Events, agentName, result);
         return new AgentRun(result, trace, sw.ElapsedMilliseconds);
     }
+
+    /// <summary>
+    /// Run a profile DIRECTLY once with the given inputs, capturing its trace. Mirrors the name-based
+    /// <see cref="RunOnceAsync(string, IReadOnlyDictionary{string, string}, CancellationToken)"/> but uses the
+    /// additive <see cref="IAgentService.Run(AgentProfile, IReadOnlyDictionary{string, object}, AgentRunContext?, CancellationToken, IToolManager?, ModelProfile?)"/>
+    /// overload so no shared <see cref="IAgentManager"/> registry slot is mutated. When supplied,
+    /// <paramref name="tools"/> isolates this run's tool registry and <paramref name="model"/> overrides model
+    /// resolution — enabling per-run isolation (e.g. concurrent Refinery candidates).
+    /// </summary>
+    public async Task<AgentRun> RunOnceAsync(
+        AgentProfile profile,
+        IReadOnlyDictionary<string, string> inputs,
+        IToolManager? tools = null,
+        ModelProfile? model = null,
+        CancellationToken ct = default)
+    {
+        Dictionary<string, object> dict = inputs.ToDictionary(kv => kv.Key, kv => (object)kv.Value);
+
+        using RefineryCaptureBroker.CaptureScope scope = _broker.BeginCapture();
+        Stopwatch sw = Stopwatch.StartNew();
+        AgentResult result = await _agents.Run(profile, dict, context: null, token: ct, toolOverride: tools, modelOverride: model);
+        sw.Stop();
+
+        AgentTrace trace = AgentTraceBuilder.Build(scope.Capture.Events, profile.Name ?? "", result);
+        return new AgentRun(result, trace, sw.ElapsedMilliseconds);
+    }
 }
 
 /// <summary>The outcome of a single agent run: the raw result, the typed trace, and wall-clock latency.</summary>

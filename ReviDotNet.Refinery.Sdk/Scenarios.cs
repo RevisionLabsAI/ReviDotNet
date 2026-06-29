@@ -42,6 +42,43 @@ public sealed record Scenario
     /// scenario has no objective ground truth.
     /// </summary>
     public string? GroundTruth { get; init; }
+
+    /// <summary>
+    /// Optional scripted assistant turns for deterministic <b>replay</b> runs. When non-empty and the
+    /// campaign spec runs in <c>replay</c> mode, the agent-under-test is driven against these scripted
+    /// outputs instead of a live inference provider (see <c>ReplayInference.BuildModel</c> in
+    /// ReviDotNet.Core). Null (the default) means this scenario uses live inference, so the field is
+    /// fully backward-compatible.
+    /// </summary>
+    public IReadOnlyList<ReplayTurn>? ReplayScript { get; init; }
+}
+
+/// <summary>
+/// One scripted assistant turn for a deterministic replay run. Each turn is the next agent-step the
+/// scripted inference seam returns: a transition <see cref="Signal"/>, the step <see cref="Content"/>,
+/// optional <see cref="ToolCalls"/> to request, and the usage token counts to report. The replay seam
+/// (<c>ReplayInference</c> / <c>ScriptedInferenceHandler</c> in ReviDotNet.Core) consumes one turn per
+/// LLM call, in order, repeating the final turn once the script is exhausted.
+/// </summary>
+public sealed record ReplayTurn
+{
+    /// <summary>Transition signal for this step (e.g. <c>DONE</c>, <c>CONTINUE</c>). Null = no transition.</summary>
+    public string? Signal { get; init; }
+
+    /// <summary>Main reasoning / output text for this step. Becomes the agent's final output on the last step.</summary>
+    public string? Content { get; init; }
+
+    /// <summary>
+    /// Names of tools the scripted step requests, in order. Each is emitted with an empty input object,
+    /// which is sufficient to exercise the agent loop's tool-dispatch path deterministically.
+    /// </summary>
+    public IReadOnlyList<string>? ToolCalls { get; init; }
+
+    /// <summary>Prompt/input token count this turn reports as usage (for cost-tracking fidelity).</summary>
+    public int PromptTokens { get; init; }
+
+    /// <summary>Completion/output token count this turn reports as usage (for cost-tracking fidelity).</summary>
+    public int CompletionTokens { get; init; }
 }
 
 /// <summary>

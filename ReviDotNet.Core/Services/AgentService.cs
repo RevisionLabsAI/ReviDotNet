@@ -37,6 +37,37 @@ public sealed class AgentService(
     }
 
     /// <inheritdoc/>
+    public async Task<AgentResult> Run(
+        AgentProfile profile,
+        IReadOnlyDictionary<string, object> inputs,
+        AgentRunContext? context = null,
+        CancellationToken token = default,
+        IToolManager? toolOverride = null,
+        ModelProfile? modelOverride = null)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+
+        // Materialize the read-only inputs into the Dictionary the runner expects. A fresh copy
+        // also insulates the run from later caller mutation.
+        Dictionary<string, object> runInputs = inputs as Dictionary<string, object>
+            ?? new Dictionary<string, object>(inputs ?? new Dictionary<string, object>());
+
+        // Run the supplied profile directly — no IAgentManager lookup, so no shared registry slot is
+        // mutated. toolOverride (when non-null) becomes this run's private tool registry; modelOverride
+        // (when non-null) pins the model for every LLM call instead of per-state resolution.
+        AgentRunner runner = new(
+            profile,
+            runInputs,
+            token,
+            context ?? AgentRunContext.Root(),
+            models,
+            prompts,
+            toolOverride ?? tools,
+            modelOverride: modelOverride);
+        return await runner.RunAsync();
+    }
+
+    /// <inheritdoc/>
     public Task<AgentResult> Run(
         string agentName,
         string input,

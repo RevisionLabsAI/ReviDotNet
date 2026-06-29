@@ -175,6 +175,37 @@ public class RunCampaignTests
     }
 
     [Fact]
+    public async Task RunCampaign_RunsCandidatesByProfile_ThreadingThePerRunToolManager()
+    {
+        // Wave3a per-run isolation: candidates are no longer registered in a shared IAgentManager slot — they
+        // are parsed to an AgentProfile and run DIRECTLY through the profile overload, carrying the per-run
+        // tool manager passed to RunCampaignAsync. This proves (a) the candidate path hit the profile overload
+        // (not the name-based one), (b) the candidate's quality was still injected (so the gate accepts), and
+        // (c) the SAME per-run tool manager instance was threaded into every candidate run.
+        RefineryCaptureBroker broker = new();
+        FakeAgentService agentService = new(broker, quality: 5, candidateQuality: 8);
+        OneShotProposer proposer = new(new Proposal("system-prompt", RevisedDefinition, "+ citing sources", "Add a citation instruction."));
+        RefinementController controller = Controller(proposer, agentService, broker, new StubPairwiseInfer());
+
+        StubToolManager runTools = new();
+
+        Campaign result = await controller.RunCampaignAsync(
+            Spec(stopAfter: 2), Suite(), AgentDefinition, checkers: [], toolManager: runTools);
+
+        result.Status.Should().Be(CampaignStatus.Converged);
+
+        // The candidate ran through the profile overload at least once (one train scenario × one sample).
+        agentService.ToolOverridesSeen.Should().NotBeEmpty();
+        // Every profile-overload run received exactly the per-run tool manager we passed in — no cross-talk,
+        // no falling back to a shared/root manager.
+        agentService.ToolOverridesSeen.Should().OnlyContain(tm => ReferenceEquals(tm, runTools));
+
+        // The candidate's higher quality still landed (proving identity/quality injection survived the switch).
+        result.Current!.QualityP10.Should().Be(8);
+        result.Current!.QualityP10.Should().BeGreaterThan(result.Baseline!.QualityP10);
+    }
+
+    [Fact]
     public async Task RunCampaign_MetaBudgetExhausted_StopsWithBudgetExhaustedStatus()
     {
         // Agent runs are free (0 agent tokens), so only the META budget can stop the campaign. The metered
@@ -267,10 +298,18 @@ public class RunCampaignTests
 
     /// <summary>
     /// A fake agent service. The run's <c>FinalOutput</c> is the quality the judge should report — the
-    /// baseline quality for the registered agent, the candidate quality for the temp slot
-    /// ("__refinery/…"). It also emits one <c>llm-response</c> trace event carrying token counts into the
-    /// active capture scope, so <see cref="EfficiencyExtractor"/> sees real tokens and the budget governor
-    /// can be exercised.
+    /// baseline quality for the registered agent (name-based run), the candidate quality for a candidate
+    /// profile whose Name is the "__refinery/…" temp label. It also emits one <c>llm-response</c> trace event
+    /// carrying token counts into the active capture scope, so <see cref="EfficiencyExtractor"/> sees real
+    /// tokens and the budget governor can be exercised.
+    /// <para>
+    /// Implements BOTH the name-based <see cref="IAgentService.Run(string, Dictionary{string, object}, CancellationToken)"/>
+    /// (baseline path) and the per-run profile overload
+    /// <see cref="IAgentService.Run(AgentProfile, IReadOnlyDictionary{string, object}, AgentRunContext?, CancellationToken, IToolManager?, ModelProfile?)"/>
+    /// (candidate path). Candidate detection keys on the agent identity ("__refinery/" prefix), which the
+    /// controller sets identically on the temp name and the parsed candidate profile's Name — so quality
+    /// injection is unchanged from the old shared-slot path.
+    /// </para>
     /// </summary>
     private sealed class FakeAgentService(
         RefineryCaptureBroker broker,
@@ -279,9 +318,11 @@ public class RunCampaignTests
         int inputTokens = 0,
         int outputTokens = 0) : IAgentService
     {
-        public Task<AgentResult> Run(string agentName, Dictionary<string, object>? inputs = null, CancellationToken token = default)
+        /// <summary>The per-run tool managers seen by the profile overload (one per candidate run).</summary>
+        public List<IToolManager?> ToolOverridesSeen { get; } = [];
+
+        private AgentResult BuildResult(bool isCandidate)
         {
-            bool isCandidate = agentName.StartsWith("__refinery/", StringComparison.Ordinal);
             int q = isCandidate && candidateQuality is { } cq ? cq : quality;
 
             // Emit a token-bearing llm-response into the per-run capture (matches the trace builder's parser).
@@ -295,14 +336,35 @@ public class RunCampaignTests
                 });
             }
 
-            return Task.FromResult(new AgentResult
+            return new AgentResult
             {
                 FinalOutput = q.ToString(),
                 ExitReason = AgentExitReason.Completed,
                 TotalSteps = 1,
                 SessionId = Guid.NewGuid().ToString("n"),
                 StateHistory = ["start", "end"]
-            });
+            };
+        }
+
+        public Task<AgentResult> Run(string agentName, Dictionary<string, object>? inputs = null, CancellationToken token = default)
+        {
+            bool isCandidate = agentName.StartsWith("__refinery/", StringComparison.Ordinal);
+            return Task.FromResult(BuildResult(isCandidate));
+        }
+
+        // Per-run profile overload (Wave3a): the candidate path. No IAgentManager lookup; identity comes from
+        // the profile's Name. Records the tool override so tests can assert per-run isolation was threaded.
+        public Task<AgentResult> Run(
+            AgentProfile profile,
+            IReadOnlyDictionary<string, object> inputs,
+            AgentRunContext? context = null,
+            CancellationToken token = default,
+            IToolManager? toolOverride = null,
+            ModelProfile? modelOverride = null)
+        {
+            ToolOverridesSeen.Add(toolOverride);
+            bool isCandidate = (profile.Name ?? "").StartsWith("__refinery/", StringComparison.Ordinal);
+            return Task.FromResult(BuildResult(isCandidate));
         }
 
         public Task<AgentResult> Run(string agentName, Dictionary<string, object>? inputs, AgentRunContext ctx, CancellationToken token = default) =>
@@ -325,6 +387,23 @@ public class RunCampaignTests
         public List<AgentProfile> GetAll() => _agents.Values.ToList();
         public void Add(AgentProfile agent) => _agents[agent.Name ?? ""] = agent;
         public void AddOrReplace(AgentProfile agent) => _agents[agent.Name ?? ""] = agent;
+    }
+
+    /// <summary>
+    /// A do-nothing per-run <see cref="IToolManager"/> used only as an identity token: the test passes this
+    /// instance into <see cref="RefinementController.RunCampaignAsync"/> and asserts the SAME instance is
+    /// threaded into every candidate's profile-overload run (proving per-run tool isolation is wired through).
+    /// </summary>
+    private sealed class StubToolManager : IToolManager
+    {
+        public IBuiltInTool? GetBuiltIn(string name) => null;
+        public IReadOnlyCollection<string> GetBuiltInNames() => [];
+        public ToolProfile? GetCustom(string name) => null;
+        public List<ToolProfile> GetAllCustom() => [];
+        public void Register(IBuiltInTool tool) { }
+        public bool Unregister(string name) => false;
+        public Task LoadAsync(System.Reflection.Assembly assembly, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public void LoadDirectory(string rootDirectory) { }
     }
 
     /// <summary>

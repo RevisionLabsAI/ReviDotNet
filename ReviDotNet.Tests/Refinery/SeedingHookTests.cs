@@ -165,6 +165,19 @@ public class SeedingHookTests
 
         public Task<AgentResult> Run(string agentName, Dictionary<string, object>? inputs, AgentRunContext ctx, CancellationToken token = default) =>
             Run(agentName, inputs, token);
+
+        // Per-run profile overload (Wave3a). Not reached by these seeding tests (baseline runs are name-based
+        // and no toolManager is supplied), but required to satisfy IAgentService. Mirrors the name-based fake:
+        // records the run by the profile's name and returns the same fixed-quality result.
+        public Task<AgentResult> Run(
+            AgentProfile profile,
+            IReadOnlyDictionary<string, object> inputs,
+            AgentRunContext? context = null,
+            CancellationToken token = default,
+            IToolManager? toolOverride = null,
+            ModelProfile? modelOverride = null) =>
+            Run(profile.Name ?? "", inputs as Dictionary<string, object> ?? new Dictionary<string, object>(inputs), token);
+
         public Task<AgentResult> Run(string agentName, string input, CancellationToken token = default) =>
             Run(agentName, new Dictionary<string, object> { ["input"] = input }, token);
         public Task<string?> ToString(string agentName, Dictionary<string, object>? inputs = null, CancellationToken token = default) =>

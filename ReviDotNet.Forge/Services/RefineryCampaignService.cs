@@ -13,33 +13,49 @@ namespace ReviDotNet.Forge.Services;
 
 /// <summary>
 /// Forge-side campaign orchestration: validates a <see cref="CampaignSpec"/> against a loaded plugin,
-/// resolves the agent definition + scenario suite + invariant checkers, registers the plugin's tools into
-/// the root <see cref="IToolManager"/>, then launches a background baseline run via
-/// <see cref="RefinementController.MeasureBaselineAsync"/>. Clients (CLI / dashboard) poll the campaign by
+/// resolves the agent definition + scenario suite + invariant checkers, builds a PER-RUN
+/// <see cref="IToolManager"/> holding the plugin's tools (so the shared root manager is never mutated), then
+/// launches a background baseline / campaign run via <see cref="RefinementController"/>, threading the
+/// per-run tool manager through as the run's tool override. Clients (CLI / dashboard) poll the campaign by
 /// the id this returns.
 /// <para>
-/// Runs are serialized with a <see cref="SemaphoreSlim"/> because <see cref="IToolManager"/> is not
-/// thread-safe and tool register/unregister must never overlap a live run.
+/// Per-run isolation (Wave3a): tools live in a fresh <see cref="ToolManagerService"/> per campaign and
+/// candidates are run by profile (no shared <see cref="IAgentManager"/> slot), so a campaign no longer
+/// mutates any process-wide registry. The substantive isolation mechanism (per-run tool override + candidate
+/// runs by profile) is exercised concurrently by the controller-level tests.
+/// </para>
+/// <para>
+/// <b>Run gate retained — correctness first.</b> Although the registry mutations that originally forced
+/// serialization are gone, this Forge orchestrator has no dedicated test project in which to prove two FULL
+/// service-level campaigns run concurrently without cross-talk (plugin DI scopes, <see cref="IScenarioWorld"/>
+/// seeding/reset of a shared test store, and <see cref="PluginManager"/> leasing are not yet covered under
+/// concurrency). Per the task's "relax only with a proving test, otherwise keep the gate" rule, the
+/// <see cref="_runGate"/> is kept so campaigns remain serialized; it can be removed once a service-level
+/// concurrency test exists.
 /// </para>
 /// </summary>
 public sealed class RefineryCampaignService(
     PluginManager plugins,
     RefinementController controller,
-    IToolManager tools,
     ICampaignStore store,
     IConfiguration config,
     IAgentManager agentManager,
+    IServiceProvider rootServices,
     ILogger<RefineryCampaignService> log)
 {
     private readonly PluginManager _plugins = plugins;
     private readonly RefinementController _controller = controller;
-    private readonly IToolManager _tools = tools;
     private readonly ICampaignStore _store = store;
     private readonly IConfiguration _config = config;
     private readonly IAgentManager _agentManager = agentManager;
+    private readonly IServiceProvider _rootServices = rootServices;
     private readonly ILogger<RefineryCampaignService> _log = log;
 
-    /// <summary>Serializes tool register/run/unregister cycles (IToolManager is not thread-safe).</summary>
+    /// <summary>
+    /// Serializes campaign runs. The per-run tool isolation removed the IToolManager-mutation reason for this,
+    /// but it is retained until a service-level concurrency test covers plugin-scope / IScenarioWorld /
+    /// plugin-lease cross-talk (see the class remarks). Correctness over throughput.
+    /// </summary>
     private readonly SemaphoreSlim _runGate = new(1, 1);
 
     /// <summary>
@@ -100,9 +116,11 @@ public sealed class RefineryCampaignService(
     }
 
     /// <summary>
-    /// The background body: builds a per-plugin DI scope, registers its tools into the root tool manager,
-    /// runs either the baseline measurement or the full campaign, then unregisters tools + disposes the scope
-    /// in a finally. Marks the campaign Failed on any exception. Serialized by <see cref="_runGate"/>.
+    /// The background body: builds a per-plugin DI scope, creates a PER-RUN <see cref="IToolManager"/> holding
+    /// the plugin's tools (the shared root manager is never touched), runs either the baseline measurement or
+    /// the full campaign — passing that per-run tool manager as the run's tool override — then disposes the
+    /// scope in a finally. Marks the campaign Failed on any exception. Serialized by <see cref="_runGate"/>
+    /// (see the class remarks for why it is retained even though tool-mutation no longer requires it).
     /// </summary>
     private async Task RunAsync(
         string id,
@@ -116,16 +134,20 @@ public sealed class RefineryCampaignService(
         string kind = refine ? "campaign" : "baseline";
         await _runGate.WaitAsync();
         ServiceProvider? pluginProvider = null;
-        List<IBuiltInTool> registered = [];
         try
         {
             // (c) Per-plugin DI scope + tool creation.
             ServiceCollection sc = new();
             lp.Plugin!.ConfigureServices(sc, _config);
             pluginProvider = sc.BuildServiceProvider();
-            registered = lp.Plugin.CreateTools(pluginProvider).ToList();
-            foreach (IBuiltInTool tool in registered)
-                _tools.Register(tool);
+
+            // (c·1) Per-run tool registry: a fresh ToolManagerService (which registers the default built-ins)
+            // into which we add ONLY this campaign's plugin tools. The root IToolManager is never mutated, so
+            // two campaigns cannot see or stomp each other's tools.
+            IToolManager runTools = CreatePerRunToolManager();
+            List<IBuiltInTool> pluginTools = lp.Plugin.CreateTools(pluginProvider).ToList();
+            foreach (IBuiltInTool tool in pluginTools)
+                runTools.Register(tool);
 
             // Optional seeding hook: if the plugin manages an isolated test store, reset it once before the
             // run and seed it before every sample run via the callback. Plugins that do not implement
@@ -139,22 +161,22 @@ public sealed class RefineryCampaignService(
 
             _log.LogInformation(
                 "Refinery {Kind} {CampaignId} starting: plugin={Plugin} agent={Agent} suite={Suite} samples={Samples} rounds={Rounds} tools={Tools}",
-                kind, id, spec.PluginName, spec.AgentName, spec.SuiteName, spec.SamplesPerScenario, spec.MaxRounds, registered.Count);
+                kind, id, spec.PluginName, spec.AgentName, spec.SuiteName, spec.SamplesPerScenario, spec.MaxRounds, pluginTools.Count);
 
             // Pin the plugin for the duration of the run: a concurrent reload/unload must not tear down the
-            // plugin's ALC (and the tools we registered above) mid-campaign. PluginManager.Acquire returns a
+            // plugin's ALC (and the tools we created above) mid-campaign. PluginManager.Acquire returns a
             // lease that blocks teardown until disposed; it is a no-op disposable if the plugin is absent.
             using (_plugins.Acquire(spec.PluginName))
             {
                 if (refine)
                 {
                     await _controller.RunCampaignAsync(
-                        spec, suite, agentDefinition, checkers, progress: null, ct: CancellationToken.None, campaignId: id, seedScenario: seed);
+                        spec, suite, agentDefinition, checkers, progress: null, ct: CancellationToken.None, campaignId: id, seedScenario: seed, toolManager: runTools);
                 }
                 else
                 {
                     await _controller.MeasureBaselineAsync(
-                        spec, suite, agentDefinition, checkers, progress: null, ct: CancellationToken.None, campaignId: id, seedScenario: seed);
+                        spec, suite, agentDefinition, checkers, progress: null, ct: CancellationToken.None, campaignId: id, seedScenario: seed, toolManager: runTools);
                 }
             }
 
@@ -180,20 +202,31 @@ public sealed class RefineryCampaignService(
         }
         finally
         {
-            foreach (IBuiltInTool tool in registered)
-            {
-                try { _tools.Unregister(tool.Name); }
-                catch (Exception ex) { _log.LogWarning(ex, "Failed to unregister tool {Tool}.", tool.Name); }
-            }
             if (pluginProvider is not null)
             {
                 // Guard disposal: a misbehaving plugin service's Dispose must NOT prevent the gate release
-                // below, or the process-wide _runGate would deadlock every future campaign.
+                // below, or the _runGate would deadlock every future campaign.
                 try { await pluginProvider.DisposeAsync(); }
                 catch (Exception ex) { _log.LogWarning(ex, "Refinery {Kind} {CampaignId}: error disposing plugin scope.", kind, id); }
             }
             _runGate.Release();
         }
+    }
+
+    /// <summary>
+    /// Build a fresh per-run <see cref="ToolManagerService"/> (registers the default built-ins in its ctor),
+    /// resolving its dependencies from the root service provider. The <see cref="Lazy{T}"/> wraps the SAME
+    /// root <see cref="IAgentService"/> so the per-run manager's <c>invoke-agent</c> built-in dispatches
+    /// through the real agent service; the plugin's own tools are layered on top by the caller. The root
+    /// <see cref="IToolManager"/> registered in DI is never mutated.
+    /// </summary>
+    private IToolManager CreatePerRunToolManager()
+    {
+        Lazy<IAgentService> lazyAgents = new(() => _rootServices.GetRequiredService<IAgentService>());
+        IWebContentService webContent = _rootServices.GetRequiredService<IWebContentService>();
+        IModelManager models = _rootServices.GetRequiredService<IModelManager>();
+        IReviLogger<ToolManagerService> logger = _rootServices.GetRequiredService<IReviLogger<ToolManagerService>>();
+        return new ToolManagerService(lazyAgents, webContent, models, logger);
     }
 
     /// <summary>

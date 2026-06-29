@@ -44,6 +44,13 @@ public class AgentRunner
     /// </summary>
     private readonly IReadOnlyList<Message>? _seedHistory;
 
+    /// <summary>
+    /// Optional per-run model override. When non-null, this model is used for every LLM call instead
+    /// of resolving per-state from the model registry. Used by the per-run isolation path so a
+    /// candidate run can pin its own model without mutating any shared registry.
+    /// </summary>
+    private readonly ModelProfile? _modelOverride;
+
     /// <summary>Unique id for this agent activation. Tagged on every emitted log event.</summary>
     public string SessionId { get; }
 
@@ -81,7 +88,7 @@ public class AgentRunner
     /// <summary>Creates an <see cref="AgentRunner"/> using the injected service managers (preferred path).</summary>
     public AgentRunner(AgentProfile profile, Dictionary<string, object> inputs, CancellationToken token,
         AgentRunContext ctx, IModelManager models, IPromptManager prompts, IToolManager tools,
-        IReadOnlyList<Message>? seedHistory = null)
+        IReadOnlyList<Message>? seedHistory = null, ModelProfile? modelOverride = null)
     {
         _profile = profile;
         _inputs = inputs;
@@ -91,6 +98,7 @@ public class AgentRunner
         _prompts = prompts;
         _tools = tools;
         _seedHistory = seedHistory;
+        _modelOverride = modelOverride;
 
         SessionId = Guid.NewGuid().ToString("n");
         // NOTE: the run-root event is emitted at the start of RunAsync, not here — see _runRoot.
@@ -596,6 +604,10 @@ public class AgentRunner
     /// </summary>
     private ModelProfile? ResolveModel()
     {
+        // A per-run override (isolation path) wins over per-state registry resolution.
+        if (_modelOverride != null)
+            return _modelOverride;
+
         ModelProfile? model = null;
         if (!string.IsNullOrWhiteSpace(_currentState.Model))
             model = _models.Get(_currentState.Model);
@@ -803,11 +815,14 @@ public class AgentRunner
 
     private async Task<CompletionResult?> CallLlmAsync(List<Message> messages)
     {
-        // Resolve model: state override → _models.Find(Tier.A)
-        ModelProfile? model = null;
-        if (!string.IsNullOrWhiteSpace(_currentState.Model))
-            model = _models.Get(_currentState.Model);
-        model ??= _models.Find(ModelTier.A);
+        // Resolve model: per-run override → state override → _models.Find(Tier.A)
+        ModelProfile? model = _modelOverride;
+        if (model == null)
+        {
+            if (!string.IsNullOrWhiteSpace(_currentState.Model))
+                model = _models.Get(_currentState.Model);
+            model ??= _models.Find(ModelTier.A);
+        }
 
         if (model == null)
             throw new Exception($"AgentRunner '{_profile.Name}': No eligible model found.");

@@ -21,7 +21,8 @@ public sealed record RefineryProgress(string Message, IReadOnlyList<ScoreCard>? 
 /// </para>
 /// <para>
 /// <see cref="RunCampaignAsync"/> (Phase 4) closes the loop: measure baseline → propose a revision →
-/// validate it → register it under a temp name → re-run on train + held-out → regression-gate
+/// validate it → run the parsed candidate profile directly (per-run isolation, no shared registry slot) →
+/// re-run on train + held-out → regression-gate
 /// (<see cref="GatePolicy"/> + <see cref="PairwiseGate"/>) → accept/reject → iterate until convergence,
 /// budget exhaustion, or the round cap.
 /// </para>
@@ -68,7 +69,8 @@ public sealed class RefinementController(
         IProgress<RefineryProgress>? progress = null,
         CancellationToken ct = default,
         string? campaignId = null,
-        Func<Scenario, CancellationToken, Task>? seedScenario = null)
+        Func<Scenario, CancellationToken, Task>? seedScenario = null,
+        IToolManager? toolManager = null)
     {
         string id = campaignId ?? Guid.NewGuid().ToString("n");
         Campaign campaign = new()
@@ -92,7 +94,7 @@ public sealed class RefinementController(
                     ct.ThrowIfCancellationRequested();
                     progress?.Report(new RefineryProgress($"[{++done}/{total}] {scenario.Id} sample {sample + 1}"));
 
-                    ScoreCard card = await ScoreOnceAsync(scenario, agentDefinition, checkers, spec.Mode, sample, ct, seedScenario);
+                    ScoreCard card = await ScoreOnceAsync(scenario, agentDefinition, checkers, spec.Mode, sample, ct, seedScenario, toolManager);
                     cards.Add(card);
                 }
             }
@@ -155,7 +157,8 @@ public sealed class RefinementController(
         IProgress<RefineryProgress>? progress = null,
         CancellationToken ct = default,
         string? campaignId = null,
-        Func<Scenario, CancellationToken, Task>? seedScenario = null)
+        Func<Scenario, CancellationToken, Task>? seedScenario = null,
+        IToolManager? toolManager = null)
     {
         string id = campaignId ?? Guid.NewGuid().ToString("n");
 
@@ -164,7 +167,9 @@ public sealed class RefinementController(
         List<Scenario> heldOut = suite.Scenarios.Where(s => s.HeldOut).ToList();
         bool heldOutMirrorsTrain = heldOut.Count == 0;
 
-        // One reusable registry slot per campaign (there is no IAgentManager.Remove).
+        // A per-campaign label for candidate profiles. Candidates are now run DIRECTLY via the per-run profile
+        // overload (no IAgentManager slot mutation), so this is a trace/validation label only — not a shared
+        // registry key. Kept under the "__refinery/" prefix for diagnostic consistency.
         string tempName = "__refinery/" + id + "/candidate";
 
         Campaign campaign = new()
@@ -191,11 +196,11 @@ public sealed class RefinementController(
             string currentDefinition = agentDefinition;
 
             (List<ScoreCard> baselineTrainCards, Dictionary<string, string> baselineTrainOutputs) =
-                await ScoreSetAsync(train, spec.AgentName, currentDefinition, checkers, spec.Mode, samples, governor, ct, seedScenario);
+                await ScoreSetAsync(train, spec.AgentName, currentDefinition, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager);
 
             List<ScoreCard> baselineHeldOutCards = heldOutMirrorsTrain
                 ? baselineTrainCards
-                : (await ScoreSetAsync(heldOut, spec.AgentName, currentDefinition, checkers, spec.Mode, samples, governor, ct, seedScenario)).Cards;
+                : (await ScoreSetAsync(heldOut, spec.AgentName, currentDefinition, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager)).Cards;
 
             SuiteAggregate baselineTrain = Aggregator.Aggregate(baselineTrainCards);
             SuiteAggregate baselineHeldOut = Aggregator.Aggregate(baselineHeldOutCards);
@@ -287,14 +292,17 @@ public sealed class RefinementController(
                         continue;
                     }
 
-                    RegisterCandidate(proposal.RevisedContent, tempName);
+                    // Per-run isolation: parse the candidate source to a profile and run it DIRECTLY (no shared
+                    // IAgentManager slot mutation). The same per-run toolManager is used so candidate runs see
+                    // exactly the baseline's isolated tool set.
+                    AgentProfile candidateProfile = ParseCandidateProfile(proposal.RevisedContent, tempName);
 
                     (List<ScoreCard> candTrainCards, Dictionary<string, string> candTrainOutputs) =
-                        await ScoreSetAsync(train, tempName, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct, seedScenario);
+                        await ScoreSetAsync(train, candidateProfile, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager);
 
                     List<ScoreCard> candHeldOutCards = heldOutMirrorsTrain
                         ? candTrainCards
-                        : (await ScoreSetAsync(heldOut, tempName, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct, seedScenario)).Cards;
+                        : (await ScoreSetAsync(heldOut, candidateProfile, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager)).Cards;
 
                     SuiteAggregate candTrain = Aggregator.Aggregate(candTrainCards);
                     SuiteAggregate candHeldOut = Aggregator.Aggregate(candHeldOutCards);
@@ -479,10 +487,11 @@ public sealed class RefinementController(
         string mode,
         int sampleIndex,
         CancellationToken ct = default,
-        Func<Scenario, CancellationToken, Task>? seedScenario = null)
+        Func<Scenario, CancellationToken, Task>? seedScenario = null,
+        IToolManager? toolManager = null)
     {
         if (seedScenario != null) await seedScenario(scenario, ct);
-        AgentRun run = await _runner.RunOnceAsync(scenario.AgentName, scenario.Inputs, ct);
+        AgentRun run = await RunScenarioAsync(scenario, scenario.AgentName, agentProfile: null, toolManager, mode, ct);
         IReadOnlyList<InvariantResult> invariants = StructuralScorer.Score(run.Trace, scenario, checkers);
         QualityScore? quality = scenario.Rubric.Count > 0
             ? await _judge.JudgeAsync(run.Trace, agentDefinition, scenario, invariants, ct)
@@ -492,23 +501,27 @@ public sealed class RefinementController(
     }
 
     /// <summary>
-    /// Like <see cref="ScoreOnceAsync"/> but runs an EXPLICIT agent name (so a candidate registered under a
-    /// temp name can be scored) and ALSO returns the run's final output text (needed for the pairwise gate,
-    /// which <see cref="ScoreCard"/> does not carry). The given <paramref name="agentDefinition"/> is the
-    /// text shown to the LLM judge.
+    /// Like <see cref="ScoreOnceAsync"/> but ALSO returns the run's final output text (needed for the pairwise
+    /// gate, which <see cref="ScoreCard"/> does not carry). When <paramref name="agentProfile"/> is non-null
+    /// the run goes through the per-run profile overload (no shared registry slot) — used for CANDIDATE runs;
+    /// otherwise it is a name-based run of <paramref name="agentName"/>. The optional
+    /// <paramref name="toolManager"/> isolates the run's tool registry. The given
+    /// <paramref name="agentDefinition"/> is the text shown to the LLM judge.
     /// </summary>
     private async Task<(ScoreCard Card, string Output)> RunAndScoreAsync(
         Scenario scenario,
         string agentName,
+        AgentProfile? agentProfile,
         string agentDefinition,
         IReadOnlyList<IInvariantChecker> checkers,
         string mode,
         int sampleIndex,
         CancellationToken ct,
-        Func<Scenario, CancellationToken, Task>? seedScenario)
+        Func<Scenario, CancellationToken, Task>? seedScenario,
+        IToolManager? toolManager)
     {
         if (seedScenario != null) await seedScenario(scenario, ct);
-        AgentRun run = await _runner.RunOnceAsync(agentName, scenario.Inputs, ct);
+        AgentRun run = await RunScenarioAsync(scenario, agentName, agentProfile, toolManager, mode, ct);
         IReadOnlyList<InvariantResult> invariants = StructuralScorer.Score(run.Trace, scenario, checkers);
         QualityScore? quality = scenario.Rubric.Count > 0
             ? await _judge.JudgeAsync(run.Trace, agentDefinition, scenario, invariants, ct)
@@ -519,11 +532,79 @@ public sealed class RefinementController(
     }
 
     /// <summary>
+    /// Dispatch a single scenario run with per-run isolation. CANDIDATE runs (<paramref name="agentProfile"/>
+    /// non-null) ALWAYS go through the profile overload so no shared <see cref="IAgentManager"/> slot is
+    /// mutated, carrying the per-run <paramref name="toolManager"/> as the tool override. Baseline /
+    /// non-candidate runs are name-based; when a <paramref name="toolManager"/> is supplied they are routed
+    /// through the same profile overload using the agent's registered profile (resolved from
+    /// <see cref="IAgentManager"/>) so they too see the isolated tool set — falling back to the pure
+    /// name-based path when neither an override tool set nor a resolvable profile is available (keeping the
+    /// unmodified name-based behaviour for callers that pass no toolManager, e.g. unit tests).
+    /// <para>
+    /// <b>Replay (Wave-3b):</b> when <paramref name="mode"/> is <c>"replay"</c> AND the scenario carries a
+    /// non-empty <see cref="Scenario.ReplayScript"/>, the run is served entirely from the script with NO live
+    /// inference. A scripted <see cref="ModelProfile"/> is built via
+    /// <see cref="ReplayInference.BuildModel(string, IReadOnlyList{ReplayTurn})"/> and threaded through the
+    /// Wave-3a per-run <c>modelOverride</c> seam on the profile overload: the agent-under-test profile is the
+    /// candidate profile when one is supplied, otherwise the agent's registered profile. Live mode (the
+    /// default) — or replay mode with no script — is UNCHANGED.
+    /// </para>
+    /// </summary>
+    private async Task<AgentRun> RunScenarioAsync(
+        Scenario scenario,
+        string agentName,
+        AgentProfile? agentProfile,
+        IToolManager? toolManager,
+        string mode,
+        CancellationToken ct)
+    {
+        // Replay: serve the run from the scenario's scripted turns (no live provider). Uses the Wave-3a
+        // per-run modelOverride seam — the profile-under-test (candidate, or the registered baseline profile)
+        // is run with a scripted ModelProfile so every LLM call resolves to the next scripted assistant turn.
+        if (string.Equals(mode, "replay", StringComparison.Ordinal) && scenario.ReplayScript is { Count: > 0 } script)
+        {
+            AgentProfile underTest = agentProfile ?? _agents.Get(agentName)
+                ?? throw new InvalidOperationException(
+                    $"Replay run for scenario '{scenario.Id}' could not resolve an AgentProfile for agent '{agentName}'.");
+
+            // Map each SDK turn (Revi.Refinery.ReplayTurn) onto the Core replay turn (global::Revi.ReplayTurn)
+            // the inference seam consumes. The two records are intentionally separate so the Core layer never
+            // references the SDK; this is the single boundary that bridges them.
+            List<global::Revi.ReplayTurn> coreScript = script
+                .Select(t => new global::Revi.ReplayTurn
+                {
+                    Signal = t.Signal,
+                    Content = t.Content,
+                    ToolCalls = t.ToolCalls,
+                    PromptTokens = t.PromptTokens,
+                    CompletionTokens = t.CompletionTokens,
+                })
+                .ToList();
+
+            ModelProfile replayModel = ReplayInference.BuildModel("__replay/" + scenario.Id, coreScript);
+            return await _runner.RunOnceAsync(underTest, scenario.Inputs, toolManager, replayModel, ct);
+        }
+
+        // Candidate: run the parsed profile directly (no registry mutation).
+        if (agentProfile is not null)
+            return await _runner.RunOnceAsync(agentProfile, scenario.Inputs, toolManager, model: null, ct);
+
+        // Baseline / non-candidate with tool isolation: resolve the registered profile and run it directly so
+        // the per-run toolManager applies. The profile is used READ-ONLY (not mutated) so the shared registry
+        // entry is untouched; its own Name (which equals the lookup key) carries through to the trace.
+        if (toolManager is not null && _agents.Get(agentName) is { } registered)
+            return await _runner.RunOnceAsync(registered, scenario.Inputs, toolManager, model: null, ct);
+
+        // No isolation requested (or no resolvable profile): the original, unchanged name-based path.
+        return await _runner.RunOnceAsync(agentName, scenario.Inputs, ct);
+    }
+
+    /// <summary>
     /// Score a whole scenario set (every scenario × <paramref name="samples"/>), charging
     /// agent-execution tokens to <paramref name="governor"/>. Returns the score cards plus the LAST sample's
     /// output text per scenario id (a stable per-scenario representative for pairwise comparison).
     /// </summary>
-    private async Task<(List<ScoreCard> Cards, Dictionary<string, string> Outputs)> ScoreSetAsync(
+    private Task<(List<ScoreCard> Cards, Dictionary<string, string> Outputs)> ScoreSetAsync(
         IReadOnlyList<Scenario> scenarios,
         string agentName,
         string agentDefinition,
@@ -532,7 +613,41 @@ public sealed class RefinementController(
         int samples,
         BudgetGovernor governor,
         CancellationToken ct,
-        Func<Scenario, CancellationToken, Task>? seedScenario)
+        Func<Scenario, CancellationToken, Task>? seedScenario,
+        IToolManager? toolManager = null)
+        => ScoreSetCoreAsync(scenarios, agentName, agentProfile: null, agentDefinition, checkers, mode, samples, governor, ct, seedScenario, toolManager);
+
+    /// <summary>
+    /// Candidate overload of <see cref="ScoreSetAsync(IReadOnlyList{Scenario}, string, string, IReadOnlyList{IInvariantChecker}, string, int, BudgetGovernor, CancellationToken, Func{Scenario, CancellationToken, Task}?, IToolManager?)"/>:
+    /// scores the whole set by running the parsed candidate <paramref name="agentProfile"/> DIRECTLY (via the
+    /// per-run profile overload, no shared registry slot), carrying the per-run <paramref name="toolManager"/>.
+    /// </summary>
+    private Task<(List<ScoreCard> Cards, Dictionary<string, string> Outputs)> ScoreSetAsync(
+        IReadOnlyList<Scenario> scenarios,
+        AgentProfile agentProfile,
+        string agentDefinition,
+        IReadOnlyList<IInvariantChecker> checkers,
+        string mode,
+        int samples,
+        BudgetGovernor governor,
+        CancellationToken ct,
+        Func<Scenario, CancellationToken, Task>? seedScenario,
+        IToolManager? toolManager = null)
+        => ScoreSetCoreAsync(scenarios, agentProfile.Name ?? "", agentProfile, agentDefinition, checkers, mode, samples, governor, ct, seedScenario, toolManager);
+
+    /// <summary>Shared body for both <see cref="ScoreSetAsync"/> overloads.</summary>
+    private async Task<(List<ScoreCard> Cards, Dictionary<string, string> Outputs)> ScoreSetCoreAsync(
+        IReadOnlyList<Scenario> scenarios,
+        string agentName,
+        AgentProfile? agentProfile,
+        string agentDefinition,
+        IReadOnlyList<IInvariantChecker> checkers,
+        string mode,
+        int samples,
+        BudgetGovernor governor,
+        CancellationToken ct,
+        Func<Scenario, CancellationToken, Task>? seedScenario,
+        IToolManager? toolManager)
     {
         List<ScoreCard> cards = [];
         Dictionary<string, string> outputs = [];
@@ -543,7 +658,7 @@ public sealed class RefinementController(
             {
                 ct.ThrowIfCancellationRequested();
                 (ScoreCard card, string output) =
-                    await RunAndScoreAsync(scenario, agentName, agentDefinition, checkers, mode, sample, ct, seedScenario);
+                    await RunAndScoreAsync(scenario, agentName, agentProfile, agentDefinition, checkers, mode, sample, ct, seedScenario, toolManager);
                 cards.Add(card);
                 outputs[scenario.Id] = output; // last sample wins — a representative output for pairwise
                 governor.Record(card.Efficiency is { } e ? e.InputTokens + e.OutputTokens : 0);
@@ -584,13 +699,21 @@ public sealed class RefinementController(
         return net;
     }
 
-    /// <summary>Register a proposed revised .agent SOURCE under a temp name (the variant-execution recipe).</summary>
-    private void RegisterCandidate(string revisedSource, string tempName)
+    /// <summary>
+    /// Parse a proposed revised .agent SOURCE into an <see cref="AgentProfile"/> the candidate is run from.
+    /// <para>
+    /// Replaces the former shared-slot registration (<see cref="IAgentManager.AddOrReplace"/>): the profile is
+    /// run DIRECTLY via the per-run profile overload, so concurrent candidates never collide on a single
+    /// registry slot and no shared agent-registry state is mutated. The temp name is a label only — the
+    /// internal graph does not reference it.
+    /// </para>
+    /// </summary>
+    private static AgentProfile ParseCandidateProfile(string revisedSource, string tempName)
     {
         Dictionary<string, string> data = RConfigParser.ReadEmbedded(revisedSource);
         AgentProfile candidate = AgentProfile.ToObject(data, namePrefix: "");
-        candidate.Name = tempName;          // registration key; the internal graph does not reference the name
-        _agents.AddOrReplace(candidate);    // reuses the single temp slot — there is no Remove
+        candidate.Name = tempName;          // label for traces/diagnostics only; not a shared registration key
+        return candidate;
     }
 
     /// <summary>
