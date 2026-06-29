@@ -127,6 +127,82 @@ internal sealed class RefineryClient
         return JsonDocument.Parse(json);
     }
 
+    // ------------------------------------------------------------------ optimize
+
+    public async Task<JsonDocument> OptimizeRawAsync(OptimizeRequest req, CancellationToken ct = default)
+    {
+        using HttpResponseMessage resp = await _http.PostAsJsonAsync("api/refinery/optimize", req, JsonOpts, ct);
+        await EnsureSuccessAsync(resp);
+        string json = await resp.Content.ReadAsStringAsync(ct);
+        return JsonDocument.Parse(json);
+    }
+
+    public async Task<OptimizeResponse> OptimizeAsync(OptimizeRequest req, CancellationToken ct = default)
+    {
+        using HttpResponseMessage resp = await _http.PostAsJsonAsync("api/refinery/optimize", req, JsonOpts, ct);
+        await EnsureSuccessAsync(resp);
+        OptimizeResponse? result = await resp.Content.ReadFromJsonAsync<OptimizeResponse>(JsonOpts, ct);
+        return result ?? throw new InvalidOperationException("Server returned null optimize response.");
+    }
+
+    // ------------------------------------------------------------------ test/run
+
+    public async Task<JsonDocument> TestRunRawAsync(TestRunRequest req, CancellationToken ct = default)
+    {
+        using HttpResponseMessage resp = await _http.PostAsJsonAsync("api/refinery/test/run", req, JsonOpts, ct);
+        await EnsureSuccessAsync(resp);
+        string json = await resp.Content.ReadAsStringAsync(ct);
+        return JsonDocument.Parse(json);
+    }
+
+    public async Task<SuiteRunSummaryDto> TestRunAsync(TestRunRequest req, CancellationToken ct = default)
+    {
+        using HttpResponseMessage resp = await _http.PostAsJsonAsync("api/refinery/test/run", req, JsonOpts, ct);
+        await EnsureSuccessAsync(resp);
+        SuiteRunSummaryDto? result = await resp.Content.ReadFromJsonAsync<SuiteRunSummaryDto>(JsonOpts, ct);
+        return result ?? throw new InvalidOperationException("Server returned null test run summary.");
+    }
+
+    // ------------------------------------------------------------------ calibration
+
+    public async Task<JsonDocument> GetCalibrationRawAsync(string agentName, string? version, CancellationToken ct = default)
+    {
+        string url = $"api/refinery/calibration?agent={Uri.EscapeDataString(agentName)}";
+        if (version is not null) url += $"&version={Uri.EscapeDataString(version)}";
+        using HttpResponseMessage resp = await _http.GetAsync(url, ct);
+        await EnsureSuccessAsync(resp);
+        string json = await resp.Content.ReadAsStringAsync(ct);
+        return JsonDocument.Parse(json);
+    }
+
+    public async Task<CalibrationReportDto> GetCalibrationAsync(string agentName, string? version, CancellationToken ct = default)
+    {
+        string url = $"api/refinery/calibration?agent={Uri.EscapeDataString(agentName)}";
+        if (version is not null) url += $"&version={Uri.EscapeDataString(version)}";
+        using HttpResponseMessage resp = await _http.GetAsync(url, ct);
+        await EnsureSuccessAsync(resp);
+        CalibrationReportDto? result = await resp.Content.ReadFromJsonAsync<CalibrationReportDto>(JsonOpts, ct);
+        return result ?? throw new InvalidOperationException("Server returned null calibration report.");
+    }
+
+    // ------------------------------------------------------------------ generate-scenarios
+
+    public async Task<JsonDocument> GenerateScenariosRawAsync(GenerateScenariosRequest req, CancellationToken ct = default)
+    {
+        using HttpResponseMessage resp = await _http.PostAsJsonAsync("api/refinery/generate-scenarios", req, JsonOpts, ct);
+        await EnsureSuccessAsync(resp);
+        string json = await resp.Content.ReadAsStringAsync(ct);
+        return JsonDocument.Parse(json);
+    }
+
+    public async Task<ScenarioDto[]> GenerateScenariosAsync(GenerateScenariosRequest req, CancellationToken ct = default)
+    {
+        using HttpResponseMessage resp = await _http.PostAsJsonAsync("api/refinery/generate-scenarios", req, JsonOpts, ct);
+        await EnsureSuccessAsync(resp);
+        ScenarioDto[]? result = await resp.Content.ReadFromJsonAsync<ScenarioDto[]>(JsonOpts, ct);
+        return result ?? [];
+    }
+
     // ------------------------------------------------------------------ helpers
 
     private static async Task EnsureSuccessAsync(HttpResponseMessage resp)
@@ -159,3 +235,67 @@ internal sealed class RefineryHttpException(int statusCode, string message, stri
     public int StatusCode { get; } = statusCode;
     public string Url { get; } = url;
 }
+
+// ---------------------------------------------------------------------------
+// Request / response DTOs for Wave-2 commands
+// ---------------------------------------------------------------------------
+
+internal sealed record OptimizeRequest(
+    string PromptName,
+    string[] ModelNames,
+    InputEntry[] Inputs,
+    int? RunsPerModel = null,
+    int? MaxSuggestions = null);
+
+internal sealed record InputEntry(string Key, string Value);
+
+// Field names mirror the server's ReviDotNet.Forge.Services.PromptSuggestion so camelCase JSON binds.
+internal sealed record OptimizeSuggestion(string Description, string ExpectedImpact, string AffectedSection);
+
+internal sealed record OptimizeResponse(
+    IReadOnlyList<OptimizeSuggestion> Suggestions,
+    string RevisedPromptContent);
+
+internal sealed record TestRunRequest(string SuiteName, string? AgentName = null);
+
+internal sealed record AssertionResultDto(string Id, bool Passed, string? ActualSnippet, string? FailReason);
+
+internal sealed record SuiteCaseResultDto(int Index, bool Passed, string? Output, IReadOnlyList<AssertionResultDto>? Assertions);
+
+internal sealed record SuiteRunSummaryDto(
+    string SuiteName,
+    string Mode,
+    int Total,
+    int Passed,
+    IReadOnlyList<SuiteCaseResultDto> Cases);
+
+internal sealed record GenerateScenariosRequest(
+    string AgentName,
+    string AgentSpecSection,
+    string TargetCategory,
+    int? Count = null);
+
+// Field names mirror the server's Revi.Refinery.Scenario (the subset the CLI renders) so camelCase JSON binds.
+internal sealed record ScenarioDto(
+    string Id,
+    string[]? Tags,
+    string? Notes,
+    string? GroundTruth);
+
+// Field names mirror the server's Revi.Refinery.ConfidenceBucket exactly so camelCase JSON binds.
+internal sealed record CalibrationBucketRow(
+    int ConfidenceLevel,
+    int RunCount,
+    int CorrectCount,
+    double Accuracy,
+    double WeightedError);
+
+// Field names mirror the server's Revi.Refinery.CalibrationReport exactly so camelCase JSON binds.
+internal sealed record CalibrationReportDto(
+    string AgentName,
+    string? AgentVersion,
+    int TotalRuns,
+    int CalibratedRuns,
+    IReadOnlyList<CalibrationBucketRow>? Buckets,
+    double Ece,
+    bool MonotonicAccuracy);

@@ -65,8 +65,12 @@ static async Task<int> RunAsync(string[] args)
 
     return verb switch
     {
-        "plugins" => await HandlePluginsAsync(rest, baseUrl, emitJson),
-        "refine"  => await HandleRefineAsync(rest, baseUrl, emitJson),
+        "plugins"   => await HandlePluginsAsync(rest, baseUrl, emitJson),
+        "refine"    => await HandleRefineAsync(rest, baseUrl, emitJson),
+        "optimize"  => await HandleOptimizeAsync(rest, baseUrl, emitJson),
+        "test"      => await HandleTestAsync(rest, baseUrl, emitJson),
+        "calibrate" => await HandleCalibrateAsync(rest, baseUrl, emitJson),
+        "generate"  => await HandleGenerateAsync(rest, baseUrl, emitJson),
         "--help" or "-h" or "help" => Help(),
         _ => Usage($"Unknown command '{verb}'.")
     };
@@ -237,6 +241,209 @@ static async Task<int> HandleRefineLedgerAsync(string[] args, RefineryClient cli
 
     LedgerEntry[] entries = await client.GetLedgerAsync(id);
     PrintLedgerTable(entries);
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// optimize
+// ---------------------------------------------------------------------------
+static async Task<int> HandleOptimizeAsync(string[] args, string baseUrl, bool emitJson)
+{
+    if (args.Length == 0) return Usage("Expected: optimize <promptName> [--models a,b] [--runs N] [--suggestions K] [--save <path>]");
+
+    string promptName = args[0];
+    string[] rest = args[1..];
+
+    string? modelsStr      = GetFlag(rest, "--models");
+    string? runsStr        = GetFlag(rest, "--runs");
+    string? suggestionsStr = GetFlag(rest, "--suggestions");
+    string? savePath       = GetFlag(rest, "--save");
+
+    string[] modelNames = modelsStr is not null
+        ? modelsStr.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        : [];
+
+    int? runsPerModel   = runsStr        is not null && int.TryParse(runsStr,        out int r) ? r : null;
+    int? maxSuggestions = suggestionsStr is not null && int.TryParse(suggestionsStr, out int k) ? k : null;
+
+    var req = new OptimizeRequest(promptName, modelNames, [], runsPerModel, maxSuggestions);
+    var client = new RefineryClient(baseUrl);
+
+    if (emitJson)
+    {
+        using JsonDocument doc = await client.OptimizeRawAsync(req);
+        PrintJson(doc);
+        return 0;
+    }
+
+    OptimizeResponse result = await client.OptimizeAsync(req);
+
+    Console.WriteLine($"Suggestions ({result.Suggestions.Count}):");
+    for (int i = 0; i < result.Suggestions.Count; i++)
+    {
+        OptimizeSuggestion s = result.Suggestions[i];
+        string section = string.IsNullOrWhiteSpace(s.AffectedSection) ? "" : $" [{s.AffectedSection}]";
+        Console.WriteLine($"  [{i + 1}]{section} {s.Description}");
+        if (!string.IsNullOrWhiteSpace(s.ExpectedImpact))
+            Console.WriteLine($"       impact: {s.ExpectedImpact}");
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("Revised prompt:");
+    Console.WriteLine(result.RevisedPromptContent);
+
+    if (savePath is not null)
+    {
+        await File.WriteAllTextAsync(savePath, result.RevisedPromptContent);
+        Console.WriteLine();
+        Console.WriteLine($"Revised prompt saved to: {savePath}");
+    }
+
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// test
+// ---------------------------------------------------------------------------
+static async Task<int> HandleTestAsync(string[] args, string baseUrl, bool emitJson)
+{
+    if (args.Length == 0) return Usage("Expected: test <suiteName> [--agent <name>]");
+
+    string suiteName = args[0];
+    string[] rest = args[1..];
+    string? agentName = GetFlag(rest, "--agent");
+
+    var req = new TestRunRequest(suiteName, agentName);
+    var client = new RefineryClient(baseUrl);
+
+    if (emitJson)
+    {
+        using JsonDocument doc = await client.TestRunRawAsync(req);
+        PrintJson(doc);
+        // Still honour the CI contract: non-zero exit when any case failed.
+        JsonElement root = doc.RootElement;
+        int passed = root.TryGetProperty("passed", out JsonElement p) ? p.GetInt32() : 0;
+        int total  = root.TryGetProperty("total",  out JsonElement t) ? t.GetInt32() : 0;
+        return passed == total ? 0 : 1;
+    }
+
+    SuiteRunSummaryDto summary = await client.TestRunAsync(req);
+
+    string modeLabel = string.IsNullOrWhiteSpace(summary.Mode) ? "prompt" : summary.Mode;
+    Console.WriteLine($"Suite : {summary.SuiteName}  mode={modeLabel}");
+    Console.WriteLine();
+    Console.WriteLine($"  {"#",4}  {"PASS",4}  OUTPUT / FAILURES");
+    Console.WriteLine($"  {new string('-', 60)}");
+    foreach (SuiteCaseResultDto c in summary.Cases)
+    {
+        string passLabel = c.Passed ? "PASS" : "FAIL";
+        string outputSnip = c.Output is not null
+            ? (c.Output.Length > 60 ? c.Output[..57] + "..." : c.Output).ReplaceLineEndings(" ")
+            : "";
+        Console.WriteLine($"  {c.Index,4}  {passLabel,4}  {outputSnip}");
+        if (c.Assertions is not null)
+        {
+            foreach (AssertionResultDto a in c.Assertions.Where(a => !a.Passed))
+                Console.WriteLine($"              ASSERTION {a.Id} FAILED: {a.FailReason ?? "(no reason)"}");
+        }
+    }
+
+    Console.WriteLine();
+    Console.WriteLine($"Result: {summary.Passed}/{summary.Total} passed");
+
+    return summary.Passed == summary.Total ? 0 : 1;
+}
+
+// ---------------------------------------------------------------------------
+// calibrate
+// ---------------------------------------------------------------------------
+static async Task<int> HandleCalibrateAsync(string[] args, string baseUrl, bool emitJson)
+{
+    string? agentName = GetFlag(args, "--agent");
+    string? version   = GetFlag(args, "--version");
+
+    if (agentName is null) return Usage("--agent is required for 'calibrate'.");
+
+    var client = new RefineryClient(baseUrl);
+
+    if (emitJson)
+    {
+        using JsonDocument doc = await client.GetCalibrationRawAsync(agentName, version);
+        PrintJson(doc);
+        return 0;
+    }
+
+    CalibrationReportDto report = await client.GetCalibrationAsync(agentName, version);
+
+    string versionLabel = report.AgentVersion is not null ? $"  version={report.AgentVersion}" : "";
+    Console.WriteLine($"Calibration report: {report.AgentName}{versionLabel}");
+    Console.WriteLine($"  Runs (with truth): {report.TotalRuns}   Correct: {report.CalibratedRuns}");
+    Console.WriteLine();
+
+    if (report.Buckets is { Count: > 0 })
+    {
+        Console.WriteLine($"  {"CONFIDENCE",10}  {"RUNS",6}  {"CORRECT",7}  {"ACCURACY",8}  {"W-ERROR",9}");
+        Console.WriteLine($"  {new string('-', 52)}");
+        foreach (CalibrationBucketRow row in report.Buckets)
+            Console.WriteLine($"  {row.ConfidenceLevel,10}  {row.RunCount,6}  {row.CorrectCount,7}  {row.Accuracy,8:P1}  {row.WeightedError,9:F4}");
+        Console.WriteLine();
+    }
+
+    Console.WriteLine($"  ECE              : {report.Ece:F4}");
+    Console.WriteLine($"  Monotonic        : {(report.MonotonicAccuracy ? "yes" : "no")}");
+
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// generate
+// ---------------------------------------------------------------------------
+static async Task<int> HandleGenerateAsync(string[] args, string baseUrl, bool emitJson)
+{
+    string? agentName = GetFlag(args, "--agent");
+    string? category  = GetFlag(args, "--category");
+    string? countStr  = GetFlag(args, "--count");
+    string? specFile  = GetFlag(args, "--spec");
+
+    if (agentName is null) return Usage("--agent is required for 'generate'.");
+    if (category  is null) return Usage("--category is required for 'generate'.");
+
+    int? count = countStr is not null && int.TryParse(countStr, out int n) ? n : null;
+
+    string agentSpecSection = "";
+    if (specFile is not null)
+    {
+        if (!File.Exists(specFile))
+            return Usage($"--spec file not found: {specFile}");
+        agentSpecSection = await File.ReadAllTextAsync(specFile);
+    }
+
+    var req = new GenerateScenariosRequest(agentName, agentSpecSection, category, count);
+    var client = new RefineryClient(baseUrl);
+
+    if (emitJson)
+    {
+        using JsonDocument doc = await client.GenerateScenariosRawAsync(req);
+        PrintJson(doc);
+        return 0;
+    }
+
+    ScenarioDto[] scenarios = await client.GenerateScenariosAsync(req);
+
+    Console.WriteLine($"Generated {scenarios.Length} scenario(s) for agent '{agentName}' / category '{category}':");
+    Console.WriteLine();
+    foreach (ScenarioDto s in scenarios)
+    {
+        string tags = s.Tags is { Length: > 0 } ? string.Join(", ", s.Tags) : "(none)";
+        Console.WriteLine($"  id    : {s.Id}");
+        Console.WriteLine($"  tags  : {tags}");
+        if (!string.IsNullOrWhiteSpace(s.Notes))
+            Console.WriteLine($"  notes : {s.Notes}");
+        if (!string.IsNullOrWhiteSpace(s.GroundTruth))
+            Console.WriteLine($"  truth : {s.GroundTruth}");
+        Console.WriteLine();
+    }
+
     return 0;
 }
 
@@ -498,9 +705,36 @@ static void PrintHelp()
               accepted/rejected, reject reason, held-out quality mean, invariant pass-rate,
               tokens spent).  --json prints the raw array.
 
+          revi optimize <promptName> [--models a,b,...] [--runs N] [--suggestions K]
+                        [--save <path>]
+              POST /api/refinery/optimize.  Runs the optimizer against one or more models
+              and prints suggestion titles/descriptions plus the full revised prompt text.
+              Use --save <path> to write the revised prompt to a file.
+              --json prints the raw response.
+
+          revi test <suiteName> [--agent <name>]
+              POST /api/refinery/test/run.  Runs the named suite (in prompt-mode or
+              agent-mode when --agent is given) and prints a per-case pass/fail table
+              followed by an aggregate line.
+              EXIT CODE 0 if all cases pass, 1 if any fail (CI-friendly).
+              --json prints the SuiteRunSummary.
+
+          revi calibrate --agent <name> [--version <v>]
+              GET /api/refinery/calibration.  Prints the reliability table
+              (confidence | runs | correct | accuracy | weighted-error), ECE, and
+              whether the calibration curve is monotonic.
+              --json prints the raw CalibrationReport.
+
+          revi generate --agent <name> --category <cat> [--count N] [--spec <file>]
+              POST /api/refinery/generate-scenarios.  Generates test scenarios for the
+              given agent and category.  If --spec <file> is given its content is sent as
+              the agentSpecSection; otherwise an empty string is used.
+              Prints each scenario's id, tags, description, and notes.
+              --json prints the raw Scenario array.
+
         EXIT CODES
-          0  Success
-          1  Usage error
+          0  Success (or all test cases passed)
+          1  Usage error (or test suite had failures)
           2  HTTP or connection error
         """);
 }

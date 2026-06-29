@@ -20,8 +20,17 @@ Revise the following prompt by applying the selected suggestions. Produce a comp
 [Selected Suggestions to Apply]
 {Selected Suggestions}
 
+Each suggestion names an affected_section, written as a [section] tag at the start of its line, one of: system, instruction, schema, settings, tuning. Apply each suggestion to the matching section of the .pmt file:
+- system      -> the [[_system]] block
+- instruction -> the [[_instruction]] block
+- schema      -> the [[schema]] block
+- settings    -> the [[settings]] block
+- tuning      -> the [[tuning]] block
+
 Guidelines:
-- Apply all listed suggestions thoughtfully — do not skip any
+- Apply all listed suggestions thoughtfully — do not skip any, and apply each to the section its tag names (not only [[_system]]/[[_instruction]])
+- PRESERVE every section that is NOT named by any suggestion EXACTLY as given — do not add, remove, reorder, or reword unaffected sections (including [[settings]], [[tuning]], [[schema]] and any others)
+- If a suggestion names a section that does not yet exist in the prompt, add that section
 - Preserve the prompt's original intent and input placeholder names exactly (e.g., {InputName})
 - The system message should be concise (1-3 sentences) and focused on the AI's role
 - The instruction should be clear, specific, and include concrete output format requirements

@@ -42,6 +42,13 @@ public class RunCampaignTests
     private const string RevisedDefinition =
         "[[information]]\nname = chatbot\n\n[[_system]]\nYou answer grounded questions, citing sources.\n";
 
+    /// <summary>
+    /// A definition carrying a <c>temperature</c> knob so the deterministic <see cref="SamplingMutator"/> can
+    /// fire alongside the LLM proposer — used to exercise the per-round beam (multiple candidates).
+    /// </summary>
+    private const string TunableDefinition =
+        "[[information]]\nname = chatbot\ntemperature = 0.7\n\n[[_system]]\nYou answer grounded questions.\n";
+
     private static ScenarioSuite Suite() => new()
     {
         Name = "chatbot-core",
@@ -53,7 +60,7 @@ public class RunCampaignTests
         ]
     };
 
-    private static CampaignSpec Spec(long? budget = null, int maxRounds = 10, int stopAfter = 2) => new()
+    private static CampaignSpec Spec(long? budget = null, int maxRounds = 10, int stopAfter = 2, long? metaBudget = null) => new()
     {
         PluginName = "gd",
         AgentName = "chatbot",
@@ -61,22 +68,26 @@ public class RunCampaignTests
         SamplesPerScenario = 1,
         Mode = "live",
         TokenBudget = budget,
+        MetaTokenBudget = metaBudget,
         MaxRounds = maxRounds,
         StopAfterNoImprovementRounds = stopAfter
     };
 
     private static RefinementController Controller(
-        IProposalStrategy proposer, IAgentService agentService, RefineryCaptureBroker broker, IInferService pairwiseInfer)
+        IProposalStrategy proposer, IAgentService agentService, RefineryCaptureBroker broker, IInferService pairwiseInfer,
+        MetaLlmUsageBroker? meta = null, ILlmJudge? judge = null)
     {
+        meta ??= new MetaLlmUsageBroker();
         RefinementRunner runner = new(agentService, broker);
         return new RefinementController(
             runner,
-            new FakeJudge(),
+            judge ?? new FakeJudge(),
             new InMemoryCampaignStore(),
             proposer,
-            new PairwiseGate(pairwiseInfer),
+            new PairwiseGate(pairwiseInfer, meta),
             new CandidateValidator(),
-            new FakeAgentManager());
+            new FakeAgentManager(),
+            meta);
     }
 
     [Fact]
@@ -119,13 +130,67 @@ public class RunCampaignTests
 
         CampaignIteration first = result.Iterations[0];
         first.Round.Should().Be(1);
-        first.Variants.Should().ContainSingle();
-        VariantRecord variant = first.Variants[0];
-        variant.Accepted.Should().BeTrue();
-        first.AcceptedVariantId.Should().Be(variant.Id);
+        first.Variants.Should().NotBeEmpty();
+
+        // The accepted-best variant is recorded and pointed at by AcceptedVariantId.
+        first.AcceptedVariantId.Should().NotBeNull();
+        VariantRecord accepted = first.Variants.Single(v => v.Id == first.AcceptedVariantId);
+        accepted.Accepted.Should().BeTrue();
 
         // Current advanced to the candidate's (higher) train scores.
         result.Current!.QualityP10.Should().BeGreaterThan(result.Baseline!.QualityP10);
+    }
+
+    [Fact]
+    public async Task RunCampaign_Beam_RecordsMultipleCandidates_AndAcceptsBestPassing()
+    {
+        // The tunable definition (temperature = 0.7) lets the deterministic SamplingMutator fire alongside the
+        // LLM proposer, so round 1's beam has >1 candidate. Every candidate is scored as the temp slot, so the
+        // fake reports candidateQuality 8 (> baseline 5) for all → all pass the gate; the best is accepted.
+        RefineryCaptureBroker broker = new();
+        FakeAgentService agentService = new(broker, quality: 5, candidateQuality: 8);
+        OneShotProposer proposer = new(new Proposal("system-prompt", RevisedDefinition, "+ citing sources", "Add a citation instruction."));
+        RefinementController controller = Controller(proposer, agentService, broker, new StubPairwiseInfer());
+
+        Campaign result = await controller.RunCampaignAsync(Spec(stopAfter: 2), Suite(), TunableDefinition, checkers: []);
+
+        result.Status.Should().Be(CampaignStatus.Converged);
+
+        CampaignIteration first = result.Iterations[0];
+        first.Round.Should().Be(1);
+
+        // Beam recorded BOTH the LLM proposal and the SamplingMutator candidate (and possibly more).
+        first.Variants.Count.Should().BeGreaterThan(1);
+        first.Variants.Select(v => v.KnobType).Should().Contain("system-prompt");
+        first.Variants.Select(v => v.KnobType).Should().Contain("sampling");
+
+        // The accepted-best is exactly one of the recorded variants and is marked accepted.
+        first.AcceptedVariantId.Should().NotBeNull();
+        VariantRecord best = first.Variants.Single(v => v.Id == first.AcceptedVariantId);
+        best.Accepted.Should().BeTrue();
+        best.TrainScores!.QualityP10.Should().Be(8);
+
+        // Current advanced past baseline.
+        result.Current!.QualityP10.Should().BeGreaterThan(result.Baseline!.QualityP10);
+    }
+
+    [Fact]
+    public async Task RunCampaign_MetaBudgetExhausted_StopsWithBudgetExhaustedStatus()
+    {
+        // Agent runs are free (0 agent tokens), so only the META budget can stop the campaign. The metered
+        // judge charges 100 meta tokens per call into the shared broker; a 10-token meta budget is blown by
+        // the baseline judging alone, so round 1 stops at the top-of-round meta-budget gate.
+        MetaLlmUsageBroker meta = new();
+        RefineryCaptureBroker broker = new();
+        FakeAgentService agentService = new(broker, quality: 5, candidateQuality: 8);
+        OneShotProposer proposer = new(new Proposal("system-prompt", RevisedDefinition, "+ tweak", "tweak"), once: false);
+        MeteredJudge judge = new(meta, quality: 5, metaTokensPerCall: 100);
+        RefinementController controller = Controller(proposer, agentService, broker, new StubPairwiseInfer(), meta, judge);
+
+        Campaign result = await controller.RunCampaignAsync(
+            Spec(budget: null, stopAfter: 5, metaBudget: 10), Suite(), AgentDefinition, checkers: []);
+
+        result.Status.Should().Be(CampaignStatus.BudgetExhausted);
     }
 
     [Fact]
@@ -174,6 +239,28 @@ public class RunCampaignTests
                 Overall = overall,
                 Rationale = "fake",
                 Facets = [new FacetScore("Groundedness", overall, "fake")]
+            });
+        }
+    }
+
+    /// <summary>
+    /// A judge that reads the run's final-output string as the overall quality AND charges a fixed number of
+    /// meta tokens per call into the shared <see cref="MetaLlmUsageBroker"/> (so the meta budget can be
+    /// exercised without a live LLM). Mirrors how <see cref="LlmJudge"/> records its <c>ToObjectWithUsage</c>
+    /// token usage.
+    /// </summary>
+    private sealed class MeteredJudge(MetaLlmUsageBroker meta, int quality, int metaTokensPerCall) : ILlmJudge
+    {
+        public Task<QualityScore?> JudgeAsync(AgentTrace trace, string agentDefinition, Scenario scenario,
+            IReadOnlyList<InvariantResult> invariants, CancellationToken ct = default)
+        {
+            meta.Record(new CompletionResult { InputTokens = metaTokensPerCall, OutputTokens = 0 });
+            int overall = int.TryParse(trace.FinalOutput, out int q) ? q : quality;
+            return Task.FromResult<QualityScore?>(new QualityScore
+            {
+                Overall = overall,
+                Rationale = "metered",
+                Facets = [new FacetScore("Groundedness", overall, "metered")]
             });
         }
     }
@@ -257,6 +344,13 @@ public class RunCampaignTests
             string winner = av == bv ? "tie" : (av > bv ? "a" : "b");
             JObject obj = new() { ["winner"] = winner, ["confidence"] = 90, ["rationale"] = "stub" };
             return Task.FromResult(obj.ToObject<T>());
+        }
+
+        public async Task<(T? Value, CompletionResult? Usage)> ToObjectWithUsage<T>(string promptName, List<Input>? inputs,
+            ModelProfile? model = null, string? modelName = null, CancellationToken ct = default)
+        {
+            T? value = await ToObject<T>(promptName, inputs, model, modelName, token: ct);
+            return (value, null); // stub reports no meta-token usage
         }
 
         public Task<T?> ToObject<T>(string promptName, Input? input, ModelProfile? modelProfile = null, string? modelName = null, CancellationToken token = default) => throw new NotImplementedException();

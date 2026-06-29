@@ -230,6 +230,7 @@ builder.Services.AddSingleton<RunningJobsService>();
 builder.Services.AddSingleton<SavedSuitesService>();
 builder.Services.AddSingleton<PromptRegistryService>();
 builder.Services.AddSingleton<TestRunnerService>();
+builder.Services.AddSingleton<AgentTestRunnerService>();
 builder.Services.AddSingleton<PromptGeneratorService>();
 builder.Services.AddSingleton<OptimizerService>();
 

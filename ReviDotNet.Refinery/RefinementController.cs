@@ -33,7 +33,8 @@ public sealed class RefinementController(
     IProposalStrategy proposer,
     PairwiseGate pairwise,
     CandidateValidator validator,
-    IAgentManager agents)
+    IAgentManager agents,
+    MetaLlmUsageBroker metaUsage)
 {
     private readonly RefinementRunner _runner = runner;
     private readonly ILlmJudge _judge = judge;
@@ -42,9 +43,17 @@ public sealed class RefinementController(
     private readonly PairwiseGate _pairwise = pairwise;
     private readonly CandidateValidator _validator = validator;
     private readonly IAgentManager _agents = agents;
+    private readonly MetaLlmUsageBroker _metaUsage = metaUsage;
 
     /// <summary>Cap on the number of train scenarios sent to the (LLM-backed) pairwise judge per round.</summary>
     private const int MaxPairwiseScenarios = 8;
+
+    /// <summary>
+    /// Hard ceiling on candidates evaluated per round (the LLM proposal + every typed mutator). Defends the
+    /// per-round cost even if the mutator registry grows; with the current registry the natural bound is
+    /// already well under this.
+    /// </summary>
+    private const int MaxCandidatesPerRound = 16;
 
     /// <summary>
     /// Measure a baseline for an agent: run every scenario in <paramref name="suite"/>
@@ -123,12 +132,19 @@ public sealed class RefinementController(
     /// taken to equal the train metrics (so the held-out non-regression checks degenerate to train checks).
     /// </para>
     /// <para>
-    /// <b>Budget accounting (known limitation):</b> the unit is agent-execution TOKENS
-    /// (<see cref="AgentTrace.InputTokens"/> + <see cref="AgentTrace.OutputTokens"/> per run). Because
-    /// <c>IInferService.ToObject&lt;T&gt;</c> discards the underlying <c>CompletionResult</c>, the token
-    /// usage of the meta-LLMs (judge / pairwise / proposer) is NOT observable and is therefore NOT counted
-    /// against the budget. Exact meta-LLM accounting via <c>IInferService.Completion</c> is a future
-    /// enhancement.
+    /// <b>Beam per round:</b> each round builds a small beam of candidates — the LLM proposal
+    /// (<see cref="IProposalStrategy.ProposeAsync"/>, train-only) plus every <see cref="KnobMutators.All"/>
+    /// typed mutator applied to the current definition — validates and scores each, runs the pairwise gate
+    /// against the current baseline, and (among those that pass <see cref="GatePolicy"/>) accepts the single
+    /// best by train <see cref="SuiteAggregate.QualityP10"/> (tie-break: higher pairwise net). Every candidate
+    /// attempted is recorded as a <see cref="VariantRecord"/> + <see cref="LedgerEntry"/>.
+    /// </para>
+    /// <para>
+    /// <b>Dual budgets:</b> agent-execution TOKENS (<see cref="AgentTrace.InputTokens"/> +
+    /// <see cref="AgentTrace.OutputTokens"/> per run) are tracked by the agent governor, while the meta-LLM
+    /// calls (judge / pairwise / proposer) are tracked separately via <see cref="MetaLlmUsageBroker"/> against
+    /// <see cref="CampaignSpec.MetaTokenBudget"/>. Exhausting EITHER budget terminates the campaign with
+    /// <see cref="CampaignStatus.BudgetExhausted"/>.
     /// </para>
     /// </summary>
     public async Task<Campaign> RunCampaignAsync(
@@ -160,7 +176,14 @@ public sealed class RefinementController(
         await _store.SaveAsync(campaign, ct);
 
         BudgetGovernor governor = new(spec.TokenBudget);
+        BudgetGovernor metaGovernor = new(spec.MetaTokenBudget);
         int samples = Math.Max(1, spec.SamplesPerScenario);
+
+        // (a) Open a meta-LLM usage scope for the whole campaign; the judge/pairwise/proposer accumulate into
+        // it via MetaLlmUsageBroker. We sample the scope's running total per round and charge the DELTA to
+        // metaGovernor so the dedicated meta budget is enforced alongside the agent-token governor.
+        using MetaLlmUsageBroker.Scope metaScope = _metaUsage.BeginScope();
+        long metaSpentLastSnapshot = 0;
 
         try
         {
@@ -177,6 +200,9 @@ public sealed class RefinementController(
             SuiteAggregate baselineTrain = Aggregator.Aggregate(baselineTrainCards);
             SuiteAggregate baselineHeldOut = Aggregator.Aggregate(baselineHeldOutCards);
 
+            // Roll any meta tokens spent measuring the baseline into the meta governor.
+            ChargeMetaDelta(metaGovernor, ref metaSpentLastSnapshot);
+
             campaign = campaign with { Baseline = baselineTrain, Current = baselineTrain, TokensSpent = governor.Spent };
             await _store.SaveAsync(campaign, ct);
             progress?.Report(new RefineryProgress(
@@ -191,19 +217,22 @@ public sealed class RefinementController(
             {
                 ct.ThrowIfCancellationRequested();
 
-                // Budget gate at the top of the round.
-                if (governor.Exhausted)
+                // Budget gate at the top of the round — either budget exhausting stops the campaign.
+                if (BudgetsExhausted(governor, metaGovernor, out string topReason))
                 {
                     campaign = campaign with { Status = CampaignStatus.BudgetExhausted, TokensSpent = governor.Spent };
                     await _store.SaveAsync(campaign, ct);
-                    progress?.Report(new RefineryProgress($"round {round}: token budget exhausted ({governor.Spent} tokens)"));
+                    progress?.Report(new RefineryProgress($"round {round}: {topReason}"));
                     return campaign;
                 }
 
-                progress?.Report(new RefineryProgress($"round {round}: proposing…"));
-                Proposal? proposal = await _proposer.ProposeAsync(spec.AgentName, currentDefinition, baselineTrain, currentTrainCards, ct);
+                progress?.Report(new RefineryProgress($"round {round}: building candidate beam…"));
 
-                if (proposal is null)
+                // (b·1) BEAM: the LLM proposal (train-only) PLUS every typed mutator on the current definition.
+                List<Proposal> candidates = await BuildBeamAsync(spec.AgentName, currentDefinition, baselineTrain, currentTrainCards, ct);
+                ChargeMetaDelta(metaGovernor, ref metaSpentLastSnapshot); // proposer meta cost
+
+                if (candidates.Count == 0)
                 {
                     // No useful change found this round. Record the round as an iteration with no variants so
                     // the campaign ledger reflects every round the loop executed (none accepted).
@@ -224,72 +253,75 @@ public sealed class RefinementController(
                         TokensSpent = governor.Spent
                     };
                     await _store.SaveAsync(campaign, ct);
-                    progress?.Report(new RefineryProgress($"round {round}: no proposal (no-improvement {noImprove}/{spec.StopAfterNoImprovementRounds})"));
+                    progress?.Report(new RefineryProgress($"round {round}: no candidates (no-improvement {noImprove}/{spec.StopAfterNoImprovementRounds})"));
                     if (noImprove >= spec.StopAfterNoImprovementRounds) break;
                     continue;
                 }
 
-                // (c) Validate the candidate BEFORE spending any run budget on it.
-                ValidationResult validation = _validator.Validate(proposal.RevisedContent, tempName);
-                if (!validation.Ok)
+                // (b·2) Evaluate each candidate: validate → register → score → pairwise → gate. Record a
+                // VariantRecord + LedgerEntry for EVERY candidate attempted; track the best passing one.
+                List<VariantRecord> roundVariants = [];
+                BeamWinner? best = null;
+                bool budgetStop = false;
+
+                foreach (Proposal proposal in candidates)
                 {
-                    string errors = validation.Errors.Count > 0 ? string.Join("; ", validation.Errors) : "candidate failed validation";
-                    await RecordRejectedAsync(campaign, id, round, spec.AgentName, proposal, currentTrainAgg: baselineTrain,
-                        candTrain: null, candHeldOut: null, reason: errors, tokensSpent: governor.Spent, ct);
-                    campaign = await ReloadAsync(id, campaign, ct);
-                    noImprove++;
-                    progress?.Report(new RefineryProgress($"round {round}: candidate rejected by validator — {errors}"));
-                    if (noImprove >= spec.StopAfterNoImprovementRounds) break;
-                    continue;
+                    ct.ThrowIfCancellationRequested();
+
+                    // Enforce budgets BEFORE spending any run/meta budget on this candidate, so a round cannot
+                    // blow the budget mid-beam.
+                    if (BudgetsExhausted(governor, metaGovernor, out string midReason))
+                    {
+                        budgetStop = true;
+                        progress?.Report(new RefineryProgress($"round {round}: {midReason}"));
+                        break;
+                    }
+
+                    ValidationResult validation = _validator.Validate(proposal.RevisedContent, tempName);
+                    if (!validation.Ok)
+                    {
+                        string errors = validation.Errors.Count > 0 ? string.Join("; ", validation.Errors) : "candidate failed validation";
+                        roundVariants.Add(await RecordCandidateAsync(id, round, spec.AgentName, proposal,
+                            candTrain: null, candHeldOut: null, accepted: false, reason: errors, governor.Spent, ct));
+                        progress?.Report(new RefineryProgress($"round {round}: candidate ({proposal.KnobType}) rejected by validator — {errors}"));
+                        continue;
+                    }
+
+                    RegisterCandidate(proposal.RevisedContent, tempName);
+
+                    (List<ScoreCard> candTrainCards, Dictionary<string, string> candTrainOutputs) =
+                        await ScoreSetAsync(train, tempName, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct, seedScenario);
+
+                    List<ScoreCard> candHeldOutCards = heldOutMirrorsTrain
+                        ? candTrainCards
+                        : (await ScoreSetAsync(heldOut, tempName, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct, seedScenario)).Cards;
+
+                    SuiteAggregate candTrain = Aggregator.Aggregate(candTrainCards);
+                    SuiteAggregate candHeldOut = Aggregator.Aggregate(candHeldOutCards);
+
+                    int pairwiseNet = await PairwiseNetAsync(train, baselineTrainOutputs, candTrainOutputs, ct);
+                    ChargeMetaDelta(metaGovernor, ref metaSpentLastSnapshot); // judge + pairwise meta cost
+
+                    GateDecision decision = GatePolicy.Decide(baselineTrain, candTrain, baselineHeldOut, candHeldOut, pairwiseNet);
+
+                    VariantRecord record = await RecordCandidateAsync(id, round, spec.AgentName, proposal,
+                        candTrain, candHeldOut, decision.Accept, decision.Reason, governor.Spent, ct);
+                    roundVariants.Add(record);
+
+                    if (decision.Accept)
+                    {
+                        BeamWinner contender = new(record.Id, proposal, candTrain, candHeldOut, candTrainCards, candTrainOutputs, pairwiseNet);
+                        if (best is null || IsBetter(contender, best))
+                            best = contender;
+                    }
+                    else
+                    {
+                        progress?.Report(new RefineryProgress($"round {round}: candidate ({proposal.KnobType}) rejected — {decision.Reason}", candTrainCards));
+                    }
                 }
 
-                // (d) Register the candidate per the variant recipe and score it on train + held-out.
-                RegisterCandidate(proposal.RevisedContent, tempName);
-
-                (List<ScoreCard> candTrainCards, Dictionary<string, string> candTrainOutputs) =
-                    await ScoreSetAsync(train, tempName, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct, seedScenario);
-
-                List<ScoreCard> candHeldOutCards = heldOutMirrorsTrain
-                    ? candTrainCards
-                    : (await ScoreSetAsync(heldOut, tempName, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct, seedScenario)).Cards;
-
-                SuiteAggregate candTrain = Aggregator.Aggregate(candTrainCards);
-                SuiteAggregate candHeldOut = Aggregator.Aggregate(candHeldOutCards);
-
-                // (e) Pairwise on (a capped sample of) train scenarios.
-                int pairwiseNet = await PairwiseNetAsync(train, baselineTrainOutputs, candTrainOutputs, ct);
-
-                // (f) Decide.
-                GateDecision decision = GatePolicy.Decide(baselineTrain, candTrain, baselineHeldOut, candHeldOut, pairwiseNet);
-
-                VariantRecord variant = new()
-                {
-                    Id = Guid.NewGuid().ToString("n"),
-                    AgentName = spec.AgentName,
-                    Round = round,
-                    KnobType = proposal.KnobType,
-                    Diff = proposal.Diff,
-                    RevisedContent = proposal.RevisedContent,
-                    TrainScores = candTrain,
-                    HeldOutScores = candHeldOut,
-                    Accepted = decision.Accept,
-                    Decision = decision.Reason
-                };
-
-                await _store.AppendLedgerAsync(new LedgerEntry
-                {
-                    CampaignId = id,
-                    Round = round,
-                    AgentName = spec.AgentName,
-                    KnobType = proposal.KnobType,
-                    Diff = proposal.Diff,
-                    TrainScores = candTrain,
-                    HeldOutScores = candHeldOut,
-                    Accepted = decision.Accept,
-                    RejectReason = decision.Accept ? null : decision.Reason,
-                    TokensSpent = governor.Spent
-                }, ct);
-
+                // (b·3) Persist the round's iteration with ALL candidate variants and the accepted-best (if any).
+                string? acceptedId = best?.VariantId;
                 campaign = campaign with
                 {
                     Iterations =
@@ -299,39 +331,41 @@ public sealed class RefinementController(
                         {
                             Round = round,
                             Baseline = baselineTrain,
-                            Variants = [variant],
-                            AcceptedVariantId = decision.Accept ? variant.Id : null
+                            Variants = roundVariants,
+                            AcceptedVariantId = acceptedId
                         }
                     ],
                     TokensSpent = governor.Spent
                 };
 
-                // (g) Adopt or reject.
-                if (decision.Accept)
+                // (b·4) Adopt the best passing candidate, or count a no-improvement round.
+                if (best is { } winner)
                 {
-                    currentDefinition = proposal.RevisedContent;
-                    baselineTrain = candTrain;
-                    baselineHeldOut = candHeldOut;
-                    currentTrainCards = candTrainCards;
-                    baselineTrainOutputs = candTrainOutputs;
-                    campaign = campaign with { Current = candTrain };
+                    currentDefinition = winner.Proposal.RevisedContent;
+                    baselineTrain = winner.Train;
+                    baselineHeldOut = winner.HeldOut;
+                    currentTrainCards = winner.TrainCards;
+                    baselineTrainOutputs = winner.TrainOutputs;
+                    campaign = campaign with { Current = winner.Train };
                     noImprove = 0;
-                    progress?.Report(new RefineryProgress($"round {round}: ACCEPTED ({proposal.KnobType}) — {decision.Reason}", candTrainCards));
+                    progress?.Report(new RefineryProgress($"round {round}: ACCEPTED ({winner.Proposal.KnobType}) — best of {roundVariants.Count} candidate(s)", winner.TrainCards));
                 }
                 else
                 {
                     noImprove++;
-                    progress?.Report(new RefineryProgress($"round {round}: rejected ({proposal.KnobType}) — {decision.Reason} (no-improvement {noImprove}/{spec.StopAfterNoImprovementRounds})", candTrainCards));
+                    progress?.Report(new RefineryProgress($"round {round}: no candidate passed the gate ({roundVariants.Count} tried) (no-improvement {noImprove}/{spec.StopAfterNoImprovementRounds})"));
                 }
 
                 await _store.SaveAsync(campaign, ct);
 
-                // Budget gate after evaluating the variant.
-                if (governor.Exhausted)
+                // Budget gate after the round (or if a mid-beam break tripped it).
+                string endReason = "";
+                if (budgetStop || BudgetsExhausted(governor, metaGovernor, out endReason))
                 {
+                    string reason = budgetStop ? "token budget exhausted" : endReason;
                     campaign = campaign with { Status = CampaignStatus.BudgetExhausted, TokensSpent = governor.Spent };
                     await _store.SaveAsync(campaign, ct);
-                    progress?.Report(new RefineryProgress($"round {round}: token budget exhausted ({governor.Spent} tokens)"));
+                    progress?.Report(new RefineryProgress($"round {round}: {reason}"));
                     return campaign;
                 }
 
@@ -343,7 +377,7 @@ public sealed class RefinementController(
             campaign = campaign with { Status = CampaignStatus.Converged, TokensSpent = governor.Spent };
             await _store.SaveAsync(campaign, ct);
             progress?.Report(new RefineryProgress(
-                $"campaign converged: current quality p10 {baselineTrain.QualityP10:F1}, {governor.Spent} tokens spent"));
+                $"campaign converged: current quality p10 {baselineTrain.QualityP10:F1}, {governor.Spent} agent tokens / {metaGovernor.Spent} meta tokens spent"));
             return campaign;
         }
         catch (OperationCanceledException)
@@ -358,6 +392,83 @@ public sealed class RefinementController(
             await _store.SaveAsync(campaign, ct: default);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Build the per-round candidate beam: the LLM proposal (train-only, may be null) plus every typed
+    /// <see cref="KnobMutators.All"/> mutator applied to the current definition. Null candidates and any over
+    /// the <see cref="MaxCandidatesPerRound"/> ceiling are dropped.
+    /// </summary>
+    private async Task<List<Proposal>> BuildBeamAsync(
+        string agentName,
+        string currentDefinition,
+        SuiteAggregate baselineTrain,
+        IReadOnlyList<ScoreCard> currentTrainCards,
+        CancellationToken ct)
+    {
+        List<Proposal> candidates = [];
+
+        Proposal? llm = await _proposer.ProposeAsync(agentName, currentDefinition, baselineTrain, currentTrainCards, ct);
+        if (llm is not null)
+            candidates.Add(llm);
+
+        foreach (ICandidateMutator mutator in KnobMutators.All())
+        {
+            if (candidates.Count >= MaxCandidatesPerRound) break;
+            Proposal? mutated = mutator.Mutate(agentName, currentDefinition, baselineTrain, currentTrainCards);
+            if (mutated is not null)
+                candidates.Add(mutated);
+        }
+
+        return candidates;
+    }
+
+    /// <summary>The best passing candidate found within a round (for the beam tie-break).</summary>
+    private sealed record BeamWinner(
+        string VariantId,
+        Proposal Proposal,
+        SuiteAggregate Train,
+        SuiteAggregate HeldOut,
+        List<ScoreCard> TrainCards,
+        Dictionary<string, string> TrainOutputs,
+        int PairwiseNet);
+
+    /// <summary>
+    /// Ranks beam candidates: higher train <see cref="SuiteAggregate.QualityP10"/> wins; ties broken by higher
+    /// pairwise net advantage.
+    /// </summary>
+    private static bool IsBetter(BeamWinner a, BeamWinner b) =>
+        a.Train.QualityP10 > b.Train.QualityP10 ||
+        (a.Train.QualityP10 == b.Train.QualityP10 && a.PairwiseNet > b.PairwiseNet);
+
+    /// <summary>True when the agent OR meta token budget is exhausted; <paramref name="reason"/> names which.</summary>
+    private static bool BudgetsExhausted(BudgetGovernor governor, BudgetGovernor metaGovernor, out string reason)
+    {
+        if (governor.Exhausted)
+        {
+            reason = $"agent token budget exhausted ({governor.Spent} tokens)";
+            return true;
+        }
+        if (metaGovernor.Exhausted)
+        {
+            reason = $"meta token budget exhausted ({metaGovernor.Spent} tokens)";
+            return true;
+        }
+        reason = "";
+        return false;
+    }
+
+    /// <summary>
+    /// Charge the meta tokens spent since the last snapshot (the broker scope's running total minus the prior
+    /// snapshot) to <paramref name="metaGovernor"/>, then advance the snapshot.
+    /// </summary>
+    private void ChargeMetaDelta(BudgetGovernor metaGovernor, ref long lastSnapshot)
+    {
+        long now = _metaUsage.Spent;
+        long delta = now - lastSnapshot;
+        if (delta > 0)
+            metaGovernor.Record(delta);
+        lastSnapshot = now;
     }
 
     /// <summary>Run one scenario sample and produce its full <see cref="ScoreCard"/>.</summary>
@@ -482,16 +593,19 @@ public sealed class RefinementController(
         _agents.AddOrReplace(candidate);    // reuses the single temp slot — there is no Remove
     }
 
-    /// <summary>Append a rejected-variant ledger entry + iteration (used for validation failures, before any run).</summary>
-    private async Task RecordRejectedAsync(
-        Campaign campaign,
+    /// <summary>
+    /// Append one candidate's ledger entry and return its <see cref="VariantRecord"/> (the caller batches the
+    /// round's variants into a single <see cref="CampaignIteration"/>). Covers both validation-failure
+    /// rejections (null scores) and gated candidates (scored, accepted or rejected).
+    /// </summary>
+    private async Task<VariantRecord> RecordCandidateAsync(
         string campaignId,
         int round,
         string agentName,
         Proposal proposal,
-        SuiteAggregate currentTrainAgg,
         SuiteAggregate? candTrain,
         SuiteAggregate? candHeldOut,
+        bool accepted,
         string reason,
         long tokensSpent,
         CancellationToken ct)
@@ -506,7 +620,7 @@ public sealed class RefinementController(
             RevisedContent = proposal.RevisedContent,
             TrainScores = candTrain,
             HeldOutScores = candHeldOut,
-            Accepted = false,
+            Accepted = accepted,
             Decision = reason
         };
 
@@ -519,32 +633,13 @@ public sealed class RefinementController(
             Diff = proposal.Diff,
             TrainScores = candTrain,
             HeldOutScores = candHeldOut,
-            Accepted = false,
-            RejectReason = reason,
+            Accepted = accepted,
+            RejectReason = accepted ? null : reason,
             TokensSpent = tokensSpent
         }, ct);
 
-        Campaign updated = campaign with
-        {
-            Iterations =
-            [
-                .. campaign.Iterations,
-                new CampaignIteration
-                {
-                    Round = round,
-                    Baseline = currentTrainAgg,
-                    Variants = [variant],
-                    AcceptedVariantId = null
-                }
-            ],
-            TokensSpent = tokensSpent
-        };
-        await _store.SaveAsync(updated, ct);
+        return variant;
     }
-
-    /// <summary>Re-read the campaign from the store so in-memory state matches what was just persisted.</summary>
-    private async Task<Campaign> ReloadAsync(string id, Campaign fallback, CancellationToken ct) =>
-        await _store.GetAsync(id, ct) ?? fallback;
 
     /// <summary>Render a scenario's inputs as the "Scenario" text for the pairwise judge.</summary>
     private static string RenderScenarioText(Scenario scenario)

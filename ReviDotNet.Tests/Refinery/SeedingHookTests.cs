@@ -51,15 +51,19 @@ public class SeedingHookTests
         StopAfterNoImprovementRounds = 2
     };
 
-    private static RefinementController Controller(IAgentService agentService, RefineryCaptureBroker broker) =>
-        new(
+    private static RefinementController Controller(IAgentService agentService, RefineryCaptureBroker broker)
+    {
+        MetaLlmUsageBroker meta = new();
+        return new(
             new RefinementRunner(agentService, broker),
             new FakeJudge(),
             new InMemoryCampaignStore(),
             new NullProposer(),
-            new PairwiseGate(new StubPairwiseInfer()),
+            new PairwiseGate(new StubPairwiseInfer(), meta),
             new CandidateValidator(),
-            new FakeAgentManager());
+            new FakeAgentManager(),
+            meta);
+    }
 
     [Fact]
     public async Task MeasureBaseline_InvokesSeedCallback_OncePerScenarioSampleBeforeEachRun()
@@ -189,6 +193,13 @@ public class SeedingHookTests
         {
             JObject obj = new() { ["winner"] = "tie", ["confidence"] = 50, ["rationale"] = "stub" };
             return Task.FromResult(obj.ToObject<T>());
+        }
+
+        public async Task<(T? Value, CompletionResult? Usage)> ToObjectWithUsage<T>(string promptName, List<Input>? inputs,
+            ModelProfile? model = null, string? modelName = null, CancellationToken ct = default)
+        {
+            T? value = await ToObject<T>(promptName, inputs, model, modelName, token: ct);
+            return (value, null);
         }
 
         public Task<T?> ToObject<T>(string promptName, Input? input, ModelProfile? modelProfile = null, string? modelName = null, CancellationToken token = default) => throw new NotImplementedException();

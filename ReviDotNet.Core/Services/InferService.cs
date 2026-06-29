@@ -255,6 +255,49 @@ public sealed class InferService(
         int? originalRetryLimit = null,
         CancellationToken token = default)
     {
+        (T? value, _) = await ToObjectCore<T>(
+            promptName, inputs, modelProfile, modelName, retryAttempt, originalRetryLimit, token);
+        return value;
+    }
+
+    /// <inheritdoc/>
+    public async Task<T?> ToObject<T>(
+        string promptName,
+        Input? input,
+        ModelProfile? modelProfile = null,
+        string? modelName = null,
+        CancellationToken token = default)
+    {
+        List<Input>? inputs = input is not null ? [input] : null;
+        return await ToObject<T>(promptName, inputs, modelProfile, modelName, token: token);
+    }
+
+    /// <inheritdoc/>
+    public async Task<(T? Value, CompletionResult? Usage)> ToObjectWithUsage<T>(
+        string promptName,
+        List<Input>? inputs,
+        ModelProfile? model = null,
+        string? modelName = null,
+        CancellationToken ct = default)
+    {
+        return await ToObjectCore<T>(promptName, inputs, model, modelName, 0, null, ct);
+    }
+
+    /// <summary>
+    /// Shared implementation behind <see cref="ToObject{T}(string,List{Input}?,ModelProfile?,string?,int,int?,CancellationToken)"/>
+    /// and <see cref="ToObjectWithUsage{T}"/>. Runs the completion, extracts/repairs/validates the JSON, and
+    /// (on validation failure) retries. Returns both the deserialized object and the <see cref="CompletionResult"/>
+    /// from the final completion that produced it (the json-fixer result when remediation ran).
+    /// </summary>
+    private async Task<(T? Value, CompletionResult? Usage)> ToObjectCore<T>(
+        string promptName,
+        List<Input>? inputs,
+        ModelProfile? modelProfile,
+        string? modelName,
+        int retryAttempt,
+        int? originalRetryLimit,
+        CancellationToken token)
+    {
         Type outputType = typeof(T);
         T? newObject = default;
         string? extractedJson = null;
@@ -286,7 +329,7 @@ public sealed class InferService(
             if (string.IsNullOrEmpty(extractedJson))
             {
                 Util.Log($"WARNING: Missing JSON from InferService.ToObject output: \n{e.Message}\n");
-                return default;
+                return (default, result);
             }
 
             Util.Log($"WARNING: Caught faulty JSON output:\n'''{extractedJson}\n'''");
@@ -337,7 +380,7 @@ public sealed class InferService(
 
         T? castObject = (T?)Convert.ChangeType(newObject, typeof(T));
         if (ValidateObject<T>(castObject, prompt))
-            return castObject;
+            return (castObject, result);
 
         Util.Log($"InferService.ToObject() object was invalid for prompt '{prompt.Name}'");
 
@@ -352,22 +395,10 @@ public sealed class InferService(
             if (prompt.RetryPrompt is not null)
                 promptToRetry = prompt.RetryPrompt;
 
-            return await ToObject<T>(promptToRetry, inputs, modelProfile, modelName, retryAttempt + 1, originalRetryLimit, token);
+            return await ToObjectCore<T>(promptToRetry, inputs, modelProfile, modelName, retryAttempt + 1, originalRetryLimit, token);
         }
 
-        return castObject;
-    }
-
-    /// <inheritdoc/>
-    public async Task<T?> ToObject<T>(
-        string promptName,
-        Input? input,
-        ModelProfile? modelProfile = null,
-        string? modelName = null,
-        CancellationToken token = default)
-    {
-        List<Input>? inputs = input is not null ? [input] : null;
-        return await ToObject<T>(promptName, inputs, modelProfile, modelName, token: token);
+        return (castObject, result);
     }
 
     /// <inheritdoc/>

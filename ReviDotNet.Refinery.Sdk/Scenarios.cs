@@ -35,6 +35,13 @@ public sealed record Scenario
 
     /// <summary>Human notes describing the intent of the scenario.</summary>
     public string? Notes { get; init; }
+
+    /// <summary>
+    /// The known-correct answer for this scenario, when one exists (e.g. the expected fact-checker winner).
+    /// Used by calibration analysis to judge whether a run's determination was correct. Null when the
+    /// scenario has no objective ground truth.
+    /// </summary>
+    public string? GroundTruth { get; init; }
 }
 
 /// <summary>

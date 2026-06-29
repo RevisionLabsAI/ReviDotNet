@@ -66,6 +66,19 @@ public interface IInferService
         string? modelName = null,
         CancellationToken token = default);
 
+    /// <summary>
+    /// Like <see cref="ToObject{T}(string,List{Input}?,ModelProfile?,string?,int,int?,CancellationToken)"/>
+    /// but also returns the underlying <see cref="CompletionResult"/> so token usage
+    /// (<see cref="CompletionResult.InputTokens"/>/<see cref="CompletionResult.OutputTokens"/>) is observable.
+    /// Shares the same JSON extract/repair logic as <c>ToObject</c>.
+    /// </summary>
+    Task<(T? Value, Revi.CompletionResult? Usage)> ToObjectWithUsage<T>(
+        string promptName,
+        List<Input>? inputs,
+        ModelProfile? model = null,
+        string? modelName = null,
+        CancellationToken ct = default);
+
     /// <summary>Runs a prompt and parses the result as an enum value.</summary>
     Task<TEnum> ToEnum<TEnum>(
         string promptName,

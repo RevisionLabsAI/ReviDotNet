@@ -4,6 +4,8 @@
 //  See LICENSE.txt in the project root for full license information.
 // ===================================================================
 
+using System.Text;
+using Revi;
 using Revi.Refinery;
 using Revi.Refinery.Hosting;
 using ReviDotNet.Forge.Services;
@@ -99,6 +101,133 @@ public static class RefineryApiEndpoints
         // MetaAnalyzer is registered in DI by the meta-analysis component; resolve it as a handler param.
         api.MapGet("/meta", async (MetaAnalyzer analyzer, string? agent, CancellationToken ct) =>
             Results.Ok(await analyzer.AnalyzeAsync(agent, ct)));
+
+        // ── Wave-2 optimize / test / calibration / scenario surfaces ─────────────────────────────────
+        // These run live inference (optimize/test/generate). They resolve their services from DI as handler
+        // params and honour the same optional ApiKey filter applied to the whole group above.
+
+        // POST /optimize — run a prompt across models×runs, analyse each result, aggregate into suggestions,
+        // then buffer the reviser stream into the full revised .pmt content.
+        api.MapPost("/optimize", async (
+            OptimizeRequest req,
+            OptimizerService optimizer,
+            IPromptManager prompts,
+            IInferService infer,
+            CancellationToken ct) =>
+        {
+            if (req is null || string.IsNullOrWhiteSpace(req.PromptName))
+                return Results.BadRequest(new { error = "promptName is required" });
+            if (req.ModelNames is not { Length: > 0 })
+                return Results.BadRequest(new { error = "modelNames must contain at least one model" });
+
+            Prompt? prompt = prompts.Get(req.PromptName);
+            if (prompt is null)
+                return Results.NotFound(new { error = $"prompt '{req.PromptName}' not found" });
+
+            int runsPerModel = req.RunsPerModel is > 0 ? req.RunsPerModel.Value : 1;
+            List<Input> inputs = (req.Inputs ?? [])
+                .Select(i => new Input(i.Key, i.Value))
+                .ToList();
+
+            // Run each model the requested number of times and analyse every non-empty response.
+            var analyses = new List<AnalysisResult>();
+            foreach (string modelName in req.ModelNames)
+            {
+                if (string.IsNullOrWhiteSpace(modelName))
+                    continue;
+
+                for (int run = 0; run < runsPerModel; run++)
+                {
+                    ct.ThrowIfCancellationRequested();
+
+                    CompletionResult? completion =
+                        await infer.Completion(prompt, inputs, modelName: modelName, token: ct);
+                    string? response = completion?.Selected;
+                    if (string.IsNullOrWhiteSpace(response))
+                        continue;
+
+                    AnalysisResult? analysis =
+                        await optimizer.AnalyzeAsync(req.PromptName, modelName, inputs, response);
+                    if (analysis is not null)
+                        analyses.Add(analysis);
+                }
+            }
+
+            List<PromptSuggestion> suggestions =
+                await optimizer.GenerateSuggestionsAsync(prompt, analyses);
+
+            if (req.MaxSuggestions is > 0 && suggestions.Count > req.MaxSuggestions.Value)
+                suggestions = suggestions.Take(req.MaxSuggestions.Value).ToList();
+
+            // Buffer the reviser stream into the full revised prompt content.
+            var revised = new StringBuilder();
+            if (suggestions.Count > 0)
+            {
+                await foreach (string token in optimizer.ReviseStreamAsync(prompt, suggestions, ct))
+                    revised.Append(token);
+            }
+
+            return Results.Ok(new OptimizeResponse(suggestions, revised.ToString()));
+        });
+
+        // POST /test/run — look up a saved suite by name and run it (agent- or prompt-mode), returning the
+        // SuiteRunSummary. 404 when the named suite does not exist.
+        api.MapPost("/test/run", async (
+            TestRunRequest req,
+            SavedSuitesService suites,
+            AgentTestRunnerService runner,
+            CancellationToken ct) =>
+        {
+            if (req is null || string.IsNullOrWhiteSpace(req.SuiteName))
+                return Results.BadRequest(new { error = "suiteName is required" });
+
+            SavedSuite? suite = suites.ListAll()
+                .FirstOrDefault(s => string.Equals(s.Name, req.SuiteName, StringComparison.OrdinalIgnoreCase));
+            if (suite is null)
+                return Results.NotFound(new { error = $"suite '{req.SuiteName}' not found" });
+
+            SuiteRunSummary summary = await runner.RunSuiteAsync(suite, req.AgentName, ct);
+            return Results.Ok(summary);
+        });
+
+        // GET /calibration?agent=<name>&version=<opt> — confidence-vs-accuracy calibration for a fact-checker.
+        api.MapGet("/calibration", async (
+            string? agent,
+            string? version,
+            CalibrationAnalyzer analyzer,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(agent))
+                return Results.BadRequest(new { error = "agent query parameter is required" });
+
+            CalibrationReport report = await analyzer.AnalyzeAsync(agent, version, ct);
+            return Results.Ok(report);
+        });
+
+        // POST /generate-scenarios — author fresh evaluation scenarios for an agent in a target category.
+        api.MapPost("/generate-scenarios", async (
+            GenerateScenariosRequest req,
+            ScenarioGenerator generator,
+            CancellationToken ct) =>
+        {
+            if (req is null || string.IsNullOrWhiteSpace(req.AgentName))
+                return Results.BadRequest(new { error = "agentName is required" });
+            if (string.IsNullOrWhiteSpace(req.AgentSpecSection))
+                return Results.BadRequest(new { error = "agentSpecSection is required" });
+            if (string.IsNullOrWhiteSpace(req.TargetCategory))
+                return Results.BadRequest(new { error = "targetCategory is required" });
+
+            int count = req.Count is > 0 ? req.Count.Value : 5;
+            IReadOnlyList<Scenario> scenarios = await generator.GenerateAsync(
+                req.AgentName,
+                req.AgentSpecSection,
+                existing: [],
+                req.TargetCategory,
+                count,
+                ct);
+
+            return Results.Ok(scenarios);
+        });
     }
 
     private static object ToDto(LoadedPlugin p) => new

@@ -43,6 +43,23 @@ public sealed record EfficiencyMetrics
     public long LatencyMs { get; init; }
 }
 
+/// <summary>
+/// A fact-checker agent's verdict for a run: the chosen winner, a 1–5 self-reported confidence, and an
+/// optional rationale. Parsed from the run's final output when present; used by calibration analysis to
+/// compare stated confidence against actual accuracy.
+/// </summary>
+public sealed record FactCheckerDetermination
+{
+    /// <summary>The winner the fact-checker selected.</summary>
+    public string Winner { get; init; } = "";
+
+    /// <summary>Self-reported confidence (1–5).</summary>
+    public int Confidence { get; init; }
+
+    /// <summary>Optional rationale for the determination.</summary>
+    public string? Rationale { get; init; }
+}
+
 /// <summary>The combined score for one run of one scenario.</summary>
 public sealed record ScoreCard
 {
@@ -75,6 +92,12 @@ public sealed record ScoreCard
 
     /// <summary>The run's session id, for deep-linking to the full trace.</summary>
     public string? SessionId { get; init; }
+
+    /// <summary>
+    /// The fact-checker's determination for this run, parsed from the final output, when present.
+    /// Null when the run produced no parseable determination (the common case for non-fact-checker agents).
+    /// </summary>
+    public FactCheckerDetermination? FactCheckerDetermination { get; init; }
 
     /// <summary>Whether at least one invariant was actually evaluated for this run.</summary>
     public bool Gated => Invariants.Count > 0;

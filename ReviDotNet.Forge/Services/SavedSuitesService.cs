@@ -21,6 +21,18 @@ public sealed class SavedSuite
     public int RunsPerModel { get; set; } = 1;
     public bool RunAnalysis { get; set; } = true;
     public List<SavedSuiteInput> Inputs { get; set; } = new();
+
+    /// <summary>
+    /// When set, the suite targets an agent (run via the Agent Workshop) rather than a bare prompt.
+    /// Null means prompt-mode (the historical behaviour, using <see cref="PromptName"/>).
+    /// </summary>
+    public string? AgentName { get; set; }
+
+    /// <summary>
+    /// Optional assertions evaluated against each case's output to decide pass/fail.
+    /// Null (or empty) means no assertions — a case with none counts as passed.
+    /// </summary>
+    public List<SuiteAssertion>? Assertions { get; set; }
 }
 
 public sealed class SavedSuiteInput
@@ -28,6 +40,32 @@ public sealed class SavedSuiteInput
     public string Key { get; set; } = string.Empty;
     public string Value { get; set; } = string.Empty;
 }
+
+/// <summary>The kind of check a <see cref="SuiteAssertion"/> performs against a case's output.</summary>
+public enum AssertionKind
+{
+    /// <summary>Output must contain the target text (case-insensitive substring).</summary>
+    Contains,
+    /// <summary>Output must NOT contain the target text (case-insensitive substring).</summary>
+    NotContains,
+    /// <summary>Output must match the target regular expression.</summary>
+    Regex,
+    /// <summary>A dotted JSON path (e.g. <c>a.b.c</c> or <c>a.0.b</c>) must resolve in the output JSON.</summary>
+    JsonPath,
+    /// <summary>A judge-scored quality assessment of the output must meet <see cref="SuiteAssertion.Threshold"/>.</summary>
+    ScoreMin
+}
+
+/// <summary>
+/// One assertion in a suite. <see cref="Target"/> is the substring / pattern / json path / rubric the
+/// <see cref="AssertionKind"/> interprets; <see cref="Threshold"/> is used only by <see cref="AssertionKind.ScoreMin"/>.
+/// </summary>
+public sealed record SuiteAssertion(string Id, AssertionKind Kind, string Target, double? Threshold = null);
+
+/// <summary>
+/// The outcome of evaluating a single <see cref="SuiteAssertion"/> against an output.
+/// </summary>
+public sealed record AssertionResult(string Id, bool Passed, string? ActualSnippet, string? FailReason);
 
 /// <summary>
 /// File-backed persistence for Test Runner saved suites. Stored as one JSON per suite under

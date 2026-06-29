@@ -38,6 +38,12 @@ public sealed record CampaignSpec
     /// <summary>Token budget for the whole campaign; null = bounded only by <see cref="MaxRounds"/>.</summary>
     public long? TokenBudget { get; init; }
 
+    /// <summary>
+    /// Separate token budget for meta-LLM calls (judge, gate, proposer); null = no dedicated meta cap.
+    /// Tracked independently of the agent-run <see cref="TokenBudget"/> so meta spend can be bounded on its own.
+    /// </summary>
+    public long? MetaTokenBudget { get; init; }
+
     /// <summary>Maximum improvement rounds.</summary>
     public int MaxRounds { get; init; } = 10;
 

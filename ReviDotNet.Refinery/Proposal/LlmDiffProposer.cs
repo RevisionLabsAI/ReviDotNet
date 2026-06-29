@@ -14,7 +14,7 @@ namespace Revi.Refinery;
 /// single highest-leverage, minimal revision to an agent given the weaknesses surfaced by a scoring round.
 /// Returns the full revised definition plus a computed unified line-diff vs the current one.
 /// </summary>
-public sealed class LlmDiffProposer(IInferService infer) : IProposalStrategy
+public sealed class LlmDiffProposer(IInferService infer, MetaLlmUsageBroker meta) : IProposalStrategy
 {
     /// <summary>The proposer prompt name (shipped embedded in this assembly's RConfigs).</summary>
     public const string ProposerPromptName = "Evaluator.Proposer";
@@ -24,6 +24,7 @@ public sealed class LlmDiffProposer(IInferService infer) : IProposalStrategy
         "system-prompt | state-instruction | few-shot | sampling | guardrail | state-graph | model | tool-gating";
 
     private readonly IInferService _infer = infer;
+    private readonly MetaLlmUsageBroker _meta = meta;
 
     /// <inheritdoc/>
     public async Task<Proposal?> ProposeAsync(
@@ -43,7 +44,9 @@ public sealed class LlmDiffProposer(IInferService infer) : IProposalStrategy
             new("Knob Menu", KnobMenu)
         ];
 
-        ProposerResponse? resp = await _infer.ToObject<ProposerResponse>(ProposerPromptName, inputs, token: ct);
+        (ProposerResponse? resp, CompletionResult? usage) =
+            await _infer.ToObjectWithUsage<ProposerResponse>(ProposerPromptName, inputs, ct: ct);
+        _meta.Record(usage);
 
         string? revised = resp?.RevisedDefinition;
         if (string.IsNullOrWhiteSpace(revised) || revised == currentDefinition)

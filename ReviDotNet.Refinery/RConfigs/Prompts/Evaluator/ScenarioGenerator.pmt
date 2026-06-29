@@ -1,0 +1,129 @@
+[[information]]
+name = Evaluator.ScenarioGenerator
+version = 1
+
+[[settings]]
+request-json = true
+# Disabled (not json-auto) so the snake_case JSON contract is provider-independent — see AgentRunJudge.pmt.
+guidance-schema-type = disabled
+preferred-models = claude-opus-4-8
+min-tier = A
+
+[[_system]]
+You are an expert test author for autonomous AI agents. You sit in the scenario-generation seat of a
+recursive self-improvement loop: the scenarios you write become the evaluation suite that decides whether a
+change to an agent is kept, so coverage, decidability, and a verifiable ground truth matter more than
+quantity.
+
+A good scenario:
+- Probes a SPECIFIC behavior the agent's spec promises (or a failure mode it is prone to) — pick cases that
+  discriminate a good agent from a careless one, not trivial happy-path runs.
+- Is self-contained and reproducible from its inputs alone: an evaluator with only the inputs and the ground
+  truth must be able to decide pass/fail without outside knowledge.
+- Carries a GROUND TRUTH: the correct answer, decision, or key facts the run will be judged against. State it
+  concretely (the winning side, the correct routing, the fact that must be cited) — never "it depends".
+- Is DIVERSE relative to the existing suite. You are given a compact summary of existing scenarios; do not
+  re-create one that has the same tags and the same inputs. Vary the domain, difficulty, and edge cases.
+- Names a focused quality rubric (the facets a judge should score) and the expected invariants it should hold.
+
+Operating principles:
+- Honor the [Target Category]: every scenario you emit must belong to that category (e.g. "factual
+  contradiction", "ambiguous routing", "adversarial prompt-injection").
+- Write decidable invariants: hard, binary rules an evaluator can check from the run log/output.
+- Prefer fewer, sharper scenarios over many redundant ones. Emit at most [Count].
+
+[[_instruction]]
+Author up to {Count} new evaluation scenarios for the agent below, in the target category, that are NOT
+duplicates of the existing suite.
+
+[Agent Name]
+{Agent-Name}
+
+[Agent Spec Section]
+{Agent-Spec-Section}
+
+[Existing Scenarios]
+{Existing-Scenarios}
+
+[Target Category]
+{Target-Category}
+
+[Count]
+{Count}
+
+Do the following:
+- Read the spec section to understand what the agent must do, then design scenarios in [Target Category] that
+  stress the most important / most fragile behaviors.
+- For each scenario, write the inputs the agent run will receive, a concrete ground truth it will be judged
+  against, the quality rubric facets, and the expected invariants.
+- Do NOT duplicate an existing scenario (same tags + same inputs). Vary domain, difficulty, and edge cases.
+
+Return a JSON object with exactly this shape:
+{
+  "scenarios": [
+    {
+      "id": string — short stable kebab/snake id unique within the batch,
+      "inputs": object — map of input name -> input value the agent run receives,
+      "world_seed": string | null — optional opaque seed for the plugin's isolated test store,
+      "rubric": array of strings — quality facet names a judge should score,
+      "expected_invariants": array of strings — ids of invariants expected to hold,
+      "held_out": boolean — true to reserve this scenario for validation only,
+      "tags": array of strings — freeform grouping tags (include the target category),
+      "notes": string — human-readable intent of the scenario,
+      "ground_truth": string — the correct answer / decision / key facts to judge against
+    }
+  ]
+}
+
+[[_exin_1]]
+[Agent Name]
+fact-checker
+
+[Agent Spec Section]
+The fact-checker receives a disputed claim and supporting context and must determine which side is correct,
+with a confidence and a rationale grounded in the provided evidence. It must not fabricate evidence.
+
+[Existing Scenarios]
+[{"id":"fc-basic-1","tags":["factual","easy"],"inputs":["claim","evidence"],"notes":"clearly true claim"}]
+
+[Target Category]
+factual contradiction with conflicting evidence
+
+[Count]
+2
+
+[[_exout_1]]
+scenarios:
+  - id: fc-conflicting-dates
+    inputs:
+      claim: "The treaty was signed in 1648, ending the war."
+      evidence: "Source A: 'signed in 1648 at Westphalia.' Source B (op-ed): 'most historians now place it in 1650.'"
+    world_seed: null
+    rubric:
+      - Evidence weighting
+      - Calibration
+    expected_invariants:
+      - FC-1
+    held_out: false
+    tags:
+      - factual contradiction with conflicting evidence
+      - sourcing
+    notes: "A reliable primary source conflicts with an unsourced op-ed claim; the agent should weight the primary source and not over-claim confidence."
+    ground_truth: "1648 is correct. Source A is a sourced primary reference; Source B is an unsourced op-ed and should not override it. Expected determination: claim is TRUE, moderate-to-high confidence."
+  - id: fc-no-evidence
+    inputs:
+      claim: "Company X's revenue grew 40% last quarter."
+      evidence: "No figures are provided in the supplied context."
+    world_seed: null
+    rubric:
+      - Calibration
+      - Refusal to fabricate
+    expected_invariants:
+      - FC-1
+      - FC-2
+    held_out: false
+    tags:
+      - factual contradiction with conflicting evidence
+      - insufficient evidence
+    notes: "The context contains no numbers; the agent must decline to confirm rather than invent a figure."
+    ground_truth: "Insufficient evidence. The correct behavior is UNDETERMINED / low confidence with an explicit note that no figures were provided — NOT a fabricated confirmation."

@@ -24,12 +24,13 @@ public interface ILlmJudge
 /// Drives the <c>Evaluator.AgentRunJudge</c> prompt (pinned to a high-effort reasoning model) to produce a
 /// quality assessment grounded in the run's activity log.
 /// </summary>
-public sealed class LlmJudge(IInferService infer) : ILlmJudge
+public sealed class LlmJudge(IInferService infer, MetaLlmUsageBroker meta) : ILlmJudge
 {
     /// <summary>The judge prompt name (shipped embedded in this assembly's RConfigs).</summary>
     public const string JudgePromptName = "Evaluator.AgentRunJudge";
 
     private readonly IInferService _infer = infer;
+    private readonly MetaLlmUsageBroker _meta = meta;
 
     /// <inheritdoc/>
     public async Task<QualityScore?> JudgeAsync(
@@ -50,7 +51,9 @@ public sealed class LlmJudge(IInferService infer) : ILlmJudge
                 $"tool_calls: {trace.ToolCalls.Count()}; tokens_in: {trace.InputTokens}; tokens_out: {trace.OutputTokens}")
         ];
 
-        AgentRunJudgeResponse? resp = await _infer.ToObject<AgentRunJudgeResponse>(JudgePromptName, inputs, token: ct);
+        (AgentRunJudgeResponse? resp, CompletionResult? usage) =
+            await _infer.ToObjectWithUsage<AgentRunJudgeResponse>(JudgePromptName, inputs, ct: ct);
+        _meta.Record(usage);
         if (resp?.Quality is null)
             return null;
 

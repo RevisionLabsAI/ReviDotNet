@@ -65,7 +65,7 @@ public class LlmDiffProposerTests
             revised_definition = RevisedDefinition,
             expected_impact = "high — fixes F-2"
         });
-        LlmDiffProposer proposer = new(infer);
+        LlmDiffProposer proposer = new(infer, new MetaLlmUsageBroker());
 
         Proposal? result = await proposer.ProposeAsync("filer", CurrentDefinition, Scores(), Cards());
 
@@ -87,7 +87,7 @@ public class LlmDiffProposerTests
             revised_definition = CurrentDefinition,
             expected_impact = "none"
         });
-        LlmDiffProposer proposer = new(infer);
+        LlmDiffProposer proposer = new(infer, new MetaLlmUsageBroker());
 
         Proposal? result = await proposer.ProposeAsync("filer", CurrentDefinition, Scores(), Cards());
 
@@ -104,7 +104,7 @@ public class LlmDiffProposerTests
             revised_definition = "   ",
             expected_impact = "none"
         });
-        LlmDiffProposer proposer = new(infer);
+        LlmDiffProposer proposer = new(infer, new MetaLlmUsageBroker());
 
         Proposal? result = await proposer.ProposeAsync("filer", CurrentDefinition, Scores(), Cards());
 
@@ -115,7 +115,7 @@ public class LlmDiffProposerTests
     public async Task ProposeAsync_ReturnsNull_WhenInferReturnsNull()
     {
         FakeInferService infer = new(canned: null);
-        LlmDiffProposer proposer = new(infer);
+        LlmDiffProposer proposer = new(infer, new MetaLlmUsageBroker());
 
         Proposal? result = await proposer.ProposeAsync("filer", CurrentDefinition, Scores(), Cards());
 
@@ -144,6 +144,15 @@ public class LlmDiffProposerTests
             inputs.Should().NotBeNull();
             T? value = _json is null ? default : JsonConvert.DeserializeObject<T>(_json);
             return Task.FromResult(value);
+        }
+
+        // The proposer now calls ToObjectWithUsage; route it through the same canned-deserialize logic and
+        // report no meta-token usage.
+        public async Task<(T? Value, CompletionResult? Usage)> ToObjectWithUsage<T>(
+            string promptName, List<Input>? inputs, ModelProfile? model = null, string? modelName = null, CancellationToken ct = default)
+        {
+            T? value = await ToObject<T>(promptName, inputs, model, modelName, token: ct);
+            return (value, null);
         }
 
         // ── Unused members — the proposer only calls the multi-input ToObject<T> overload above. ──

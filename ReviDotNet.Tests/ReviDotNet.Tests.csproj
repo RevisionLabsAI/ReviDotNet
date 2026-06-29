@@ -17,6 +17,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ReviDotNet.Core\ReviDotNet.Core.csproj" />
+    <ProjectReference Include="..\ReviDotNet.Forge\ReviDotNet.Forge.csproj" />
     <ProjectReference Include="..\ReviDotNet.Scraping\ReviDotNet.Scraping.csproj" />
     <ProjectReference Include="..\ReviDotNet.Analyzers\ReviDotNet.Analyzers.csproj" />
     <ProjectReference Include="..\ReviDotNet.Refinery\ReviDotNet.Refinery.csproj" />

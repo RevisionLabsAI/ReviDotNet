@@ -32,6 +32,11 @@ public static class RefineryServiceCollectionExtensions
         services.AddSingleton<IRlogEventPublisher>(sp =>
             new CompositeRlogPublisher(ResolveInner(prior, sp), sp.GetRequiredService<RefineryCaptureBroker>()));
 
+        // Meta-LLM usage broker: a single instance whose per-async-flow state isolates concurrent campaigns.
+        // Constructor-injected into the three meta-LLM drivers (judge / pairwise / proposer) so their token
+        // usage can be accounted against the per-campaign meta budget.
+        services.AddSingleton<MetaLlmUsageBroker>();
+
         services.AddSingleton<ILlmJudge, LlmJudge>();
         services.AddSingleton<RefinementRunner>();
 
@@ -43,6 +48,11 @@ public static class RefineryServiceCollectionExtensions
 
         services.AddSingleton<RefinementController>();
         services.AddSingleton<MetaAnalyzer>();
+
+        // Analysis services: calibration reporting + scenario generation. Stateless singletons.
+        services.AddSingleton<CalibrationAnalyzer>();
+        services.AddSingleton<ScenarioGenerator>();
+        services.AddSingleton<IScenarioGenerator>(sp => sp.GetRequiredService<ScenarioGenerator>());
 
         if (services.All(d => d.ServiceType != typeof(ICampaignStore)))
             services.AddSingleton<ICampaignStore, InMemoryCampaignStore>();
