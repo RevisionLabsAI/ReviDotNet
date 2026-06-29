@@ -58,7 +58,8 @@ public sealed class RefinementController(
         IReadOnlyList<IInvariantChecker> checkers,
         IProgress<RefineryProgress>? progress = null,
         CancellationToken ct = default,
-        string? campaignId = null)
+        string? campaignId = null,
+        Func<Scenario, CancellationToken, Task>? seedScenario = null)
     {
         string id = campaignId ?? Guid.NewGuid().ToString("n");
         Campaign campaign = new()
@@ -82,7 +83,7 @@ public sealed class RefinementController(
                     ct.ThrowIfCancellationRequested();
                     progress?.Report(new RefineryProgress($"[{++done}/{total}] {scenario.Id} sample {sample + 1}"));
 
-                    ScoreCard card = await ScoreOnceAsync(scenario, agentDefinition, checkers, spec.Mode, sample, ct);
+                    ScoreCard card = await ScoreOnceAsync(scenario, agentDefinition, checkers, spec.Mode, sample, ct, seedScenario);
                     cards.Add(card);
                 }
             }
@@ -137,7 +138,8 @@ public sealed class RefinementController(
         IReadOnlyList<IInvariantChecker> checkers,
         IProgress<RefineryProgress>? progress = null,
         CancellationToken ct = default,
-        string? campaignId = null)
+        string? campaignId = null,
+        Func<Scenario, CancellationToken, Task>? seedScenario = null)
     {
         string id = campaignId ?? Guid.NewGuid().ToString("n");
 
@@ -166,11 +168,11 @@ public sealed class RefinementController(
             string currentDefinition = agentDefinition;
 
             (List<ScoreCard> baselineTrainCards, Dictionary<string, string> baselineTrainOutputs) =
-                await ScoreSetAsync(train, spec.AgentName, currentDefinition, checkers, spec.Mode, samples, governor, ct);
+                await ScoreSetAsync(train, spec.AgentName, currentDefinition, checkers, spec.Mode, samples, governor, ct, seedScenario);
 
             List<ScoreCard> baselineHeldOutCards = heldOutMirrorsTrain
                 ? baselineTrainCards
-                : (await ScoreSetAsync(heldOut, spec.AgentName, currentDefinition, checkers, spec.Mode, samples, governor, ct)).Cards;
+                : (await ScoreSetAsync(heldOut, spec.AgentName, currentDefinition, checkers, spec.Mode, samples, governor, ct, seedScenario)).Cards;
 
             SuiteAggregate baselineTrain = Aggregator.Aggregate(baselineTrainCards);
             SuiteAggregate baselineHeldOut = Aggregator.Aggregate(baselineHeldOutCards);
@@ -245,11 +247,11 @@ public sealed class RefinementController(
                 RegisterCandidate(proposal.RevisedContent, tempName);
 
                 (List<ScoreCard> candTrainCards, Dictionary<string, string> candTrainOutputs) =
-                    await ScoreSetAsync(train, tempName, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct);
+                    await ScoreSetAsync(train, tempName, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct, seedScenario);
 
                 List<ScoreCard> candHeldOutCards = heldOutMirrorsTrain
                     ? candTrainCards
-                    : (await ScoreSetAsync(heldOut, tempName, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct)).Cards;
+                    : (await ScoreSetAsync(heldOut, tempName, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct, seedScenario)).Cards;
 
                 SuiteAggregate candTrain = Aggregator.Aggregate(candTrainCards);
                 SuiteAggregate candHeldOut = Aggregator.Aggregate(candHeldOutCards);
@@ -365,8 +367,10 @@ public sealed class RefinementController(
         IReadOnlyList<IInvariantChecker> checkers,
         string mode,
         int sampleIndex,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        Func<Scenario, CancellationToken, Task>? seedScenario = null)
     {
+        if (seedScenario != null) await seedScenario(scenario, ct);
         AgentRun run = await _runner.RunOnceAsync(scenario.AgentName, scenario.Inputs, ct);
         IReadOnlyList<InvariantResult> invariants = StructuralScorer.Score(run.Trace, scenario, checkers);
         QualityScore? quality = scenario.Rubric.Count > 0
@@ -389,8 +393,10 @@ public sealed class RefinementController(
         IReadOnlyList<IInvariantChecker> checkers,
         string mode,
         int sampleIndex,
-        CancellationToken ct)
+        CancellationToken ct,
+        Func<Scenario, CancellationToken, Task>? seedScenario)
     {
+        if (seedScenario != null) await seedScenario(scenario, ct);
         AgentRun run = await _runner.RunOnceAsync(agentName, scenario.Inputs, ct);
         IReadOnlyList<InvariantResult> invariants = StructuralScorer.Score(run.Trace, scenario, checkers);
         QualityScore? quality = scenario.Rubric.Count > 0
@@ -414,7 +420,8 @@ public sealed class RefinementController(
         string mode,
         int samples,
         BudgetGovernor governor,
-        CancellationToken ct)
+        CancellationToken ct,
+        Func<Scenario, CancellationToken, Task>? seedScenario)
     {
         List<ScoreCard> cards = [];
         Dictionary<string, string> outputs = [];
@@ -425,7 +432,7 @@ public sealed class RefinementController(
             {
                 ct.ThrowIfCancellationRequested();
                 (ScoreCard card, string output) =
-                    await RunAndScoreAsync(scenario, agentName, agentDefinition, checkers, mode, sample, ct);
+                    await RunAndScoreAsync(scenario, agentName, agentDefinition, checkers, mode, sample, ct, seedScenario);
                 cards.Add(card);
                 outputs[scenario.Id] = output; // last sample wins — a representative output for pairwise
                 governor.Record(card.Efficiency is { } e ? e.InputTokens + e.OutputTokens : 0);

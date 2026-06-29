@@ -37,6 +37,25 @@ public sealed record Scenario
     public string? Notes { get; init; }
 }
 
+/// <summary>
+/// Optional seeding hook a plugin MAY implement <b>in addition to</b> <see cref="IRefinementPlugin"/>.
+/// The engine detects it at runtime via an <c>is</c> check, so plugins that need no isolated store
+/// (e.g. the chatbot) simply do not implement it.
+/// <para>
+/// <see cref="ResetAsync"/> is called ONCE before a run begins (clear/initialize the isolated test store).
+/// <see cref="SeedAsync"/> is called immediately before EVERY agent sample run (each run may mutate the
+/// store), with the <see cref="Scenario"/> about to execute and the plugin's per-campaign DI scope.
+/// </para>
+/// </summary>
+public interface IScenarioWorld
+{
+    /// <summary>Reset the plugin's isolated test store to a clean state. Called once before a run.</summary>
+    Task ResetAsync(IServiceProvider pluginServices, CancellationToken ct = default);
+
+    /// <summary>Seed the store for a specific scenario. Called before each sample run of that scenario.</summary>
+    Task SeedAsync(Scenario scenario, IServiceProvider pluginServices, CancellationToken ct = default);
+}
+
 /// <summary>A named set of scenarios for one agent.</summary>
 public sealed record ScenarioSuite
 {

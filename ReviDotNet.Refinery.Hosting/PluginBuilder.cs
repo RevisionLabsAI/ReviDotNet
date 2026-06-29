@@ -13,26 +13,53 @@ namespace Revi.Refinery.Hosting;
 public sealed class PluginBuilder
 {
     /// <summary>Build the project and return its output assembly path, or an error.</summary>
-    public async Task<BuildResult> BuildAsync(string csprojPath, string configuration, CancellationToken ct = default)
+    /// <param name="csprojPath">The plugin project file.</param>
+    /// <param name="configuration">Build configuration (Debug/Release).</param>
+    /// <param name="targetFramework">
+    /// Target framework moniker to build/resolve (F11). Passed as <c>-p:TargetFramework={tfm}</c> to both the
+    /// build and the TargetPath query so they agree even when the project sets <c>&lt;TargetFrameworks&gt;</c>
+    /// (plural). When null/blank, no TFM is forced (single-TFM projects).
+    /// </param>
+    /// <param name="ct">Cancellation.</param>
+    public async Task<BuildResult> BuildAsync(string csprojPath, string configuration, string? targetFramework = null, CancellationToken ct = default)
     {
         if (!File.Exists(csprojPath))
             return BuildResult.Fail($"project not found: {csprojPath}");
 
         string dir = Path.GetDirectoryName(csprojPath) ?? Directory.GetCurrentDirectory();
+        bool haveTfm = !string.IsNullOrWhiteSpace(targetFramework);
 
-        (int code, string outp, string err) = await RunAsync(
-            ["build", csprojPath, "-c", configuration, "--nologo", "-clp:ErrorsOnly"], dir, ct);
+        List<string> buildArgs = ["build", csprojPath, "-c", configuration, "--nologo", "-clp:ErrorsOnly"];
+        if (haveTfm) buildArgs.Add($"-p:TargetFramework={targetFramework}");
+        (int code, string outp, string err) = await RunAsync(buildArgs.ToArray(), dir, ct);
         if (code != 0)
             return BuildResult.Fail($"dotnet build failed (exit {code}):\n{Tail(outp + "\n" + err)}");
 
-        (int pc, string pout, string perr) = await RunAsync(
-            ["msbuild", csprojPath, "-getProperty:TargetPath", "-nologo"], dir, ct);
+        List<string> propArgs = ["msbuild", csprojPath, "-getProperty:TargetPath", "-nologo"];
+        if (haveTfm) propArgs.Add($"-p:TargetFramework={targetFramework}");
+        (int pc, string pout, string perr) = await RunAsync(propArgs.ToArray(), dir, ct);
         if (pc != 0)
             return BuildResult.Fail($"could not resolve TargetPath (exit {pc}):\n{Tail(pout + "\n" + perr)}");
 
-        string? target = pout.Split('\n')
+        // -getProperty:TargetPath should be a single line, but with a multi-TFM project that forgot to honor
+        // the forced TFM it can return several. Prefer a dll whose path contains the chosen TFM folder; else
+        // fall back to the last dll line (the legacy behaviour).
+        List<string> dlls = pout.Split('\n')
             .Select(l => l.Trim())
-            .LastOrDefault(l => l.EndsWith(".dll", StringComparison.OrdinalIgnoreCase));
+            .Where(l => l.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        string? target = null;
+        if (haveTfm)
+        {
+            string tfmSegment = $"{Path.DirectorySeparatorChar}{targetFramework}{Path.DirectorySeparatorChar}";
+            string tfmSegmentAlt = $"/{targetFramework}/";
+            target = dlls.LastOrDefault(d =>
+                d.Contains(tfmSegment, StringComparison.OrdinalIgnoreCase) ||
+                d.Contains(tfmSegmentAlt, StringComparison.OrdinalIgnoreCase));
+        }
+        target ??= dlls.LastOrDefault();
+
         if (string.IsNullOrEmpty(target) || !File.Exists(target))
             return BuildResult.Fail($"TargetPath did not resolve to an existing dll (got '{target}')");
 

@@ -5,6 +5,7 @@
 // ===================================================================
 
 using System.Text.Json;
+using System.Xml.Linq;
 
 namespace Revi.Refinery.Hosting;
 
@@ -12,6 +13,7 @@ namespace Revi.Refinery.Hosting;
 /// then convention (any <c>.csproj</c> referencing <c>ReviDotNet.Refinery.Sdk</c>).</summary>
 internal static class PluginDiscovery
 {
+    /// <summary>The Sdk identity a plugin must reference (csproj file name without extension / package id).</summary>
     private const string SdkRefMarker = "ReviDotNet.Refinery.Sdk";
 
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
@@ -37,12 +39,54 @@ internal static class PluginDiscovery
                 continue;
             try
             {
-                if (File.ReadAllText(csproj).Contains(SdkRefMarker, StringComparison.OrdinalIgnoreCase))
+                if (ReferencesSdk(csproj))
                     hits.Add(csproj);
             }
-            catch { /* ignore unreadable */ }
+            catch { /* ignore unreadable / malformed */ }
         }
         return hits;
+    }
+
+    /// <summary>
+    /// True iff the csproj has an EXACT <c>ProjectReference</c> or <c>PackageReference</c> to the Sdk (F10).
+    /// We parse the project as XML and compare the reference's identity — the <c>ProjectReference Include</c>
+    /// path's file name (without <c>.csproj</c>) or the <c>PackageReference Include</c> package id — to
+    /// <see cref="SdkRefMarker"/> (case-insensitive). This rejects substring false-positives like comments,
+    /// namespaces, or sister packages such as <c>ReviDotNet.Refinery.Sdk.Extras</c>.
+    /// </summary>
+    private static bool ReferencesSdk(string csprojPath)
+    {
+        XDocument doc = XDocument.Load(csprojPath);
+
+        foreach (XElement reference in doc.Descendants())
+        {
+            string local = reference.Name.LocalName;
+            bool isProjectRef = string.Equals(local, "ProjectReference", StringComparison.OrdinalIgnoreCase);
+            bool isPackageRef = string.Equals(local, "PackageReference", StringComparison.OrdinalIgnoreCase);
+            if (!isProjectRef && !isPackageRef)
+                continue;
+
+            string? include = reference.Attribute("Include")?.Value;
+            if (string.IsNullOrWhiteSpace(include))
+                continue;
+
+            if (isPackageRef)
+            {
+                // PackageReference Include is the package id verbatim.
+                if (string.Equals(include.Trim(), SdkRefMarker, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            else
+            {
+                // ProjectReference Include is a (possibly relative, possibly back-slashed) path to a .csproj;
+                // compare its file name without extension.
+                string fileName = Path.GetFileNameWithoutExtension(include.Replace('\\', Path.DirectorySeparatorChar).Trim());
+                if (string.Equals(fileName, SdkRefMarker, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+        }
+
+        return false;
     }
 
     public static string? ReadManifestBuildConfig(string repoRoot) => ReadManifest(repoRoot)?.BuildConfiguration;

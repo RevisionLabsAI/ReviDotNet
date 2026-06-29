@@ -7,6 +7,7 @@
 using Revi.Refinery;
 using Revi.Refinery.Hosting;
 using ReviDotNet.Forge.Services;
+using ReviDotNet.Forge.Services.ApiKeys;
 
 namespace ReviDotNet.Forge.Api;
 
@@ -17,9 +18,24 @@ namespace ReviDotNet.Forge.Api;
 /// </summary>
 public static class RefineryApiEndpoints
 {
-    public static void MapRefineryApi(this WebApplication app)
+    public static void MapRefineryApi(this WebApplication app, bool requireApiKey = false)
     {
         RouteGroupBuilder api = app.MapGroup("/api/refinery");
+
+        // Config-gated API-key auth: when on, guard the whole group with the same ApiKeyAuth.ValidateAsync
+        // check the /api/v1 gateway uses (Unauthorized + JSON error if it fails). Off by default so the local
+        // CLI / dashboard keep working without a key.
+        if (requireApiKey)
+        {
+            api.AddEndpointFilter(async (ctx, next) =>
+            {
+                IForgeApiKeyService keyService =
+                    ctx.HttpContext.RequestServices.GetRequiredService<IForgeApiKeyService>();
+                if (!await ApiKeyAuth.ValidateAsync(ctx.HttpContext, keyService))
+                    return Results.Empty; // ValidateAsync already wrote the 401 response.
+                return await next(ctx);
+            });
+        }
 
         api.MapGet("/plugins", (PluginManager plugins) =>
             Results.Ok(plugins.Catalog.Select(ToDto).ToList()));
@@ -78,6 +94,11 @@ public static class RefineryApiEndpoints
                 ? Results.Ok(new { promoted = true })
                 : Results.BadRequest(new { promoted = false, error = "variant could not be promoted (see server log)" });
         });
+
+        // Knob-effectiveness rollup mined from the ledger across campaigns (optionally scoped to ?agent=).
+        // MetaAnalyzer is registered in DI by the meta-analysis component; resolve it as a handler param.
+        api.MapGet("/meta", async (MetaAnalyzer analyzer, string? agent, CancellationToken ct) =>
+            Results.Ok(await analyzer.AnalyzeAsync(agent, ct)));
     }
 
     private static object ToDto(LoadedPlugin p) => new

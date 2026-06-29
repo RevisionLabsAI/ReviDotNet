@@ -42,6 +42,7 @@ public static class RefineryServiceCollectionExtensions
         services.AddSingleton<CandidateValidator>();
 
         services.AddSingleton<RefinementController>();
+        services.AddSingleton<MetaAnalyzer>();
 
         if (services.All(d => d.ServiceType != typeof(ICampaignStore)))
             services.AddSingleton<ICampaignStore, InMemoryCampaignStore>();

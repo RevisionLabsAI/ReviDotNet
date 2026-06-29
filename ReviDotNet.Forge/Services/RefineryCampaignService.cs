@@ -127,19 +127,35 @@ public sealed class RefineryCampaignService(
             foreach (IBuiltInTool tool in registered)
                 _tools.Register(tool);
 
+            // Optional seeding hook: if the plugin manages an isolated test store, reset it once before the
+            // run and seed it before every sample run via the callback. Plugins that do not implement
+            // IScenarioWorld (e.g. the chatbot) pass a null callback — behaviour is unchanged.
+            Func<Scenario, CancellationToken, Task>? seed = null;
+            if (lp.Plugin is IScenarioWorld world)
+            {
+                await world.ResetAsync(pluginProvider, CancellationToken.None);
+                seed = (s, c) => world.SeedAsync(s, pluginProvider, c);
+            }
+
             _log.LogInformation(
                 "Refinery {Kind} {CampaignId} starting: plugin={Plugin} agent={Agent} suite={Suite} samples={Samples} rounds={Rounds} tools={Tools}",
                 kind, id, spec.PluginName, spec.AgentName, spec.SuiteName, spec.SamplesPerScenario, spec.MaxRounds, registered.Count);
 
-            if (refine)
+            // Pin the plugin for the duration of the run: a concurrent reload/unload must not tear down the
+            // plugin's ALC (and the tools we registered above) mid-campaign. PluginManager.Acquire returns a
+            // lease that blocks teardown until disposed; it is a no-op disposable if the plugin is absent.
+            using (_plugins.Acquire(spec.PluginName))
             {
-                await _controller.RunCampaignAsync(
-                    spec, suite, agentDefinition, checkers, progress: null, ct: CancellationToken.None, campaignId: id);
-            }
-            else
-            {
-                await _controller.MeasureBaselineAsync(
-                    spec, suite, agentDefinition, checkers, progress: null, ct: CancellationToken.None, campaignId: id);
+                if (refine)
+                {
+                    await _controller.RunCampaignAsync(
+                        spec, suite, agentDefinition, checkers, progress: null, ct: CancellationToken.None, campaignId: id, seedScenario: seed);
+                }
+                else
+                {
+                    await _controller.MeasureBaselineAsync(
+                        spec, suite, agentDefinition, checkers, progress: null, ct: CancellationToken.None, campaignId: id, seedScenario: seed);
+                }
             }
 
             _log.LogInformation("Refinery {Kind} {CampaignId} complete.", kind, id);

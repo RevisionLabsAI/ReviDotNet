@@ -130,6 +130,25 @@ else
             sp.GetRequiredService<IWorkshopEventBus>()));
 }
 
+// Refinery durable store (config-gated). Register a Mongo-backed ICampaignStore BEFORE AddRefinery() so its
+// guard ("only register InMemory if no ICampaignStore exists") skips the in-memory default and the durable
+// store wins. Activated when Forge:CampaignStore == "mongo" AND an Observer Mongo connection is configured
+// (reusing the same connection string key the Observer/ReviLog use). Default (unset) keeps in-memory.
+string campaignStoreMode = builder.Configuration["Forge:CampaignStore"] ?? "inmemory";
+string? refineryMongoConn = builder.Configuration["Observer:MongoDb:ConnectionString"];
+if (string.Equals(campaignStoreMode, "mongo", StringComparison.OrdinalIgnoreCase)
+    && !string.IsNullOrWhiteSpace(refineryMongoConn))
+{
+    const string refineryDbName = "refinery";
+    builder.Services.AddSingleton<ICampaignStore>(_ =>
+        new MongoCampaignStore(refineryMongoConn!, refineryDbName));
+    Console.WriteLine($"[Refinery] Campaign store: Mongo (db='{refineryDbName}').");
+}
+else
+{
+    Console.WriteLine("[Refinery] Campaign store: in-memory (campaigns are lost on restart).");
+}
+
 // Refinery: decorate the IRlogEventPublisher registered above with a per-run capture broker (must be
 // AFTER it is registered so the host's logging/Observer UI is preserved), and register the plugin host +
 // engine. Repos to build/load come from the "Refinery" config section (Refinery:Repos).
@@ -272,7 +291,7 @@ if (useAuthentication)
 }
 
 app.MapForgeApi();
-app.MapRefineryApi();
+app.MapRefineryApi(builder.Configuration.GetValue<bool>("Forge:RefineryApi:RequireApiKey"));
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
