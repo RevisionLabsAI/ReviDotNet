@@ -135,6 +135,9 @@ else
 // engine. Repos to build/load come from the "Refinery" config section (Refinery:Repos).
 builder.Services.AddRefinery();
 builder.Services.AddRefineryHosting(builder.Configuration);
+// Forge-side campaign orchestration (validates spec, registers plugin tools, runs the baseline in the
+// background while clients poll). Singleton so its run-serializing semaphore is process-wide.
+builder.Services.AddSingleton<RefineryCampaignService>();
 // Additional on-disk RConfig folders loaded INTO Forge IN ADDITION to its own embedded set ("also load":
 // Forge's own configs load first and always win on a name clash; these folders only add what's new). Each
 // is an RConfigs root (Providers/, Models/Inference/, Models/Embedding/, Prompts/, Agents/, Tools/) — handy

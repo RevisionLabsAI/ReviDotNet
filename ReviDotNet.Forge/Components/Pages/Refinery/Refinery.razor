@@ -1,7 +1,12 @@
 @page "/refinery"
 @using Revi.Refinery
 @using Revi.Refinery.Hosting
+@using ReviDotNet.Forge.Services
 @inject PluginManager Plugins
+@inject RefineryCampaignService Campaigns
+@inject ICampaignStore CampaignStore
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
 
 <PageTitle>Refinery</PageTitle>
 
@@ -34,9 +39,23 @@ else
                 <MudText Typo="Typo.h6">@p.Name</MudText>
                 <MudText Typo="Typo.body2" Color="@StatusColor(p.Status)">(@p.Status)</MudText>
                 <MudSpacer />
+                @if (p.Status == PluginStatus.Loaded && p.Plugin is not null && p.Plugin.GetScenarioSuites().Any())
+                {
+                    <MudButton Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined"
+                               StartIcon="@Icons.Material.Filled.PlayArrow"
+                               OnClick="@(() => RunBaseline(p))" Disabled="_busy">Run baseline</MudButton>
+                    <MudButton Size="Size.Small" Color="Color.Secondary" Variant="Variant.Filled"
+                               StartIcon="@Icons.Material.Filled.AutoFixHigh"
+                               OnClick="@(() => RunCampaign(p))" Disabled="_busy">Refine</MudButton>
+                }
                 <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Sync"
                            OnClick="@(() => Reload(p.Name))" Disabled="_busy">Reload</MudButton>
             </MudStack>
+
+            @if (_lastStartedBy.TryGetValue(p.Name, out string? startedId))
+            {
+                <MudText Typo="Typo.caption" Class="mt-1">Started campaign <code>@startedId</code> — poll below.</MudText>
+            }
             <MudText Typo="Typo.caption">@p.ProjectPath</MudText>
 
             @if (!string.IsNullOrEmpty(p.Error))
@@ -70,11 +89,275 @@ else
     }
 }
 
+<MudPaper Class="pa-4 mb-3 mt-6" Outlined="true">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
+        <MudText Typo="Typo.h6">Campaigns</MudText>
+        <MudSpacer />
+        <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Refresh"
+                   OnClick="RefreshCampaigns" Disabled="_busy">Refresh</MudButton>
+    </MudStack>
+
+    @if (_campaigns.Count == 0)
+    {
+        <MudText Typo="Typo.body2">No campaigns yet. Click <b>Run baseline</b> on a loaded plugin above.</MudText>
+    }
+    else
+    {
+        <MudSimpleTable Dense="true" Hover="true">
+            <thead>
+                <tr>
+                    <th>Id</th>
+                    <th>Agent / Suite</th>
+                    <th>Status</th>
+                    <th>Invariant pass-rate</th>
+                    <th>Quality mean</th>
+                    <th>Runs</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (Campaign c in _campaigns)
+                {
+                    <tr style="cursor: pointer;"
+                        class="@(_selected?.Id == c.Id ? "mud-selected-item" : null)"
+                        @onclick="@(() => SelectCampaign(c))">
+                        <td><code>@c.Id</code></td>
+                        <td>@c.Spec.AgentName / @c.Spec.SuiteName</td>
+                        <td>@c.Status</td>
+                        <td>@(c.Current is null ? "—" : c.Current.InvariantPassRate.ToString("P0"))</td>
+                        <td>@(c.Current is null ? "—" : c.Current.QualityMean.ToString("F1"))</td>
+                        <td>@(c.Current?.RunCount.ToString() ?? "—")</td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    }
+</MudPaper>
+
+@if (_selected is not null)
+{
+    <MudPaper Class="pa-4 mb-3" Outlined="true">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
+            <MudText Typo="Typo.h6">Campaign <code>@_selected.Id</code></MudText>
+            <MudChip T="string" Size="Size.Small" Color="@StatusChipColor(_selected.Status)">@_selected.Status</MudChip>
+            <MudSpacer />
+            <MudText Typo="Typo.body2">@_selected.Spec.AgentName / @_selected.Spec.SuiteName</MudText>
+        </MudStack>
+
+        @if (!string.IsNullOrEmpty(_selected.Error))
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mb-2">@_selected.Error</MudAlert>
+        }
+
+        <MudStack Row="true" Spacing="6" Class="mb-3">
+            <div>
+                <MudText Typo="Typo.caption">Baseline</MudText>
+                <MudText Typo="Typo.body2">
+                    @(_selected.Baseline is null ? "—"
+                        : $"inv {_selected.Baseline.InvariantPassRate:P0} · q {_selected.Baseline.QualityMean:F1} (p10 {_selected.Baseline.QualityP10:F1})")
+                </MudText>
+            </div>
+            <div>
+                <MudText Typo="Typo.caption">Current</MudText>
+                <MudText Typo="Typo.body2">
+                    @(_selected.Current is null ? "—"
+                        : $"inv {_selected.Current.InvariantPassRate:P0} · q {_selected.Current.QualityMean:F1} (p10 {_selected.Current.QualityP10:F1})")
+                </MudText>
+            </div>
+            <div>
+                <MudText Typo="Typo.caption">Tokens spent</MudText>
+                <MudText Typo="Typo.body2">@_selected.TokensSpent.ToString("N0")</MudText>
+            </div>
+        </MudStack>
+
+        @if (_selected.Iterations.Count == 0)
+        {
+            <MudText Typo="Typo.body2">No refinement rounds recorded yet.</MudText>
+        }
+        else
+        {
+            @foreach (CampaignIteration it in _selected.Iterations)
+            {
+                <MudText Typo="Typo.subtitle1" Class="mt-3 mb-1">Round @it.Round</MudText>
+                @if (it.Variants.Count == 0)
+                {
+                    <MudText Typo="Typo.body2">No variants proposed this round.</MudText>
+                }
+                else
+                {
+                    <MudExpansionPanels Dense="true">
+                        @foreach (VariantRecord v in it.Variants)
+                        {
+                            <MudExpansionPanel>
+                                <TitleContent>
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">@v.KnobType</MudChip>
+                                        @if (v.Accepted == true)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Success" Icon="@Icons.Material.Filled.CheckCircle">accepted</MudChip>
+                                        }
+                                        else if (v.Accepted == false)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Default" Icon="@Icons.Material.Filled.Cancel">rejected</MudChip>
+                                        }
+                                        else
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Warning">pending</MudChip>
+                                        }
+                                        <MudText Typo="Typo.caption">@ScoreSummary(v)</MudText>
+                                    </MudStack>
+                                </TitleContent>
+                                <ChildContent>
+                                    @if (!string.IsNullOrEmpty(v.Decision))
+                                    {
+                                        <MudText Typo="Typo.body2" Class="mb-2"><b>Decision:</b> @v.Decision</MudText>
+                                    }
+                                    <MudGrid Spacing="4" Class="mb-2">
+                                        <MudItem xs="6">
+                                            <MudText Typo="Typo.caption">Train</MudText>
+                                            <MudText Typo="Typo.body2">@AggSummary(v.TrainScores)</MudText>
+                                        </MudItem>
+                                        <MudItem xs="6">
+                                            <MudText Typo="Typo.caption">Held-out</MudText>
+                                            <MudText Typo="Typo.body2">@AggSummary(v.HeldOutScores)</MudText>
+                                        </MudItem>
+                                    </MudGrid>
+
+                                    <MudText Typo="Typo.caption">Diff</MudText>
+                                    <pre style="font-family: monospace; font-size: 0.78rem; white-space: pre-wrap; max-height: 360px; overflow: auto; background: var(--mud-palette-background-grey); padding: 8px; border-radius: 4px;">@(string.IsNullOrWhiteSpace(v.Diff) ? "(no diff recorded)" : v.Diff)</pre>
+
+                                    @if (v.Accepted == true)
+                                    {
+                                        <MudButton Class="mt-2" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled"
+                                                   StartIcon="@Icons.Material.Filled.Publish"
+                                                   OnClick="@(() => Promote(_selected, v))" Disabled="_busy">Promote to agent</MudButton>
+                                    }
+                                </ChildContent>
+                            </MudExpansionPanel>
+                        }
+                    </MudExpansionPanels>
+                }
+            }
+        }
+    </MudPaper>
+}
+
 @code {
     private bool _busy;
     private List<LoadedPlugin> _plugins = new();
+    private List<Campaign> _campaigns = new();
+    private Campaign? _selected;
+    private readonly Dictionary<string, string> _lastStartedBy = new();
 
-    protected override void OnInitialized() => _plugins = Plugins.Catalog.ToList();
+    protected override async Task OnInitializedAsync()
+    {
+        _plugins = Plugins.Catalog.ToList();
+        await RefreshCampaigns();
+    }
+
+    private async Task RunBaseline(LoadedPlugin p)
+    {
+        if (p.Plugin is null) return;
+        ScenarioSuite? suite = p.Plugin.GetScenarioSuites().FirstOrDefault();
+        if (suite is null) return;
+
+        _busy = true;
+        try
+        {
+            CampaignSpec spec = new()
+            {
+                PluginName = p.Name,
+                AgentName = suite.AgentName,
+                SuiteName = suite.Name,
+                SamplesPerScenario = 1
+            };
+            string id = await Campaigns.StartBaselineAsync(spec);
+            _lastStartedBy[p.Name] = id;
+            await RefreshCampaigns();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task RunCampaign(LoadedPlugin p)
+    {
+        if (p.Plugin is null) return;
+        ScenarioSuite? suite = p.Plugin.GetScenarioSuites().FirstOrDefault();
+        if (suite is null) return;
+
+        _busy = true;
+        try
+        {
+            CampaignSpec spec = new()
+            {
+                PluginName = p.Name,
+                AgentName = suite.AgentName,
+                SuiteName = suite.Name,
+                SamplesPerScenario = 2,
+                MaxRounds = 3,
+                AutoPropose = true
+            };
+            string id = await Campaigns.StartCampaignAsync(spec);
+            _lastStartedBy[p.Name] = id;
+            await RefreshCampaigns();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task RefreshCampaigns()
+    {
+        IReadOnlyList<Campaign> all = await CampaignStore.ListAsync();
+        _campaigns = all.ToList();
+        // Re-bind the selected campaign to its freshest snapshot (or drop it if it vanished).
+        if (_selected is not null)
+            _selected = _campaigns.FirstOrDefault(c => c.Id == _selected.Id);
+    }
+
+    private async Task SelectCampaign(Campaign c)
+    {
+        // Always pull the latest snapshot for the detail view.
+        _selected = await CampaignStore.GetAsync(c.Id) ?? c;
+    }
+
+    private async Task Promote(Campaign campaign, VariantRecord variant)
+    {
+        bool? ok = await Dialogs.ShowMessageBox(
+            "Promote variant",
+            $"Promote the accepted '{variant.KnobType}' variant (round {variant.Round}) to agent " +
+            $"'{variant.AgentName}'? This rewrites the agent's .agent file and swaps it into the live registry.",
+            yesText: "Promote", cancelText: "Cancel");
+        if (ok != true) return;
+
+        _busy = true;
+        try
+        {
+            bool promoted = await Campaigns.PromoteVariantAsync(campaign.Id, variant.Id);
+            if (promoted)
+                Snackbar.Add($"Promoted variant to agent '{variant.AgentName}'.", Severity.Success);
+            else
+                Snackbar.Add(
+                    "Could not promote. In v1 the variant is stored as a diff; if it does not apply cleanly to the " +
+                    "current agent source (or the agent has no writable file), promotion is blocked. See server log.",
+                    Severity.Warning);
+        }
+        finally { _busy = false; }
+    }
+
+    private static string ScoreSummary(VariantRecord v)
+    {
+        SuiteAggregate? a = v.HeldOutScores ?? v.TrainScores;
+        return a is null ? "no scores" : $"inv {a.InvariantPassRate:P0} · q-p10 {a.QualityP10:F1}";
+    }
+
+    private static string AggSummary(SuiteAggregate? a) =>
+        a is null ? "—" : $"inv {a.InvariantPassRate:P0} · q {a.QualityMean:F1} (p10 {a.QualityP10:F1}) · n={a.RunCount}";
+
+    private static Color StatusChipColor(CampaignStatus s) => s switch
+    {
+        CampaignStatus.Converged => Color.Success,
+        CampaignStatus.Running or CampaignStatus.Pending => Color.Info,
+        CampaignStatus.Failed => Color.Error,
+        CampaignStatus.BudgetExhausted or CampaignStatus.Stopped => Color.Warning,
+        _ => Color.Default
+    };
 
     private async Task RefreshAll()
     {

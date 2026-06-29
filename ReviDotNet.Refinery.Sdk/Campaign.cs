@@ -93,6 +93,9 @@ public sealed record VariantRecord
     /// <summary>The proposed unified diff of the .agent/.pmt change.</summary>
     public string Diff { get; init; } = "";
 
+    /// <summary>The full revised .agent/.pmt content — written to disk when an accepted variant is promoted.</summary>
+    public string RevisedContent { get; init; } = "";
+
     public SuiteAggregate? TrainScores { get; init; }
     public SuiteAggregate? HeldOutScores { get; init; }
 

@@ -6,6 +6,7 @@
 
 using Revi.Refinery;
 using Revi.Refinery.Hosting;
+using ReviDotNet.Forge.Services;
 
 namespace ReviDotNet.Forge.Api;
 
@@ -41,10 +42,41 @@ public static class RefineryApiEndpoints
         api.MapGet("/campaigns", async (ICampaignStore store, CancellationToken ct) =>
             Results.Ok(await store.ListAsync(ct)));
 
+        api.MapPost("/campaigns", async (CampaignSpec spec, RefineryCampaignService campaigns, CancellationToken ct) =>
+        {
+            try
+            {
+                // AutoPropose => full refinement campaign; otherwise just measure a baseline.
+                string id = spec.AutoPropose
+                    ? await campaigns.StartCampaignAsync(spec, ct)
+                    : await campaigns.StartBaselineAsync(spec, ct);
+                return Results.Accepted($"/api/refinery/campaigns/{id}", new { id, status = "Pending" });
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
         api.MapGet("/campaigns/{id}", async (string id, ICampaignStore store, CancellationToken ct) =>
         {
             Campaign? c = await store.GetAsync(id, ct);
             return c is null ? Results.NotFound() : Results.Ok(c);
+        });
+
+        api.MapGet("/campaigns/{id}/ledger", async (string id, ICampaignStore store, CancellationToken ct) =>
+        {
+            IReadOnlyList<LedgerEntry> entries = await store.GetLedgerAsync(id, ct);
+            return Results.Ok(entries);
+        });
+
+        api.MapPost("/campaigns/{id}/promote/{variantId}",
+            async (string id, string variantId, RefineryCampaignService campaigns, CancellationToken ct) =>
+        {
+            bool promoted = await campaigns.PromoteVariantAsync(id, variantId, ct);
+            return promoted
+                ? Results.Ok(new { promoted = true })
+                : Results.BadRequest(new { promoted = false, error = "variant could not be promoted (see server log)" });
         });
     }
 

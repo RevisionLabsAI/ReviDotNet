@@ -34,6 +34,13 @@ public static class RefineryServiceCollectionExtensions
 
         services.AddSingleton<ILlmJudge, LlmJudge>();
         services.AddSingleton<RefinementRunner>();
+
+        // Phase 4 loop dependencies. The proposer, pairwise gate, and candidate validator are stateless
+        // singletons; the BudgetGovernor is per-campaign (`new` inside RunCampaignAsync), NOT a DI singleton.
+        services.AddSingleton<IProposalStrategy, LlmDiffProposer>();
+        services.AddSingleton<PairwiseGate>();
+        services.AddSingleton<CandidateValidator>();
+
         services.AddSingleton<RefinementController>();
 
         if (services.All(d => d.ServiceType != typeof(ICampaignStore)))
