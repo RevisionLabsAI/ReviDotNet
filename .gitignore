@@ -54,3 +54,7 @@ TestResults/
 .env
 .env.*
 *.env
+
+# Claude Code local state (worktrees, session data) — keep the tracked launch.json
+.claude/*
+!.claude/launch.json
