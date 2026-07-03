@@ -26,6 +26,9 @@ ReviDotNet is a .NET LLM library built on a simple wager: the things that usuall
 **Tier-based routing**
 - Prompts request a quality tier (C < B < A) instead of a model name; the engine deterministically picks the lowest enabled model that meets the minimum, honoring preferred/blocked lists. Swap or downgrade models in config without touching C#.
 
+**Native thinking / reasoning**
+- Turn on a model's extended-thinking/reasoning with one provider-agnostic `thinking` setting using a five-word common vocabulary (`minimal` < `low` < `medium` < `high` < `max`, plus `none` to disable), so prompts stay portable. Each model maps the word to its provider's wire format — Claude adaptive effort or `budget_tokens`, Gemini `thinkingConfig`, OpenAI `reasoning_effort` — and a prompt can override the model default per request. Claude's reasoning text is returned on `CompletionResult.Thinking`.
+
 **Resilience and safety**
 - Transport-level retries with exponential back-off, an application-level output-retry loop, request spacing, and a no-data inactivity watchdog.
 - Automatic secret redaction before anything is logged.
@@ -47,6 +50,10 @@ ReviDotNet is a .NET LLM library built on a simple wager: the things that usuall
 - Rlog structured logging with chainable records, secret redaction, parent/child run correlation, and an optional event sink for a live session viewer.
 - A Blazor "Forge" studio and inference gateway: route a consumer app's inference through a remote gateway by dropping in one `forge.rcfg`, with a direct-route escape hatch for latency-sensitive calls.
 
+**Agent evaluation & self-improvement (Refinery)**
+- A companion toolkit (`ReviDotNet.Refinery.*` assemblies + the `revi` CLI + a Forge `/refinery` dashboard) that measures and improves your agents. Point it at a trusted local repo that ships a small refinement plugin; it runs your agents against scenario suites, captures each run's execution trace, and scores it on three independent tiers — structural invariant gates, efficiency metrics (tokens / tool-calls / cost / latency), and an Opus-4.8 LLM judge — with pairwise regression comparison and lower-bound statistical aggregation (quality P10, gated-run pass-rate).
+- Over iterations it proposes candidate agent/prompt edits (an LLM diff-proposer plus deterministic knob mutators for sampling, guardrails, and system prompts), re-scores each on train + held-out scenarios, and adopts one only if it clears a deterministic regression gate. Promoting an accepted change to your real `.agent`/`.pmt` files is always a separate, human-gated step. Adds calibration reports, LLM scenario generation, dual token budgets, and a deterministic replay mode for CI (`revi test` exits non-zero on a failing case).
+
 ## What makes it different
 
 **vs. Semantic Kernel / Microsoft Agent Framework (MAF).** MAF is the stronger choice for large-scale, multi-agent orchestration — graph workflows, checkpointing, time-travel, group-chat and human-in-the-loop are all things ReviDotNet does not have. Where ReviDotNet differs: its config is genuinely declarative end to end. A single `.rcfg` describes providers, inference models, and embedding models; the `.agent` DSL carries states, tool-gating, guardrails, and a native per-agent cost-budget primitive that MAF leaves to your own middleware. And nothing in the Microsoft stack validates prompt/agent/model files at build time — those errors surface at load or run time.
@@ -63,6 +70,7 @@ ReviDotNet is a .NET LLM library built on a simple wager: the things that usuall
 | Compile-time Roslyn validation | ~19 analyzers | None | None | None |
 | Structured output | JSON auto+manual, regex (vLLM), json/enum repair | JSON-schema only | JSON-schema only | Varies; mostly DIY |
 | Tier-based model routing | Built-in | Custom middleware | Custom middleware | No |
+| Native reasoning/thinking control | Built-in (5-word vocab → Claude/Gemini/OpenAI) | Provider-specific | Provider-specific | Varies |
 | Per-agent USD cost budget | Built-in, declarative | DIY middleware | DIY middleware | No / undocumented |
 | In-process injection canary | Yes | Azure Content Safety | No | No |
 | Web fetch/crawl pipeline | Built-in | Bing grounding / MCP | No | DIY |
@@ -70,6 +78,7 @@ ReviDotNet is a .NET LLM library built on a simple wager: the things that usuall
 | Native provider tool/function calling | Not yet | Yes (KernelFunction) | Yes (AIFunction) | Yes (varies) |
 | `IChatClient` / MEAI interop | No | Yes | Native | Mostly yes |
 | Multi-agent graph orchestration | Single-loop DSL | Strong (graphs, HITL) | Via MAF | LlmTornado: yes |
+| Agent eval & regression gating | Refinery toolkit (scenarios, multi-signal scoring, gates) | Via MEAI Evaluation | Evaluation.* suite | promptfoo / DIY |
 
 ## Who it is for
 
@@ -126,7 +135,7 @@ ReviDotNet is in active development, and we'd rather be honest than oversell:
 - **No native provider tool/function-calling abstraction yet.** This is the most-requested primitive and is on the roadmap.
 - **GBNF grammar guidance is declared but not implemented** — `gbnf-auto`/`gbnf-manual` currently resolve to no constraint, so don't rely on them. JSON guidance (and regex on vLLM) is the working path.
 - **No MEAI `IChatClient`/`IEmbeddingGenerator` interop** — ReviDotNet is its own surface for now; integrating with the standard contracts is a known priority.
-- **Evaluation is single-judge.** The optimize/evaluate loop lives in the Forge studio as an LLM-as-judge flow, not as a Core library API with datasets, scorers, and thresholds.
+- **Evaluation has grown up — but it lives outside Core.** The Forge studio's prompt optimize/evaluate loop is still single-judge LLM-as-judge, but the new **Refinery** toolkit (`ReviDotNet.Refinery.*`) adds a genuine multi-signal harness: scenario datasets, structural + efficiency + LLM-judge scorers, pairwise regression comparison, statistical aggregation, and deterministic accept/reject gates (CI-usable via `revi test`). The remaining gap is packaging: it ships as a dedicated, agent/trace-oriented toolkit driven through Forge and the `revi` CLI, not as a lightweight `ReviDotNet.Core` evaluation API you can call from arbitrary xUnit tests.
 - **No persistent vector store, OpenTelemetry tracing, tokenizer-accurate counting, or config hot-reload yet** — embeddings retrieval is in-memory, observability is via Rlog, token limits use a character-ratio estimate, and config loads once at startup.
 - **The README is partially stale** (it under-counts the analyzers and mentions a `.yaml` prompt format that doesn't exist); trust this document and the in-repo docs over it until it's updated.
 

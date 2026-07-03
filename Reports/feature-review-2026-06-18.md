@@ -5,6 +5,10 @@
 **Method:** each of the 18 feature areas was audited by deep-reading the actual implementation (with `path:line` evidence); every documentation discrepancy was then adversarially re-verified against the cited code by an independent reviewer, and findings the current code no longer exhibits were rejected. Competitive analysis is grounded in 2026 web research. See [Appendix B](#appendix-b--how-this-report-was-produced).  
 **Note:** this report supersedes `feature-review-2026-06-16.md`. That report's `D1–D128` doc fixes have largely landed; findings here are re-derived from the **current** post-fix code and renumbered `DOC-###`.
 
+> **Update — 2026-07-03 (post-audit additions).** Two subsystems have landed since this 2026-06-18 audit; both are documented to the same `path:line` evidence standard in the new **[Addendum](#addendum--feature-additions-since-2026-06-18)** (§19–§20), and they supersede specific findings below:
+> - **Native thinking / reasoning** (commit `459bd1f`) — a provider-agnostic `thinking` setting (five-word common vocabulary) across Claude, Gemini, and OpenAI. See **[§19](#19-native-thinking--reasoning)**.
+> - **The Refinery toolkit** (`ReviDotNet.Refinery.Sdk` / `.Refinery` / `.Refinery.Hosting`, the `revi` CLI, and Forge integration) — an agent measurement, evaluation, and self-improvement harness with scenario datasets, multi-signal scoring (structural invariant gates + efficiency metrics + an Opus-4.8 LLM judge + pairwise regression), deterministic accept/reject gates, and human-gated promotion. See **[§20](#20-refinery--agent-evaluation--self-improvement-toolkit)**. This **substantially closes [GAP-009](#gap-009--programmatic-evaluation-harness-in-revidotnetcore)** and supersedes the "evaluation is single-judge" framing in the Executive summary and in [§16.6](#166-what-this-feature-is-not) — with the caveat that it ships as a dedicated toolkit (separate assemblies, agent/trace-oriented) rather than a `ReviDotNet.Core` API.
+
 ---
 
 ## Executive summary
@@ -58,6 +62,9 @@ This audit covered **18 feature areas** and produced **46 documentation improvem
   - [18. Public API Surface, ReviClient Facade & README Accuracy](#18-public-api-surface-reviclient-facade--readme-accuracy)
 - [Part 2 — Documentation improvements (DOC-001–DOC-046)](#part-2--documentation-improvements)
 - [Part 3 — Competitive gaps (GAP-001–GAP-022)](#part-3--competitive-gaps)
+- [Addendum — Feature additions since 2026-06-18](#addendum--feature-additions-since-2026-06-18)
+  - [19. Native Thinking / Reasoning](#19-native-thinking--reasoning)
+  - [20. Refinery — Agent Evaluation & Self-Improvement Toolkit](#20-refinery--agent-evaluation--self-improvement-toolkit)
 - [Appendix A — Competitive landscape](#appendix-a--competitive-landscape)
 - [Appendix B — How this report was produced](#appendix-b--how-this-report-was-produced)
 
@@ -3900,6 +3907,8 @@ The whole page snapshot (selected models, runs, inputs, analyses, suggestions, r
 - "Quality score" is a single integer from one judge model; there are no rubric weights, multi-judge ensembles, pairwise comparisons, or confidence intervals.
 - Nothing here is a public `ReviDotNet.Core` API surface for downstream consumers — the services live in the Forge app assembly.
 
+> **Update — 2026-07-03.** The first two bullets are now **superseded by the Refinery toolkit** (see [Addendum §20](#20-refinery--agent-evaluation--self-improvement-toolkit)), which adds a genuine multi-signal harness: **scenario datasets** (`ScenarioSuite`/`Scenario`), three independent scorers (**structural invariant gates**, **efficiency metrics**, and an **Opus-4.8 LLM judge** with per-facet rubric scoring), **pairwise regression comparison** (`PairwiseGate`), a deterministic **accept/reject gate** (`GatePolicy`), and **lower-bound statistical aggregation** (quality P10, gated-run pass-rate). The third bullet still stands with a nuance: this harness lives in the separate `ReviDotNet.Refinery*` assemblies (driven from Forge and the `revi` CLI), not in `ReviDotNet.Core`, and it targets **agent-run traces**, not the prompt-only `Optimizer.*` loop documented above — the two are complementary, not merged.
+
 ---
 
 **Usage workflow**
@@ -4841,6 +4850,8 @@ Every entry was confirmed against the current code. `Status` = `confirmed` (inde
 
 Features competing .NET LLM frameworks offer that ReviDotNet should add to stay competitive. Deduped and prioritized across all feature areas and the competitor analysis.
 
+> **Update — 2026-07-03.** **[GAP-009](#gap-009--programmatic-evaluation-harness-in-revidotnetcore)** (programmatic evaluation harness) has since been **substantially addressed** by the Refinery toolkit — see the [Addendum §20](#20-refinery--agent-evaluation--self-improvement-toolkit) and the per-gap status note below. The remaining gaps in this table are unchanged as of this update.
+
 | ID | Priority | Gap | What to add | Compared to | Effort |
 |----|----------|-----|-------------|-------------|--------|
 | GAP-001 | high | Native provider tool/function calling abstraction | A first-class tool-calling surface that maps to each provider's native API (OpenAI tools, Anthropic tool_use, Gemini function declarations): register C# methods/delegates as tools with auto-generated JSON-schema parameters, parse tool_call  | Microsoft.Extensions.AI (AIFunctionFactory + FunctionInvokingChatClient), Semantic Kernel/MAF (KernelFunction auto-invocation), LlmTornado | large |
@@ -4921,6 +4932,7 @@ Features competing .NET LLM frameworks offer that ReviDotNet should add to stay 
 - **Add:** A library-level evaluation API (not just the Forge app feature): a dataset abstraction, a pluggable scorer/metric interface, rubric-weighted and multi-judge ensemble scoring with statistical aggregation (variance, agreement, outliers), pairwise comparison, and a pass/fail threshold / regression-gate usable from xUnit/CI. Today evaluation is single-judge, single-integer QualityScore from one Optimizer.Analyzer prompt and the only Core type is the 4-field AnalysisResult DTO.
 - **Why it matters:** Evaluation and regression gating are how teams ship prompt changes safely; competitors expose dataset+scorer+threshold abstractions as a library or platform. Revi's evaluation lives only inside Forge as LLM-as-judge with no rubric, no aggregation and no threshold API, so it cannot gate CI.
 - **Where it exists today:** Microsoft.Extensions.AI (Evaluation.* quality/safety suite usable from xUnit/CI), OpenAI Evals, promptfoo, DeepEval, DSPy metrics
+- **Status — 2026-07-03 (substantially addressed):** the **Refinery toolkit** ([Addendum §20](#20-refinery--agent-evaluation--self-improvement-toolkit)) now delivers most of this — **scenario datasets** (`ScenarioSuite`/`Scenario`, with train/held-out split and ground truth), a **pluggable scorer set** (structural `IInvariantChecker` gates + efficiency metrics + an Opus-4.8 LLM judge with per-facet rubric scores), **pairwise comparison** (`PairwiseGate`), **statistical aggregation** (quality mean + P10, cost/latency percentiles, gated-run pass-rate), and a deterministic **pass/fail regression gate** (`GatePolicy`) that is **CI-usable** via `revi test` (exit 1 on any failing case). Two caveats keep this from being fully closed: (1) it ships as the separate `ReviDotNet.Refinery*` assemblies driven through Forge/CLI, **not** a `ReviDotNet.Core` library API callable directly from arbitrary xUnit tests; and (2) it is **agent-run/trace-oriented** (a plugin implements `IRefinementPlugin`), not a general prompt-and-dataset scorer harness. A thin Core-level `IEvaluator` surface over the same scorers would finish the job.
 
 #### GAP-010 — Streaming agent step output and human-in-the-loop approval/interrupt _(high priority, medium effort)_
 
@@ -4999,6 +5011,391 @@ Features competing .NET LLM frameworks offer that ReviDotNet should add to stay 
 - **Add:** An ILoggerProvider/adapter (or have ReviLogger bridge to ILogger) so ReviLogger output flows through the standard logging pipeline, existing ILogger<T> call sites can target it, and standard LogLevel filtering from the 'Logging' config section applies.
 - **Why it matters:** MEAI and SK build on Microsoft.Extensions.Logging and inherit the entire .NET sink/filter ecosystem (Serilog, Seq, App Insights, console formatters) for free; ReviLogger reimplements its own stack and is isolated from it. From the observability area. (Lower priority than the OTel gap, which delivers the higher-value cross-vendor tracing.)
 - **Where it exists today:** Microsoft.Extensions.AI / Semantic Kernel (Microsoft.Extensions.Logging)
+
+---
+
+## Addendum — Feature additions since 2026-06-18
+
+*Added 2026-07-03.* Two subsystems landed after the audit above; this addendum documents them to the same standard as [Part 1](#part-1--feature-reference-with-workflows) (exact option names, formats, defaults, precedence, `path:line` evidence, then a usage workflow) and continues its section numbering (§19–§20). The original Part 1's "18 feature areas" count and its `DOC-###`/`GAP-###` numbering are historical and left unchanged; the update note near the top of this report summarizes how these additions supersede specific earlier findings.
+
+### 19. Native Thinking / Reasoning
+
+Added after the 2026-06-18 audit (commit `459bd1f`), native **thinking / reasoning** is a
+provider-agnostic setting that turns on each model's extended-thinking mode across **Claude
+(Anthropic), Gemini (Google), and OpenAI**. It is configured with a **five-word common vocabulary** —
+`minimal` < `low` < `medium` < `high` < `max` (plus `none`/`off` to disable) — so prompts and agents
+stay portable; each model translates the word into the value its provider expects via a per-model
+conversion table, and the engine emits the correct wire shape per protocol.
+
+#### 19.1 Configuration surface
+
+Thinking is set in two places, with the prompt overriding the model:
+
+- **Model default** — in a model `.rcfg` `[[settings]]`: `thinking` (`ModelProfile.Thinking`,
+  `ModelProfile.cs:112`, `[RConfigProperty("settings_thinking")]`) plus the five conversion knobs
+  `thinking-conversion-minimal|low|medium|high|max` (`ModelProfile.cs:119,124,128,133,140`). All default
+  `null`.
+- **Per-request override** — in a prompt `.pmt` `[[settings]]`: `thinking` (`Prompt.Thinking`,
+  `Prompt.cs:79`, `[JsonProperty("thinking"), RConfigProperty("settings_thinking")]`, default `null`).
+  The prompt exposes **only** `thinking` — there is **no** prompt-level conversion table; the prompt's
+  word is always translated by the **model's** table (`Prompt.cs:73-77`).
+
+**Value format** (model or prompt `thinking`): one of the five common words, a disable sentinel
+(`none`/`off`/`disabled`/`0`/`false`/empty), or a raw provider value (a numeric token budget like `8192`
+or a provider effort string like `xhigh`) passed through unchanged (`ModelProfile.cs:152-179`). A
+conversion-table entry holds the provider-specific value for that word — a numeric budget (Gemini) or an
+effort string (Claude/OpenAI); unset ⇒ the word passes through normalized (trim + lowercase)
+(`ModelProfile.cs:167-175`).
+
+**Resolution & precedence.** `Infer.ComputeThinking(prompt, model)` picks the prompt's `thinking` when
+set, else the model's, then runs it through the **model's** table (`Infer.cs:1454-1459`):
+
+```csharp
+string? amount = !string.IsNullOrWhiteSpace(prompt.Thinking) ? prompt.Thinking : model.Thinking;
+return model.ResolveThinking(amount);
+```
+
+The resolved value is threaded as `thinking:` into every completion path (`Infer.cs:100,133,408,439`).
+`ThinkingResolutionTests.cs` pins the rules: a word with no table passes through normalized
+(`:29-35`); every disable sentinel resolves to **null** (`:38-51`); a table maps the five words
+(Claude-style `minimal→low … max→max` `:66-68`; Gemini-style `minimal→512 … max→24576` `:79-80`;
+OpenAI-style `minimal→minimal … max→high` `:90-91`); a raw non-word value is unchanged (`:95-97`).
+
+#### 19.2 Per-provider wire behavior
+
+`PayloadTransformer.AddCommonParameters` routes the resolved value by protocol
+(`PayloadTransformer.cs:462-473`): Claude/Gemini stash it under the internal key `thinking_mode`
+(`:468`); OpenAI emits top-level `reasoning_effort` verbatim (`:471`); **every other protocol (vLLM,
+Perplexity, LLamaAPI) emits nothing** — the switch has no case for them, so thinking is silently a no-op
+there (`:461`).
+
+- **Claude / Anthropic** (`TransformToClaudePayload`, `PayloadTransformer.cs:333-362`): a numeric
+  budget `> 0` → classic `thinking:{type:"enabled", budget_tokens:N}` (`:340-344`) and `max_tokens`
+  raised to `budget+4096` if it was ≤ budget (`:345-348`); a word → adaptive `thinking:{type:"adaptive"}`
+  + `output_config:{effort:<word>}` (`:352-356`). **Both branches force `temperature=1` and drop
+  `top_p`** (`:359-360`).
+- **Gemini** (`TransformToGeminiPayload`, `PayloadTransformer.cs:223-235`): `generationConfig.thinkingConfig`
+  — numeric → `thinkingBudget` (Gemini 2.5), word → `thinkingLevel` (Gemini 3).
+- **OpenAI** (Chat Completions and Responses): top-level `reasoning_effort` (string), no transform step
+  (`PayloadTransformer.cs:471`). Reasoning models also need `max-token-type = MaxCompletionTokens` so
+  `max_completion_tokens` is sent instead of `max_tokens` (`PayloadTransformer.cs:486-487`).
+
+Whether the model takes the numeric-budget or the word/effort branch is decided by `int.TryParse` at
+transform time (Claude `:338`, Gemini `:229`), i.e. by what the conversion table yields.
+
+#### 19.3 Output surface
+
+Claude's reasoning text comes back on **`CompletionResult.Thinking`** (`string?`,
+`CompletionResult.cs:56`) — populated from the parsed response (`InferClient.cs:311,315`), which reads
+the first Anthropic `content[]` block of `type == "thinking"` (`InferenceHttpClient.cs:214-215`). Gemini
+and OpenAI reasoning text is **not** surfaced on `.Thinking` (no parsing added), and even for Claude the
+**adaptive** effort API returns no reasoning text — only the classic `budget_tokens` API populates
+`.Thinking` (`LiveThinkingTests.cs:22-24`).
+
+#### 19.4 Defaults, shipped configs & gotchas
+
+- **Off by default.** Both `Thinking` properties default `null`; `ResolveThinking(null)` returns `null`,
+  so no thinking keys are emitted (`ModelProfile.cs:154-155`). Docs advise setting `thinking` explicitly
+  on **every** model — a level for reasoning models, `none` for the rest (`ModelProfile.cs:102-104`).
+- **Shipped Forge configs.** `claude-opus-4-8.rcfg` (`thinking = high`, effort table `low/low/medium/high/max`),
+  `gpt-5.rcfg` (`minimal/low/medium/high/high` with `max→high`, plus `max-token-type = MaxCompletionTokens`),
+  `gemini-2-5-flash.rcfg` (budgets `512/2048/8192/16384/24576`); `claude-haiku-4-5`, `claude-sonnet-4-5`,
+  `gemini-1-5-flash`, `gpt-4o-mini` all set `thinking = none`.
+- **`minimal`/`max` are collapsed by the table, not the resolver.** With no table they pass through
+  literally (which most providers reject); Claude has no sub-`low` tier (`minimal→low`) and OpenAI nothing
+  above `high` (`max→high`). Correct behavior depends on each model supplying its table.
+- **No validation of raw values.** `reasoning_effort` and pass-through words/budgets are sent as-is;
+  an out-of-range value reaches the provider unchecked.
+- The `Protocol.Claude` enum comment still reads "Not implemented" (`Protocol.cs:16`) but Claude is fully
+  wired (endpoint `v1/messages`, `x-api-key`/`anthropic-version` headers, payload transform, response
+  parsing) — the comment is stale (candidate doc fix).
+
+**Usage workflow**
+
+1. **Enable it on a reasoning-capable model.** In the model's `.rcfg` set a default level and its
+   conversion table (only on models whose `model-string` supports thinking):
+
+   ```ini
+   [[settings]]
+   thinking = high
+   thinking-conversion-minimal = low
+   thinking-conversion-low = low
+   thinking-conversion-medium = medium
+   thinking-conversion-high = high
+   thinking-conversion-max = max
+   ```
+
+2. **Leave prompts portable.** A prompt inherits the model default; to force a different amount for one
+   prompt, add `thinking = minimal` (or `none`) to its `[[settings]]`. The same word works across
+   providers because each model's table translates it.
+3. **Read reasoning back (Claude, classic budget API).** After a completion, `result.Thinking` carries
+   the reasoning text when present; it is `null` for adaptive-effort Claude and for Gemini/OpenAI.
+
+---
+
+### 20. Refinery — Agent Evaluation & Self-Improvement Toolkit
+
+The **Refinery** is a reusable, in-process toolkit for **measuring and improving ReviDotNet agents**,
+added across Phases 0–6 plus advanced waves (`e113cb2` → `4a5d806`). It is *not* part of
+`ReviDotNet.Core`: it is a family of dedicated assemblies plus a `revi` CLI and Forge integration. A host
+(Forge) is pointed at one or more **trusted local repos**; each repo ships a *refinement plugin*
+implementing a single interface. Forge builds the plugin, loads it into an isolated context, runs its
+agents against its scenario suites, captures each run's ReviLog trace, and scores it. The end-to-end loop
+is **measure → score → propose → gate → human-promote**: a run becomes a typed `AgentTrace`; it is scored
+on three independent tiers (structural invariant gates, efficiency metrics, an Opus-4.8 LLM judge); a
+proposer plus typed knob-mutators build a per-round *beam* of candidate agent revisions; each candidate is
+re-scored on train + held-out scenarios and admitted only if it clears a deterministic regression gate
+plus a pairwise LLM comparison; the best passing candidate is adopted, and iteration continues until
+convergence, budget exhaustion, or a round cap. **Promotion of an accepted variant's revised
+`.agent`/`.pmt` to disk is a separate, explicit, human-gated step — never automatic.**
+
+> The root `Refinery.md` predates most of this and describes only Phases 0–2; treat this section as
+> authoritative over it (see §20.9 for the specific staleness).
+
+#### 20.1 Assemblies & dependency direction
+
+Verified from `.csproj` `ProjectReference`s:
+
+| Assembly | Role | References |
+| :--- | :--- | :--- |
+| `ReviDotNet.Refinery.Sdk` | The **plugin contract** (`IRefinementPlugin`) + all boundary DTOs (`Scenario`, `ScenarioSuite`, `RefinableAgent`, `IInvariantChecker`, `AgentTrace`, `ScoreCard`, `Campaign`). A plugin references only this. | `Core` |
+| `ReviDotNet.Refinery` | The **engine**: capture broker + publisher decorator, three scorers, aggregation, proposer + knob-mutators, gate policy, dual budget governors, calibration/meta/scenario analysis, campaign stores, controller/runner, `AddRefinery()`. Embeds the Evaluator `.pmt` prompts. | `Core`, `Sdk` |
+| `ReviDotNet.Refinery.Hosting` | **Plugin lifecycle**: discover → `dotnet build` → load into a collectible `AssemblyLoadContext` → instantiate → catalog / reload / file-watch / leases. | `Core`, `Sdk` (**not** the engine) |
+| `ReviDotNet.Cli` (`revi`) | Thin typed HTTP client over the Control API. | `Sdk` only |
+| `ReviDotNet.Forge` | The **host**: wires engine + hosting into DI, exposes `/api/refinery` + the `/refinery` dashboard. | `Core`, `Refinery`, `Refinery.Hosting` |
+
+> **Correction to `Refinery.md:22`,** which claims `Sdk ← Refinery ← Hosting ← Forge`: `Refinery.Hosting`
+> does **not** reference the engine — both `Refinery` and `Refinery.Hosting` sit directly on `Sdk`+`Core`,
+> and `Forge` references all three. The shared-identity boundary across load contexts is `Core` + `Sdk`
+> (`PluginLoadContext.IsShared`, `PluginLoadContext.cs:44-54`).
+
+#### 20.2 The plugin contract
+
+A consumer repo implements one class, **`IRefinementPlugin`** (`ReviDotNet.Refinery.Sdk/Plugin.cs:22-44`,
+namespace `Revi.Refinery`):
+
+| Member | Purpose |
+| :--- | :--- |
+| `string Name { get; }` (`:25`) | Plugin identity. |
+| `void ConfigureServices(IServiceCollection, IConfiguration)` (`:31`) | Bind the repo's services to an **isolated test store** (never production). |
+| `IEnumerable<IBuiltInTool> CreateTools(IServiceProvider)` (`:34`) | Real tools bound to the test store. |
+| `IEnumerable<RefinableAgent> GetAgents()` (`:37`) | Which agents to refine (`RefinableAgent(Name, Description?)`, `:53`). |
+| `IEnumerable<ScenarioSuite> GetScenarioSuites()` (`:40`) | Inputs to run (`ScenarioSuite(Name, AgentName, Scenarios)`, `Scenarios.cs:104`). |
+| `IEnumerable<IInvariantChecker> GetInvariantCheckers()` (`:43`) | Hard structural gates. |
+
+An **optional add-on** `IScenarioWorld` (`Scenarios.cs:94-101`) is detected at runtime via an `is` check
+(not part of `IRefinementPlugin`): `ResetAsync(pluginServices, ct)` runs once before a campaign and
+`SeedAsync(scenario, pluginServices, ct)` before **every** sample run — the hook by which a plugin seeds
+its isolated store per scenario. Plugins needing no store simply don't implement it.
+
+Boundary DTOs: `Scenario` (`Scenarios.cs:10`; carries `Id`, `AgentName`, `Inputs`, `WorldSeed`, `Rubric`,
+`ExpectedInvariants`, `HeldOut`, `Tags`, `GroundTruth` `:44`, and `ReplayScript` `:53`);
+`IInvariantChecker` (`Invariants.cs:23`, returning `InvariantResult.Pass`/`.Fail`, severity
+`Low|Medium|High|Critical` `:9`); `AgentTrace` (`Trace.cs:56`; `SessionId`, token totals, `CostUsd`,
+`StateHistory`, typed `ToolCallsNamed` with strict quoted-name match `:99`); `ScoreCard` (`Scoring.cs:64`;
+`Gated ⇒ Invariants.Count>0` `:103`, `Verdict` Pass iff all invariants pass — **vacuously Pass when
+ungated** `:109`); and `Campaign` (`Campaign.cs:125`, with `CampaignSpec`, `SuiteAggregate`,
+`VariantRecord`, `CampaignIteration`, `LedgerEntry`, and `CampaignStatus{Pending,Running,Converged,BudgetExhausted,Stopped,Failed}`).
+
+#### 20.3 Plugin lifecycle — build, load, isolate
+
+`ReviDotNet.Refinery.Hosting` turns a local repo into a live plugin: **`PluginDiscovery`** finds the
+plugin `.csproj` by an **exact** `Sdk` project/package reference (rejecting substring false-positives,
+`PluginDiscovery.cs:57-90`); **`PluginBuilder`** shells out to `dotnet build` (incremental) and reads
+`TargetPath` (`PluginBuilder.cs:24-34`); **`PluginLoader`** reflection-loads the assembly into a
+**collectible `PluginLoadContext`** that shares only `Core`/`Sdk` with the host (so `IRefinementPlugin`
+resolves to one type across contexts) and `Activator.CreateInstance`s the plugin
+(`PluginLoader.cs:23-31`); **`PluginManager`** exposes the catalog with **leases** so a file-watch reload
+can't unload an assembly mid-run (`PluginManager.cs:82-110`). File-watch auto-rebuild is **opt-in, default
+false** (`RefineryHostingOptions.cs:36`). Because the host **builds and loads arbitrary local code**, only
+ever point it at **trusted local repos**.
+
+#### 20.4 Trace capture & the three-tier scoring model
+
+**Capture.** `AddRefinery()` **decorates** the last-registered `IRlogEventPublisher` with a
+`CompositeRlogPublisher` that forwards every ReviLog event to *both* the host's publisher (so Forge's live
+Observer/Workshop UI keeps working) *and* a `RefineryCaptureBroker` (`TraceCapture.cs:61-76`) — so it must
+be called **after** the host registers its publisher. Capture is **per-async-flow** via `AsyncLocal`
+(`TraceCapture.cs:31-43`): `RefinementRunner` opens `BeginCapture()` around each run
+(`RefinementRunner.cs:29,55`), so concurrent runs never cross-contaminate and a run's sub-agents share its
+buffer. `AgentTraceBuilder.Build` (`AgentTraceBuilder.cs:20`) projects events into the typed trace,
+**summing input/output tokens across root + sub-agents** from `llm-response` payloads (`:40-46`) and taking
+`SessionId`/`Cost` from `AgentResult` (`AgentResult.cs:36,42`, wired at `AgentTraceBuilder.cs:48,61`).
+
+**Three scorers** (composed in `RefinementController.RunAndScoreAsync`, `RefinementController.cs:511-532`):
+
+1. **Structural invariant gates.** `StructuralScorer.Score` (`StructuralScorer.cs:19`) runs the scenario's
+   `ExpectedInvariants` (or all checkers if none named) over the trace; a thrown checker becomes a failed
+   result (`:38-47`). Any failure ⇒ run `Verdict = Fail`.
+2. **Efficiency metrics.** `EfficiencyExtractor.Extract` (`EfficiencyExtractor.cs:13`) → steps,
+   tool-calls, tokens, `CostUsd`, wall-clock latency.
+3. **LLM judge.** `LlmJudge` (`LlmJudge.cs:27`) drives the embedded prompt **`Evaluator.AgentRunJudge`**
+   — pinned to **`claude-opus-4-8`, `min-tier = A`** with thinking (`AgentRunJudge.pmt:11-12`) — only when
+   the scenario carries a rubric (`RefinementController.cs:526`). It renders the (per-event truncated)
+   activity log (`LlmJudge.cs:86-101`) and returns an overall 1–10 plus per-facet scores and confidence.
+   Guidance schema is deliberately **disabled** so the snake_case JSON contract stays provider-independent
+   (`AgentRunJudge.pmt:8-10`).
+
+**Pairwise regression gate.** `PairwiseGate.CompareAsync` (`PairwiseGate.cs:42`) drives
+**`Evaluator.PairwiseJudge`** (opus-4.8, `PairwiseJudge.pmt:8-9`) to decide whether a candidate's output
+beats the baseline for the *same* scenario. It **randomizes A/B via a deterministic FNV-1a hash** of
+(scenario + candidate) to neutralize positional bias, then un-swaps the verdict (`PairwiseGate.cs:51-84`);
+`winner ∈ {candidate, baseline, tie}`.
+
+**Aggregation.** `Aggregator.Aggregate` (`Aggregator.cs:17`) rolls runs into a `SuiteAggregate` using
+**lower-bound statistics** — pass-rate, quality mean + **P10** (10th percentile, linearly interpolated
+`:66`), cost mean, latency P90. Crucially, **invariant pass-rate is computed over gated runs only**
+(`:24-27`) and `GatedRunCount` is surfaced (`:60`) so an all-ungated suite reports 0 gated rather than a
+false 100%.
+
+**Meta-LLM usage.** The judge, pairwise, and proposer all call `IInferService.ToObjectWithUsage<T>`
+(`IInferService.cs:75`, `InferService.cs:276`) and record the returned usage into a `MetaLlmUsageBroker`
+(`LlmJudge.cs:56`, `PairwiseGate.cs:66`) — this is what makes meta-token budgeting observable (§20.5).
+
+#### 20.5 The improvement loop
+
+Orchestrated by **`RefinementController`** (`RefinementController.cs`, 783 lines), with two entry points:
+`MeasureBaselineAsync` (`:64`, baseline-only: N samples/scenario, score + aggregate) and
+`RunCampaignAsync` (`:152`, the full loop).
+
+- **Train/held-out split** on `Scenario.HeldOut` (`:166-168`); an empty held-out set mirrors train.
+- **Per-round beam** (`BuildBeamAsync`, `:410`): the LLM proposal (train-only) **plus every typed knob
+  mutator** applied to the current definition, capped at `MaxCandidatesPerRound = 16` (`:57`).
+- Each candidate is **validated → parsed to a profile → scored on train + held-out → pairwise-compared →
+  gated**, recorded as a `VariantRecord` + `LedgerEntry` (`:272-329`). Among gate-passers, the single best
+  by train **quality P10** (tie-break: higher pairwise net) is adopted via `IsBetter` (`:448`).
+- The loop stops on budget exhaustion, `StopAfterNoImprovementRounds` (`:380`), or `MaxRounds`; terminal
+  status is `Converged` (`:385`) / `BudgetExhausted` / `Stopped` / `Failed`.
+
+**Proposal strategies.** `LlmDiffProposer` (`LlmDiffProposer.cs:17`) drives **`Evaluator.Proposer`**
+(opus-4.8, `Proposer.pmt:9-10`), returning the full revised definition plus a dependency-free LCS unified
+diff (`:134`), across a fixed knob vocabulary (`system-prompt | state-instruction | few-shot | sampling |
+guardrail | state-graph | model | tool-gating`, `:23`). Alongside it run three **deterministic, LLM-free
+knob mutators** (`KnobMutators.All()`, `KnobMutators.cs:17-22`), each returning null when its knob is
+absent: **`SamplingMutator`** nudges `temperature` down by 0.1 on invariant/quality weakness
+(`SamplingMutator.cs:32-44`); **`GuardrailMutator`** raises `max-steps` ~25% on termination/loop failures
+(`GuardrailMutator.cs:39`); **`SystemPromptMutator`** appends one corrective clause chosen from the top
+failing-invariant class (`SystemPromptMutator.cs:74-89`).
+
+**`CandidateValidator`** (`CandidateValidator.cs:44`) is a static pre-flight that rejects empty/unparseable
+source before any run budget is spent; graph problems are **non-fatal warnings** (`:79-91`) — the gate,
+not the validator, decides quality.
+
+**`GatePolicy.Decide`** (`GatePolicy.cs:31`) is pure and deterministic (single-sourced with its tests). It
+accepts a candidate iff **all** of: (1) invariant non-regression on train **and** held-out, with no
+previously-passing invariant id dropping (per-id check `:84`); (2) train quality **P10 strictly improves**;
+(3) held-out P10 not regressed; (4) **pairwise net > 0** on train (`:39-72`). All comparisons use lower
+bounds plus an epsilon.
+
+**Dual budgets.** `BudgetGovernor` (`BudgetGovernor.cs:28`) tracks **agent-execution** tokens per campaign;
+`MetaLlmUsageBroker` (`MetaLlmUsageBroker.cs:26`, a DI singleton with an `AsyncLocal` accumulator) charges
+**meta-LLM** tokens against `CampaignSpec.MetaTokenBudget` (`RefinementController.cs:473-480`). **Exhausting
+either budget terminates the campaign** (`:226,278,371`).
+
+#### 20.6 Advanced capabilities
+
+- **Calibration.** `CalibrationAnalyzer` (`CalibrationAnalyzer.cs:74`), for fact-checker agents, joins each
+  run's parsed determination to the scenario's `GroundTruth`, computes per-confidence-bucket accuracy and
+  the **Expected Calibration Error** `Σ (n_b/N)·|acc_b − (b−0.5)/5|` (`:154-160`), and whether accuracy is
+  monotonic in confidence.
+- **Meta-analysis.** `MetaAnalyzer` (`MetaAnalyzer.cs:35`) mines the ledger across *all* campaigns for
+  **knob effectiveness** per (agent, knob): attempts, accepted, acceptance rate, mean accepted quality P10
+  (`:59-80`).
+- **Scenario generation.** `ScenarioGenerator` (`ScenarioGenerator.cs:35`) drives
+  **`Evaluator.ScenarioGenerator`** (opus-4.8) to author fresh scenarios with ground truth, deduped against
+  the existing suite by a normalized fingerprint of (agent + sorted tags + sorted input values)
+  (`:136-151`).
+- **Per-run registry isolation ("I5").** A new additive overload
+  `IAgentService.Run(AgentProfile profile, …, IToolManager? toolOverride, ModelProfile? modelOverride)`
+  (`IAgentService.cs:42`, impl `AgentService.cs:40-68`) runs a candidate profile **directly — no
+  `IAgentManager` name-lookup, no shared registry-slot mutation** — so concurrent candidates never collide.
+  Candidates are parsed via `ParseCandidateProfile` (`RefinementController.cs:711`) and run through this
+  seam (`RefinementRunner.cs:46`); Forge additionally gives each campaign a fresh per-run
+  `ToolManagerService` (`RefineryCampaignService.cs:144-147`).
+- **Replay mode.** `ReplayInference.BuildModel` (`ReviDotNet.Core/Inference/ReplayInference.cs:134`) builds
+  a self-contained scripted `ModelProfile` whose client is a `ScriptedInferenceHandler` (`:52`) answering
+  every request from a fixed `ReplayTurn` sequence in exact OpenAI chat-completions wire format (with usage
+  counts), repeating the last turn once exhausted (`:73-74`). When `mode == "replay"` **and** the scenario
+  carries a non-empty `ReplayScript`, the controller threads this model via the I5 `modelOverride` seam —
+  **zero live inference** (`RefinementController.cs:564-585`), for deterministic CI.
+
+#### 20.7 Control surface
+
+**Control API** (`RefineryApiEndpoints.cs`, group `/api/refinery`, `:25`). API-key auth is **config-gated**
+by `Forge:RefineryApi:RequireApiKey` (off by default; `Program.cs:295`, filter `:31-40`):
+
+| Method + path | Purpose |
+| :--- | :--- |
+| `GET /plugins` (`:42`) | List catalog (agents/suites/invariants per plugin). |
+| `POST /plugins/refresh` (`:45`) | Discover + build + load all repos. |
+| `POST /plugins/{name}/reload` (`:51`) | Hot-reload one plugin. |
+| `GET /campaigns` (`:60`), `GET /campaigns/{id}` (`:79`), `GET /campaigns/{id}/ledger` (`:85`) | Campaign list / state / ledger. |
+| `POST /campaigns` (`:63`) | Start — `AutoPropose` ⇒ full loop, else baseline-only. |
+| `POST /campaigns/{id}/promote/{variantId}` (`:91`) | **Human-gated** disk promotion of an accepted variant. |
+| `GET /meta` (`:102`) | Knob-effectiveness rollup. |
+| `POST /optimize` (`:111`) | Prompt optimizer (models × runs → suggestions → revised `.pmt`). |
+| `POST /test/run` (`:175`) | Run a saved suite (agent/prompt mode) → `SuiteRunSummary`. |
+| `GET /calibration` (`:194`) | Fact-checker calibration report. |
+| `POST /generate-scenarios` (`:208`) | Author new scenarios. |
+
+**Dashboard:** `/refinery` (MudBlazor, "Agent Refinery", `Refinery.razor:1,11`) — plugin catalog with
+status, agents, suites, invariants; build & reload.
+
+**`revi` CLI** (`ReviDotNet.Cli/Program.cs`, verbs dispatched `:66-77`; global `--url` / env `FORGE_URL`,
+`--json`): `plugins list|refresh|reload <name>`; `refine run --plugin --agent --suite [--samples]
+[--budget] [--max-rounds] [--mode live|replay] [--baseline-only]`; `refine status|list|ledger`;
+`optimize <prompt> [--models] [--runs] [--suggestions] [--save]`; `test <suite> [--agent]` (**CI-friendly:
+exit 1 on any failing case**, `:354`); `calibrate --agent [--version]`; `generate --agent --category
+[--count] [--spec]`. Exit codes: 0 success, 1 usage/test-failure, 2 HTTP/connection error (`:735-738`).
+
+#### 20.8 Forge-side services & storage
+
+`RefineryCampaignService` (`RefineryCampaignService.cs`, a DI **singleton**, `Program.cs:159`) is the Forge
+orchestrator: `StartCampaignAsync`/`StartBaselineAsync` validate the spec, resolve the plugin, and launch a
+**background** body (clients poll). The body builds a **per-plugin DI scope**, creates a **per-run isolated
+`IToolManager`** (fresh `ToolManagerService` with only that plugin's tools — the root manager is never
+mutated, `:144-147,223-229`), detects `IScenarioWorld` to wire reset/seed (`:156-159`), acquires a
+**lease** so a reload can't unload the ALC mid-run (`:169`), and runs on the host-root capture broker;
+campaign runs are **serialized** by a process-wide `SemaphoreSlim _runGate` (`:59,135,212`).
+`PromoteVariantAsync` performs the human-gated disk write. Supporting services: `AgentTestRunnerService`
+(`RunSuiteAsync` runs a `SavedSuite` in agent-mode or prompt-mode → `SuiteRunSummary`), `SavedSuitesService`
+(persists/loads named suites), and `SuiteAssertionEvaluator` (per-case contains/equals/regex/JSON-style
+assertions with fail reasons). Storage is `CampaignStore` (in-memory) or a durable **`MongoCampaignStore`**,
+selected by `Forge:CampaignStore == "mongo"` (`Program.cs:133-150`).
+
+#### 20.9 Safety invariants & `Refinery.md` staleness
+
+Three invariants hold in the current code: refinement runs against an **isolated test store** (the plugin's
+`ConfigureServices` + `IScenarioWorld` seeding, plus Forge's per-run tool/agent isolation); **promotion is
+human-gated** — nothing in `RunCampaignAsync` writes to disk, and `PromoteVariantAsync` is reachable only
+via the explicit `POST …/promote/{variantId}` endpoint; and the host builds + loads arbitrary local code,
+so **trusted local repos only**. The root `Refinery.md` is stale against all of this — it states "Phases
+0–2 built" and "campaign execution … is Phase 3", claims the wrong dependency chain (§20.1), says
+campaign-start/CLI are "Phase 3/2b" TODOs (all shipped), describes an in-memory-only store (Mongo now
+exists), and omits `IScenarioWorld`, `GroundTruth`/`ReplayScript`, `PairwiseGate`, dual budgets,
+calibration, and the four embedded Evaluator prompts.
+
+**Usage workflow**
+
+1. **Author a plugin.** In a consumer repo (e.g. `GreatDebate.Refinery`), reference `ReviDotNet.Refinery.Sdk`
+   and implement `IRefinementPlugin`: bind services to an isolated store in `ConfigureServices`, return your
+   `RefinableAgent`s, `ScenarioSuite`s (mark some `HeldOut`, add a `Rubric` where you want the LLM judge,
+   `GroundTruth` for calibration), and `IInvariantChecker`s. Optionally implement `IScenarioWorld` to
+   reset/seed the store per scenario. Point the host's registry at the plugin's `RConfigs` via
+   `REVI_RCONFIG_PATHS`.
+2. **Register the repo & load it.** Add the repo path to `Refinery:Repos`, run Forge, then
+   `revi plugins refresh` (or `POST /api/refinery/plugins/refresh`) to build and load it. Confirm the
+   catalog with `revi plugins list`.
+3. **Measure a baseline.** `revi refine run --plugin <p> --agent <a> --suite <s> --baseline-only` scores the
+   current agent across the suite — pass-rate over gated runs, quality mean/P10, cost and latency.
+4. **Run a campaign.** Drop `--baseline-only` (and set `--budget` / `--max-rounds` / `MetaTokenBudget`) to
+   let the loop propose beams of candidates, gate them on train + held-out, and adopt the best; watch it via
+   `revi refine status <id>` and inspect every attempt with `revi refine ledger <id>`.
+5. **Promote — deliberately.** Review the winning `VariantRecord`'s diff, then
+   `POST /api/refinery/campaigns/{id}/promote/{variantId}` to write the revised `.agent`/`.pmt` back to the
+   plugin repo. Nothing reaches disk until you make this call.
+6. **Gate CI.** Use `revi test <suite>` (exit 1 on failure) as a regression gate, and `--mode replay` with
+   scenario `ReplayScript`s for deterministic, inference-free runs.
 
 ---
 
