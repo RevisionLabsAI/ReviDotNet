@@ -11,7 +11,12 @@ namespace Revi.Refinery;
 /// <summary>Combines structural, quality, and efficiency results for one run into a <see cref="ScoreCard"/>.</summary>
 public static class ScoreCardBuilder
 {
-    /// <summary>Assemble a score card.</summary>
+    /// <summary>
+    /// Assemble a score card. <paramref name="agentNameOverride"/> replaces the trace's agent name on the card
+    /// — used for candidate variant runs, whose trace runs under a transient "__refinery/…/candidate" profile
+    /// name, so the card is filed under the REAL agent (with <paramref name="agentVersion"/> = the variant id)
+    /// where calibration/analysis can find it. Baseline runs pass null and keep the trace's real agent name.
+    /// </summary>
     public static ScoreCard Build(
         Scenario scenario,
         AgentTrace trace,
@@ -20,10 +25,11 @@ public static class ScoreCardBuilder
         EfficiencyMetrics? efficiency,
         int sampleIndex,
         string mode,
-        string? agentVersion = null) => new()
+        string? agentVersion = null,
+        string? agentNameOverride = null) => new()
         {
             ScenarioId = scenario.Id,
-            AgentName = trace.AgentName,
+            AgentName = agentNameOverride ?? trace.AgentName,
             AgentVersion = agentVersion,
             Mode = mode,
             SampleIndex = sampleIndex,

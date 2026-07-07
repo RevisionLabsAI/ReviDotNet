@@ -28,15 +28,19 @@ namespace Revi.Refinery;
 /// price is that the JSON payload is opaque to ad-hoc Mongo queries, which we don't need here.
 /// </para>
 /// </summary>
-public sealed class MongoCampaignStore : ICampaignStore
+public sealed class MongoCampaignStore : ICampaignStore, IScoreCardSource
 {
     private const string CampaignsCollectionName = "refinery_campaigns";
     private const string LedgerCollectionName = "refinery_ledger";
+    private const string ScoreCardsCollectionName = "refinery_scorecards";
+    private const string GroundTruthCollectionName = "refinery_groundtruth";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.General);
 
     private readonly IMongoCollection<BsonDocument> _campaigns;
     private readonly IMongoCollection<BsonDocument> _ledger;
+    private readonly IMongoCollection<BsonDocument> _scoreCards;
+    private readonly IMongoCollection<BsonDocument> _groundTruth;
 
     /// <summary>
     /// Connects to <paramref name="databaseName"/> on <paramref name="connectionString"/> and ensures the
@@ -52,6 +56,8 @@ public sealed class MongoCampaignStore : ICampaignStore
         IMongoDatabase db = new MongoClient(connectionString).GetDatabase(databaseName);
         _campaigns = db.GetCollection<BsonDocument>(CampaignsCollectionName);
         _ledger = db.GetCollection<BsonDocument>(LedgerCollectionName);
+        _scoreCards = db.GetCollection<BsonDocument>(ScoreCardsCollectionName);
+        _groundTruth = db.GetCollection<BsonDocument>(GroundTruthCollectionName);
 
         // Index ledger by (campaignId, round) so GetLedgerAsync's filtered + sorted read is cheap. Best-effort:
         // a failure here (e.g. permissions) must not stop the store from functioning.
@@ -131,6 +137,63 @@ public sealed class MongoCampaignStore : ICampaignStore
                 result.Add(e);
         }
         return result;
+    }
+
+    // ── IScoreCardSource (calibration / meta-analysis capture) ──
+
+    /// <inheritdoc/>
+    public async Task SaveScoreCardsAsync(string campaignId, IReadOnlyList<ScoreCard> cards, CancellationToken ct = default)
+    {
+        if (cards.Count == 0) return;
+
+        // One document per card; lift campaignId + agentName so the corpus stays queryable without rehydrating.
+        List<BsonDocument> docs = cards.Select(card => new BsonDocument
+        {
+            ["campaignId"] = campaignId,
+            ["agentName"] = card.AgentName,
+            ["payload"] = ToPayload(card),
+        }).ToList();
+        await _scoreCards.InsertManyAsync(docs, options: null, ct);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<ScoreCard>> GetScoreCardsAsync(CancellationToken ct = default)
+    {
+        List<BsonDocument> docs = await _scoreCards.Find(FilterDefinition<BsonDocument>.Empty).ToListAsync(ct);
+        List<ScoreCard> result = [];
+        foreach (BsonDocument doc in docs)
+        {
+            ScoreCard? c = FromPayload<ScoreCard>(doc);
+            if (c is not null)
+                result.Add(c);
+        }
+        return result;
+    }
+
+    /// <inheritdoc/>
+    public async Task SaveGroundTruthAsync(IReadOnlyDictionary<string, string> groundTruthByScenarioId, CancellationToken ct = default)
+    {
+        foreach ((string scenarioId, string truth) in groundTruthByScenarioId)
+        {
+            // Upsert by scenario id (_id) so re-running a campaign overwrites rather than duplicates.
+            FilterDefinition<BsonDocument> filter = Builders<BsonDocument>.Filter.Eq("_id", scenarioId);
+            BsonDocument doc = new() { ["_id"] = scenarioId, ["truth"] = truth };
+            await _groundTruth.ReplaceOneAsync(filter, doc, new ReplaceOptions { IsUpsert = true }, ct);
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyDictionary<string, string>> GetGroundTruthAsync(CancellationToken ct = default)
+    {
+        List<BsonDocument> docs = await _groundTruth.Find(FilterDefinition<BsonDocument>.Empty).ToListAsync(ct);
+        Dictionary<string, string> map = [];
+        foreach (BsonDocument doc in docs)
+        {
+            if (doc.TryGetValue("_id", out BsonValue id) && id.IsString &&
+                doc.TryGetValue("truth", out BsonValue truth) && truth.IsString)
+                map[id.AsString] = truth.AsString;
+        }
+        return map;
     }
 
     /// <summary>Serializes a record to a JSON string stored as a BSON value (robust to required-init records).</summary>

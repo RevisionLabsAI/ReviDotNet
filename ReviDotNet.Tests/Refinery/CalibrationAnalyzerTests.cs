@@ -207,6 +207,34 @@ public class CalibrationAnalyzerTests
         report.Buckets.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task InMemoryStore_CapturesCardsAndGroundTruth_RoundTripsThroughAnalyzer()
+    {
+        // The real default store implements IScoreCardSource: cards saved via SaveScoreCardsAsync + ground
+        // truth via SaveGroundTruthAsync must surface back through the analyzer as a non-empty report.
+        InMemoryCampaignStore store = new();
+        await store.SaveGroundTruthAsync(new Dictionary<string, string> { ["s1"] = "Alice", ["s2"] = "Alice" });
+        await store.SaveScoreCardsAsync("c1", [Card("s1", "fc", "Alice", 5), Card("s2", "fc", "Bob", 5)]);
+
+        CalibrationReport report = await new CalibrationAnalyzer(store).AnalyzeAsync("fc");
+
+        report.TotalRuns.Should().Be(2);
+        report.CalibratedRuns.Should().Be(1);
+        report.Buckets.Should().ContainSingle(b => b.ConfidenceLevel == 5)
+            .Which.Accuracy.Should().BeApproximately(0.5, 1e-9);
+    }
+
+    [Fact]
+    public async Task InMemoryStore_SaveGroundTruth_IsIdempotentOverwrite()
+    {
+        InMemoryCampaignStore store = new();
+        await store.SaveGroundTruthAsync(new Dictionary<string, string> { ["s1"] = "Alice" });
+        await store.SaveGroundTruthAsync(new Dictionary<string, string> { ["s1"] = "Bob" }); // re-run overwrites
+
+        IReadOnlyDictionary<string, string> truth = await store.GetGroundTruthAsync();
+        truth["s1"].Should().Be("Bob");
+    }
+
     /// <summary>Canned store that also exposes score cards + ground truth via <see cref="IScoreCardSource"/>.</summary>
     private sealed class FakeStore : ICampaignStore, IScoreCardSource
     {
@@ -218,6 +246,19 @@ public class CalibrationAnalyzerTests
 
         public Task<IReadOnlyDictionary<string, string>> GetGroundTruthAsync(CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyDictionary<string, string>>(GroundTruth);
+
+        public Task SaveScoreCardsAsync(string campaignId, IReadOnlyList<ScoreCard> cards, CancellationToken ct = default)
+        {
+            Cards.AddRange(cards);
+            return Task.CompletedTask;
+        }
+
+        public Task SaveGroundTruthAsync(IReadOnlyDictionary<string, string> groundTruthByScenarioId, CancellationToken ct = default)
+        {
+            foreach ((string id, string truth) in groundTruthByScenarioId)
+                GroundTruth[id] = truth;
+            return Task.CompletedTask;
+        }
 
         public Task SaveAsync(Campaign campaign, CancellationToken ct = default) => Task.CompletedTask;
         public Task<Campaign?> GetAsync(string id, CancellationToken ct = default) => Task.FromResult<Campaign?>(null);

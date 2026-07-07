@@ -49,11 +49,14 @@ public record CalibrationReport(
     bool MonotonicAccuracy);
 
 /// <summary>
-/// Optional capability a <see cref="ICampaignStore"/> MAY also implement to expose the per-run
-/// <see cref="ScoreCard"/>s it captured. The base store contract persists only campaigns and the ledger;
-/// calibration needs the individual cards (with their <see cref="FactCheckerDetermination"/>), so the
-/// analyzer detects this at runtime via an <c>is</c> check — stores that don't keep cards simply do not
-/// implement it, and the store-based overload then yields an empty report.
+/// Optional capability a <see cref="ICampaignStore"/> MAY also implement to CAPTURE and expose the per-run
+/// <see cref="ScoreCard"/>s produced by a campaign. The base store contract persists only campaigns and the
+/// ledger; calibration needs the individual cards (with their <see cref="FactCheckerDetermination"/>) plus the
+/// scenarios' ground truth, so <see cref="RefinementController"/> writes them through this capability when the
+/// store implements it, and <see cref="CalibrationAnalyzer"/> reads them back — both detect it at runtime via
+/// an <c>is</c> check, so a store that does not keep cards simply does not implement it (calibration then
+/// yields an empty report). Both built-in stores (<see cref="InMemoryCampaignStore"/> and
+/// <c>MongoCampaignStore</c>) implement it.
 /// </summary>
 public interface IScoreCardSource
 {
@@ -62,6 +65,18 @@ public interface IScoreCardSource
 
     /// <summary>Ground truth for a scenario id, when known (e.g. the expected fact-checker winner).</summary>
     Task<IReadOnlyDictionary<string, string>> GetGroundTruthAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Append the score cards produced by one campaign run. Called by the controller after each scoring pass
+    /// (baseline + every candidate); the store accumulates them for later calibration/analysis.
+    /// </summary>
+    Task SaveScoreCardsAsync(string campaignId, IReadOnlyList<ScoreCard> cards, CancellationToken ct = default);
+
+    /// <summary>
+    /// Merge a scenario-id → ground-truth map (the objective answer for scenarios that have one). Idempotent:
+    /// re-saving the same scenario overwrites its truth. Called once per campaign from the suite's scenarios.
+    /// </summary>
+    Task SaveGroundTruthAsync(IReadOnlyDictionary<string, string> groundTruthByScenarioId, CancellationToken ct = default);
 }
 
 /// <summary>

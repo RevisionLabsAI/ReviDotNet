@@ -80,6 +80,7 @@ public sealed class RefinementController(
             Status = CampaignStatus.Running
         };
         await _store.SaveAsync(campaign, ct);
+        await PersistGroundTruthAsync(suite, ct);
 
         List<ScoreCard> cards = [];
         int total = suite.Scenarios.Count * Math.Max(1, spec.SamplesPerScenario);
@@ -94,11 +95,12 @@ public sealed class RefinementController(
                     ct.ThrowIfCancellationRequested();
                     progress?.Report(new RefineryProgress($"[{++done}/{total}] {scenario.Id} sample {sample + 1}"));
 
-                    ScoreCard card = await ScoreOnceAsync(scenario, agentDefinition, checkers, spec.Mode, sample, ct, seedScenario, toolManager);
+                    ScoreCard card = await ScoreOnceAsync(scenario, spec.AgentName, agentDefinition, checkers, spec.Mode, sample, ct, seedScenario, toolManager);
                     cards.Add(card);
                 }
             }
 
+            await PersistScoreCardsAsync(id, cards, ct);
             SuiteAggregate aggregate = Aggregator.Aggregate(cards);
             campaign = campaign with
             {
@@ -180,6 +182,8 @@ public sealed class RefinementController(
         };
         await _store.SaveAsync(campaign, ct);
 
+        await PersistGroundTruthAsync(suite, ct);
+
         BudgetGovernor governor = new(spec.TokenBudget);
         BudgetGovernor metaGovernor = new(spec.MetaTokenBudget);
         int samples = Math.Max(1, spec.SamplesPerScenario);
@@ -201,6 +205,10 @@ public sealed class RefinementController(
             List<ScoreCard> baselineHeldOutCards = heldOutMirrorsTrain
                 ? baselineTrainCards
                 : (await ScoreSetAsync(heldOut, spec.AgentName, currentDefinition, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager)).Cards;
+
+            await PersistScoreCardsAsync(id, baselineTrainCards, ct);
+            if (!heldOutMirrorsTrain)
+                await PersistScoreCardsAsync(id, baselineHeldOutCards, ct);
 
             SuiteAggregate baselineTrain = Aggregator.Aggregate(baselineTrainCards);
             SuiteAggregate baselineHeldOut = Aggregator.Aggregate(baselineHeldOutCards);
@@ -282,11 +290,15 @@ public sealed class RefinementController(
                         break;
                     }
 
+                    // One id per candidate: it tags the VariantRecord AND is stamped as the AgentVersion on this
+                    // candidate's score cards, so per-variant calibration can join them.
+                    string variantId = Guid.NewGuid().ToString("n");
+
                     ValidationResult validation = _validator.Validate(proposal.RevisedContent, tempName);
                     if (!validation.Ok)
                     {
                         string errors = validation.Errors.Count > 0 ? string.Join("; ", validation.Errors) : "candidate failed validation";
-                        roundVariants.Add(await RecordCandidateAsync(id, round, spec.AgentName, proposal,
+                        roundVariants.Add(await RecordCandidateAsync(id, variantId, round, spec.AgentName, proposal,
                             candTrain: null, candHeldOut: null, accepted: false, reason: errors, governor.Spent, ct));
                         progress?.Report(new RefineryProgress($"round {round}: candidate ({proposal.KnobType}) rejected by validator — {errors}"));
                         continue;
@@ -297,12 +309,19 @@ public sealed class RefinementController(
                     // exactly the baseline's isolated tool set.
                     AgentProfile candidateProfile = ParseCandidateProfile(proposal.RevisedContent, tempName);
 
+                    // Cards are filed under the REAL agent + this variant id (not the transient candidate
+                    // profile name), so calibration can slice by variant via CalibrationAnalyzer(agent, version).
                     (List<ScoreCard> candTrainCards, Dictionary<string, string> candTrainOutputs) =
-                        await ScoreSetAsync(train, candidateProfile, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager);
+                        await ScoreSetAsync(train, candidateProfile, spec.AgentName, variantId, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager);
 
                     List<ScoreCard> candHeldOutCards = heldOutMirrorsTrain
                         ? candTrainCards
-                        : (await ScoreSetAsync(heldOut, candidateProfile, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager)).Cards;
+                        : (await ScoreSetAsync(heldOut, candidateProfile, spec.AgentName, variantId, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager)).Cards;
+
+                    // Capture this variant's cards (stamped agent + variantId) for per-variant calibration.
+                    await PersistScoreCardsAsync(id, candTrainCards, ct);
+                    if (!heldOutMirrorsTrain)
+                        await PersistScoreCardsAsync(id, candHeldOutCards, ct);
 
                     SuiteAggregate candTrain = Aggregator.Aggregate(candTrainCards);
                     SuiteAggregate candHeldOut = Aggregator.Aggregate(candHeldOutCards);
@@ -312,7 +331,7 @@ public sealed class RefinementController(
 
                     GateDecision decision = GatePolicy.Decide(baselineTrain, candTrain, baselineHeldOut, candHeldOut, pairwiseNet);
 
-                    VariantRecord record = await RecordCandidateAsync(id, round, spec.AgentName, proposal,
+                    VariantRecord record = await RecordCandidateAsync(id, variantId, round, spec.AgentName, proposal,
                         candTrain, candHeldOut, decision.Accept, decision.Reason, governor.Spent, ct);
                     roundVariants.Add(record);
 
@@ -467,6 +486,36 @@ public sealed class RefinementController(
     }
 
     /// <summary>
+    /// Capture score cards for calibration / knob-effectiveness analysis when the store supports it
+    /// (<see cref="IScoreCardSource"/>). A no-op for stores that do not implement the capability, so the
+    /// campaign + ledger persistence on <see cref="ICampaignStore"/> is unaffected. Called with baseline cards
+    /// (filed under the real agent, no version) and candidate cards (filed under the real agent + variant id),
+    /// so calibration can query the agent overall or slice by a specific variant.
+    /// </summary>
+    private Task PersistScoreCardsAsync(string campaignId, IReadOnlyList<ScoreCard> cards, CancellationToken ct) =>
+        cards.Count > 0 && _store is IScoreCardSource sink
+            ? sink.SaveScoreCardsAsync(campaignId, cards, ct)
+            : Task.CompletedTask;
+
+    /// <summary>
+    /// Capture the suite's scenario ground truth (the objective answer for scenarios that carry one) so
+    /// calibration can join each fact-checker run to its known-correct winner. No-op when the store does not
+    /// implement <see cref="IScoreCardSource"/> or no scenario carries ground truth.
+    /// </summary>
+    private Task PersistGroundTruthAsync(ScenarioSuite suite, CancellationToken ct)
+    {
+        if (_store is not IScoreCardSource sink)
+            return Task.CompletedTask;
+
+        Dictionary<string, string> truth = [];
+        foreach (Scenario s in suite.Scenarios)
+            if (!string.IsNullOrEmpty(s.GroundTruth))
+                truth[s.Id] = s.GroundTruth;
+
+        return truth.Count > 0 ? sink.SaveGroundTruthAsync(truth, ct) : Task.CompletedTask;
+    }
+
+    /// <summary>
     /// Charge the meta tokens spent since the last snapshot (the broker scope's running total minus the prior
     /// snapshot) to <paramref name="metaGovernor"/>, then advance the snapshot.
     /// </summary>
@@ -479,9 +528,15 @@ public sealed class RefinementController(
         lastSnapshot = now;
     }
 
-    /// <summary>Run one scenario sample and produce its full <see cref="ScoreCard"/>.</summary>
+    /// <summary>
+    /// Run one scenario sample and produce its full <see cref="ScoreCard"/>. <paramref name="agentName"/> is
+    /// the campaign-level agent under test (<c>spec.AgentName</c>) — the SAME source of truth
+    /// <see cref="RunCampaignAsync"/> uses — so a scenario whose own <see cref="Scenario.AgentName"/> drifts
+    /// from the suite can never silently measure a different agent.
+    /// </summary>
     public async Task<ScoreCard> ScoreOnceAsync(
         Scenario scenario,
+        string agentName,
         string agentDefinition,
         IReadOnlyList<IInvariantChecker> checkers,
         string mode,
@@ -491,7 +546,7 @@ public sealed class RefinementController(
         IToolManager? toolManager = null)
     {
         if (seedScenario != null) await seedScenario(scenario, ct);
-        AgentRun run = await RunScenarioAsync(scenario, scenario.AgentName, agentProfile: null, toolManager, mode, ct);
+        AgentRun run = await RunScenarioAsync(scenario, agentName, agentProfile: null, toolManager, mode, ct);
         IReadOnlyList<InvariantResult> invariants = StructuralScorer.Score(run.Trace, scenario, checkers);
         QualityScore? quality = scenario.Rubric.Count > 0
             ? await _judge.JudgeAsync(run.Trace, agentDefinition, scenario, invariants, ct)
@@ -518,7 +573,9 @@ public sealed class RefinementController(
         int sampleIndex,
         CancellationToken ct,
         Func<Scenario, CancellationToken, Task>? seedScenario,
-        IToolManager? toolManager)
+        IToolManager? toolManager,
+        string? cardAgentName = null,
+        string? cardAgentVersion = null)
     {
         if (seedScenario != null) await seedScenario(scenario, ct);
         AgentRun run = await RunScenarioAsync(scenario, agentName, agentProfile, toolManager, mode, ct);
@@ -527,7 +584,8 @@ public sealed class RefinementController(
             ? await _judge.JudgeAsync(run.Trace, agentDefinition, scenario, invariants, ct)
             : null;
         EfficiencyMetrics efficiency = EfficiencyExtractor.Extract(run.Trace, run.LatencyMs);
-        ScoreCard card = ScoreCardBuilder.Build(scenario, run.Trace, invariants, quality, efficiency, sampleIndex, mode);
+        ScoreCard card = ScoreCardBuilder.Build(
+            scenario, run.Trace, invariants, quality, efficiency, sampleIndex, mode, cardAgentVersion, cardAgentName);
         return (card, run.Trace.FinalOutput ?? "");
     }
 
@@ -544,7 +602,7 @@ public sealed class RefinementController(
     /// <b>Replay (Wave-3b):</b> when <paramref name="mode"/> is <c>"replay"</c> AND the scenario carries a
     /// non-empty <see cref="Scenario.ReplayScript"/>, the run is served entirely from the script with NO live
     /// inference. A scripted <see cref="ModelProfile"/> is built via
-    /// <see cref="ReplayInference.BuildModel(string, IReadOnlyList{ReplayTurn})"/> and threaded through the
+    /// <see cref="ReplayInference.BuildModel"/> and threaded through the
     /// Wave-3a per-run <c>modelOverride</c> seam on the profile overload: the agent-under-test profile is the
     /// candidate profile when one is supplied, otherwise the agent's registered profile. Live mode (the
     /// default) — or replay mode with no script — is UNCHANGED.
@@ -621,10 +679,14 @@ public sealed class RefinementController(
     /// Candidate overload of <see cref="ScoreSetAsync(IReadOnlyList{Scenario}, string, string, IReadOnlyList{IInvariantChecker}, string, int, BudgetGovernor, CancellationToken, Func{Scenario, CancellationToken, Task}?, IToolManager?)"/>:
     /// scores the whole set by running the parsed candidate <paramref name="agentProfile"/> DIRECTLY (via the
     /// per-run profile overload, no shared registry slot), carrying the per-run <paramref name="toolManager"/>.
+    /// The produced cards are filed under <paramref name="realAgentName"/> + <paramref name="variantId"/> (the
+    /// VariantRecord id) — NOT the transient candidate profile name — so per-variant calibration/analysis works.
     /// </summary>
     private Task<(List<ScoreCard> Cards, Dictionary<string, string> Outputs)> ScoreSetAsync(
         IReadOnlyList<Scenario> scenarios,
         AgentProfile agentProfile,
+        string realAgentName,
+        string variantId,
         string agentDefinition,
         IReadOnlyList<IInvariantChecker> checkers,
         string mode,
@@ -633,9 +695,13 @@ public sealed class RefinementController(
         CancellationToken ct,
         Func<Scenario, CancellationToken, Task>? seedScenario,
         IToolManager? toolManager = null)
-        => ScoreSetCoreAsync(scenarios, agentProfile.Name ?? "", agentProfile, agentDefinition, checkers, mode, samples, governor, ct, seedScenario, toolManager);
+        => ScoreSetCoreAsync(scenarios, agentProfile.Name ?? "", agentProfile, agentDefinition, checkers, mode, samples, governor, ct, seedScenario, toolManager, realAgentName, variantId);
 
-    /// <summary>Shared body for both <see cref="ScoreSetAsync"/> overloads.</summary>
+    /// <summary>
+    /// Shared body for both <c>ScoreSetAsync</c> overloads (name-based and candidate-profile). When
+    /// <paramref name="cardAgentName"/> / <paramref name="cardAgentVersion"/> are supplied (candidate runs),
+    /// every produced card is filed under that real agent + variant id rather than the transient run profile.
+    /// </summary>
     private async Task<(List<ScoreCard> Cards, Dictionary<string, string> Outputs)> ScoreSetCoreAsync(
         IReadOnlyList<Scenario> scenarios,
         string agentName,
@@ -647,7 +713,9 @@ public sealed class RefinementController(
         BudgetGovernor governor,
         CancellationToken ct,
         Func<Scenario, CancellationToken, Task>? seedScenario,
-        IToolManager? toolManager)
+        IToolManager? toolManager,
+        string? cardAgentName = null,
+        string? cardAgentVersion = null)
     {
         List<ScoreCard> cards = [];
         Dictionary<string, string> outputs = [];
@@ -658,7 +726,7 @@ public sealed class RefinementController(
             {
                 ct.ThrowIfCancellationRequested();
                 (ScoreCard card, string output) =
-                    await RunAndScoreAsync(scenario, agentName, agentProfile, agentDefinition, checkers, mode, sample, ct, seedScenario, toolManager);
+                    await RunAndScoreAsync(scenario, agentName, agentProfile, agentDefinition, checkers, mode, sample, ct, seedScenario, toolManager, cardAgentName, cardAgentVersion);
                 cards.Add(card);
                 outputs[scenario.Id] = output; // last sample wins — a representative output for pairwise
                 governor.Record(card.Efficiency is { } e ? e.InputTokens + e.OutputTokens : 0);
@@ -723,6 +791,7 @@ public sealed class RefinementController(
     /// </summary>
     private async Task<VariantRecord> RecordCandidateAsync(
         string campaignId,
+        string variantId,
         int round,
         string agentName,
         Proposal proposal,
@@ -735,7 +804,9 @@ public sealed class RefinementController(
     {
         VariantRecord variant = new()
         {
-            Id = Guid.NewGuid().ToString("n"),
+            // Caller-supplied so the variant id matches the AgentVersion stamped on this candidate's score
+            // cards (per-variant calibration joins the two).
+            Id = variantId,
             AgentName = agentName,
             Round = round,
             KnobType = proposal.KnobType,

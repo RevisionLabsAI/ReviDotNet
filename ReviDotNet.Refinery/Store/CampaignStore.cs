@@ -30,11 +30,17 @@ public interface ICampaignStore
     Task<IReadOnlyList<LedgerEntry>> GetLedgerAsync(string campaignId, CancellationToken ct = default);
 }
 
-/// <summary>In-memory <see cref="ICampaignStore"/> (default; campaigns are lost on restart).</summary>
-public sealed class InMemoryCampaignStore : ICampaignStore
+/// <summary>
+/// In-memory <see cref="ICampaignStore"/> (default; campaigns are lost on restart). Also implements
+/// <see cref="IScoreCardSource"/> so per-run score cards + scenario ground truth are captured for calibration
+/// and knob-effectiveness analysis within the process lifetime.
+/// </summary>
+public sealed class InMemoryCampaignStore : ICampaignStore, IScoreCardSource
 {
     private readonly ConcurrentDictionary<string, Campaign> _campaigns = new();
     private readonly ConcurrentDictionary<string, List<LedgerEntry>> _ledger = new();
+    private readonly List<ScoreCard> _scoreCards = [];
+    private readonly ConcurrentDictionary<string, string> _groundTruth = new();
 
     /// <inheritdoc/>
     public Task SaveAsync(Campaign campaign, CancellationToken ct = default)
@@ -54,11 +60,46 @@ public sealed class InMemoryCampaignStore : ICampaignStore
     /// <inheritdoc/>
     public Task AppendLedgerAsync(LedgerEntry entry, CancellationToken ct = default)
     {
-        _ledger.GetOrAdd(entry.CampaignId, _ => []).Add(entry);
+        // Lock the per-campaign list: a dashboard/API read (GetLedgerAsync) can snapshot it while a running
+        // campaign appends, and List<T> is not safe for concurrent read+write.
+        List<LedgerEntry> list = _ledger.GetOrAdd(entry.CampaignId, _ => []);
+        lock (list) list.Add(entry);
         return Task.CompletedTask;
     }
 
     /// <inheritdoc/>
-    public Task<IReadOnlyList<LedgerEntry>> GetLedgerAsync(string campaignId, CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyList<LedgerEntry>>(_ledger.GetValueOrDefault(campaignId)?.ToList() ?? []);
+    public Task<IReadOnlyList<LedgerEntry>> GetLedgerAsync(string campaignId, CancellationToken ct = default)
+    {
+        if (_ledger.GetValueOrDefault(campaignId) is not { } list)
+            return Task.FromResult<IReadOnlyList<LedgerEntry>>([]);
+        lock (list) return Task.FromResult<IReadOnlyList<LedgerEntry>>(list.ToList());
+    }
+
+    // ── IScoreCardSource (calibration / meta-analysis capture) ──
+
+    /// <inheritdoc/>
+    public Task SaveScoreCardsAsync(string campaignId, IReadOnlyList<ScoreCard> cards, CancellationToken ct = default)
+    {
+        // Concurrent campaigns can capture into the shared list at once; guard the plain List<T>.
+        lock (_scoreCards) _scoreCards.AddRange(cards);
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<ScoreCard>> GetScoreCardsAsync(CancellationToken ct = default)
+    {
+        lock (_scoreCards) return Task.FromResult<IReadOnlyList<ScoreCard>>(_scoreCards.ToList());
+    }
+
+    /// <inheritdoc/>
+    public Task SaveGroundTruthAsync(IReadOnlyDictionary<string, string> groundTruthByScenarioId, CancellationToken ct = default)
+    {
+        foreach ((string scenarioId, string truth) in groundTruthByScenarioId)
+            _groundTruth[scenarioId] = truth;
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyDictionary<string, string>> GetGroundTruthAsync(CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyDictionary<string, string>>(new Dictionary<string, string>(_groundTruth));
 }

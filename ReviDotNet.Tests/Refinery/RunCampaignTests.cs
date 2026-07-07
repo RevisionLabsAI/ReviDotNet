@@ -240,6 +240,101 @@ public class RunCampaignTests
         result.TokensSpent.Should().BeGreaterThanOrEqualTo(10);
     }
 
+    [Fact]
+    public async Task MeasureBaseline_CapturesFactCheckerCardsAndGroundTruth_ProducingNonEmptyCalibration()
+    {
+        // The agent emits a fact-checker determination as its final output, so ScoreCardBuilder parses a
+        // FactCheckerDetermination onto each card. The scenarios carry GroundTruth. Proves the controller
+        // captures cards + ground truth through IScoreCardSource so `revi calibrate` is non-empty.
+        RefineryCaptureBroker broker = new();
+        FakeAgentService agentService = new(broker, quality: 5,
+            finalOutputOverride: """{"winner":"Alice","confidence":5}""");
+        InMemoryCampaignStore store = new();
+        MetaLlmUsageBroker meta = new();
+        RefinementController controller = new(
+            new RefinementRunner(agentService, broker),
+            new FakeJudge(),
+            store,
+            new NullProposer(),
+            new PairwiseGate(new StubPairwiseInfer(), meta),
+            new CandidateValidator(),
+            new FakeAgentManager(),
+            meta);
+
+        ScenarioSuite suite = new()
+        {
+            Name = "fc-core",
+            AgentName = "factchecker",
+            Scenarios =
+            [
+                // Empty rubric → the judge is skipped; only the determination + ground truth matter here.
+                new Scenario { Id = "s1", AgentName = "factchecker", Inputs = new Dictionary<string, string> { ["q"] = "a" }, GroundTruth = "Alice" },
+                new Scenario { Id = "s2", AgentName = "factchecker", Inputs = new Dictionary<string, string> { ["q"] = "b" }, GroundTruth = "Alice" }
+            ]
+        };
+        CampaignSpec spec = new() { PluginName = "gd", AgentName = "factchecker", SuiteName = "fc-core", SamplesPerScenario = 1, Mode = "live" };
+
+        await controller.MeasureBaselineAsync(spec, suite, "def", checkers: []);
+
+        // Cards + ground truth were captured through IScoreCardSource.
+        (await store.GetScoreCardsAsync()).Should().HaveCount(2);
+        (await store.GetGroundTruthAsync()).Should().ContainKey("s1").And.ContainKey("s2");
+
+        // …so calibration against the SAME store is now non-empty (both runs say Alice, truth Alice).
+        CalibrationReport report = await new CalibrationAnalyzer(store).AnalyzeAsync("factchecker");
+        report.TotalRuns.Should().Be(2);
+        report.CalibratedRuns.Should().Be(2);
+        report.Buckets.Should().ContainSingle(b => b.ConfidenceLevel == 5)
+            .Which.Accuracy.Should().BeApproximately(1.0, 1e-9);
+    }
+
+    [Fact]
+    public async Task RunCampaign_StampsCandidateCardsWithVariantId_EnablingPerVariantCalibration()
+    {
+        // A full campaign captures both baseline cards (real agent, no version) and the candidate's cards
+        // (real agent + the VariantRecord id as AgentVersion), so calibration can slice by variant.
+        RefineryCaptureBroker broker = new();
+        FakeAgentService agentService = new(broker, quality: 5,
+            finalOutputOverride: """{"winner":"Alice","confidence":4}""");
+        InMemoryCampaignStore store = new();
+        MetaLlmUsageBroker meta = new();
+        RefinementController controller = new(
+            new RefinementRunner(agentService, broker),
+            new FakeJudge(),
+            store,
+            new OneShotProposer(new Proposal("system-prompt", RevisedDefinition, "+ citing sources", "Add citations.")),
+            new PairwiseGate(new StubPairwiseInfer(), meta),
+            new CandidateValidator(),
+            new FakeAgentManager(),
+            meta);
+
+        // One train scenario with ground truth + empty rubric (judge skipped; the determination drives it).
+        ScenarioSuite suite = new()
+        {
+            Name = "chatbot-core",
+            AgentName = "chatbot",
+            Scenarios = [new Scenario { Id = "s1", AgentName = "chatbot", Inputs = new Dictionary<string, string> { ["q"] = "hi" }, GroundTruth = "Alice", HeldOut = false }]
+        };
+        CampaignSpec spec = new() { PluginName = "gd", AgentName = "chatbot", SuiteName = "chatbot-core", SamplesPerScenario = 1, Mode = "live", MaxRounds = 1, StopAfterNoImprovementRounds = 1 };
+
+        Campaign result = await controller.RunCampaignAsync(spec, suite, AgentDefinition, checkers: []);
+
+        // The round produced at least one candidate variant; take the first.
+        string variantId = result.Iterations.SelectMany(it => it.Variants).First().Id;
+
+        // Un-versioned calibration includes the baseline run PLUS candidate variant run(s) of the agent.
+        CalibrationReport all = await new CalibrationAnalyzer(store).AnalyzeAsync("chatbot");
+        all.TotalRuns.Should().BeGreaterThanOrEqualTo(2);
+
+        // Versioned calibration returns just that variant's slice (one scenario × one sample), and the card
+        // was filed under the real agent name — proving AgentName override + AgentVersion stamping both work.
+        CalibrationReport variant = await new CalibrationAnalyzer(store).AnalyzeAsync("chatbot", variantId);
+        variant.AgentVersion.Should().Be(variantId);
+        variant.TotalRuns.Should().Be(1);
+        variant.CalibratedRuns.Should().Be(1); // winner "Alice" == ground truth "Alice"
+        variant.Buckets.Should().ContainSingle(b => b.ConfidenceLevel == 4);
+    }
+
     // ── Fakes ───────────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>An <see cref="IProposalStrategy"/> that never proposes a change.</summary>
@@ -316,7 +411,8 @@ public class RunCampaignTests
         int quality,
         int? candidateQuality = null,
         int inputTokens = 0,
-        int outputTokens = 0) : IAgentService
+        int outputTokens = 0,
+        string? finalOutputOverride = null) : IAgentService
     {
         /// <summary>The per-run tool managers seen by the profile overload (one per candidate run).</summary>
         public List<IToolManager?> ToolOverridesSeen { get; } = [];
@@ -338,7 +434,9 @@ public class RunCampaignTests
 
             return new AgentResult
             {
-                FinalOutput = q.ToString(),
+                // finalOutputOverride lets a test emit a fact-checker determination JSON (so ScoreCardBuilder
+                // parses a FactCheckerDetermination); otherwise the quality number the FakeJudge reads back.
+                FinalOutput = finalOutputOverride ?? q.ToString(),
                 ExitReason = AgentExitReason.Completed,
                 TotalSteps = 1,
                 SessionId = Guid.NewGuid().ToString("n"),
