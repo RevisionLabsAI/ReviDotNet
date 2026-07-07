@@ -4,6 +4,7 @@
 //  See LICENSE.txt in the project root for full license information.
 // ===================================================================
 
+using System.Collections.Concurrent;
 using Microsoft.Extensions.DependencyInjection;
 using Revi;
 using Revi.Refinery;
@@ -59,6 +60,14 @@ public sealed class RefineryCampaignService(
     private readonly SemaphoreSlim _runGate = new(1, 1);
 
     /// <summary>
+    /// One <see cref="CancellationTokenSource"/> per in-flight (queued or running) campaign, keyed by
+    /// campaign id. Registered in <see cref="StartAsync"/> BEFORE the background task launches and removed +
+    /// disposed in the background body's finally, so <see cref="StopCampaign"/> can always find a live CTS
+    /// for anything that has not reached a terminal state.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _running = new();
+
+    /// <summary>
     /// Validate the spec, pre-create a Pending campaign, and start a baseline-only measurement on a
     /// background task. Returns the campaign id immediately. Throws <see cref="ArgumentException"/> on
     /// validation failure (the API maps it to 400/404).
@@ -108,18 +117,47 @@ public sealed class RefineryCampaignService(
         Campaign initial = new() { Id = id, Spec = spec, Status = CampaignStatus.Pending };
         await _store.SaveAsync(initial, ct);
 
-        // (e) Launch the background run. NOTE: do not await — caller gets the id right away.
-        _ = Task.Run(() => RunAsync(id, spec, suite, agentDefinition, checkers, lp, refine), CancellationToken.None);
+        // (e) Launch the background run. NOTE: do not await — caller gets the id right away. The per-campaign
+        // CTS is registered BEFORE the task starts so a stop request can never miss the window; the background
+        // body removes + disposes it in its finally.
+        CancellationTokenSource runCts = new();
+        _running[id] = runCts;
+        _ = Task.Run(() => RunAsync(id, spec, suite, agentDefinition, checkers, lp, refine, runCts.Token), CancellationToken.None);
 
         // (f)
         return id;
     }
 
     /// <summary>
+    /// Request cancellation of a queued or running campaign. Returns <c>true</c> when a live campaign was
+    /// signalled (it will land in <see cref="CampaignStatus.Stopped"/> shortly), <c>false</c> when no
+    /// in-flight campaign with that id exists (unknown id, or already terminal).
+    /// </summary>
+    public bool StopCampaign(string id)
+    {
+        if (_running.TryGetValue(id, out CancellationTokenSource? cts))
+        {
+            try
+            {
+                cts.Cancel();
+                _log.LogInformation("Refinery campaign {CampaignId}: stop requested.", id);
+                return true;
+            }
+            catch (ObjectDisposedException)
+            {
+                // The run finished (and disposed its CTS) between the lookup and the Cancel — treat as
+                // not-running; the campaign is already terminal.
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
     /// The background body: builds a per-plugin DI scope, creates a PER-RUN <see cref="IToolManager"/> holding
     /// the plugin's tools (the shared root manager is never touched), runs either the baseline measurement or
     /// the full campaign — passing that per-run tool manager as the run's tool override — then disposes the
-    /// scope in a finally. Marks the campaign Failed on any exception. Serialized by <see cref="_runGate"/>
+    /// scope in a finally. Marks the campaign Failed on any exception and Stopped when
+    /// <paramref name="ct"/> (the per-campaign stop token) fires. Serialized by <see cref="_runGate"/>
     /// (see the class remarks for why it is retained even though tool-mutation no longer requires it).
     /// </summary>
     private async Task RunAsync(
@@ -129,10 +167,22 @@ public sealed class RefineryCampaignService(
         string agentDefinition,
         IReadOnlyList<IInvariantChecker> checkers,
         LoadedPlugin lp,
-        bool refine)
+        bool refine,
+        CancellationToken ct)
     {
         string kind = refine ? "campaign" : "baseline";
-        await _runGate.WaitAsync();
+        try
+        {
+            // A stop can arrive while this campaign is still QUEUED behind another; honour it here so a
+            // stopped campaign never starts running.
+            await _runGate.WaitAsync(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            await MarkStoppedAsync(id, spec, kind);
+            RemoveRunCts(id);
+            return;
+        }
         ServiceProvider? pluginProvider = null;
         try
         {
@@ -155,7 +205,7 @@ public sealed class RefineryCampaignService(
             Func<Scenario, CancellationToken, Task>? seed = null;
             if (lp.Plugin is IScenarioWorld world)
             {
-                await world.ResetAsync(pluginProvider, CancellationToken.None);
+                await world.ResetAsync(pluginProvider, ct);
                 seed = (s, c) => world.SeedAsync(s, pluginProvider, c);
             }
 
@@ -171,16 +221,23 @@ public sealed class RefineryCampaignService(
                 if (refine)
                 {
                     await _controller.RunCampaignAsync(
-                        spec, suite, agentDefinition, checkers, progress: null, ct: CancellationToken.None, campaignId: id, seedScenario: seed, toolManager: runTools);
+                        spec, suite, agentDefinition, checkers, progress: null, ct: ct, campaignId: id, seedScenario: seed, toolManager: runTools);
                 }
                 else
                 {
                     await _controller.MeasureBaselineAsync(
-                        spec, suite, agentDefinition, checkers, progress: null, ct: CancellationToken.None, campaignId: id, seedScenario: seed, toolManager: runTools);
+                        spec, suite, agentDefinition, checkers, progress: null, ct: ct, campaignId: id, seedScenario: seed, toolManager: runTools);
                 }
             }
 
             _log.LogInformation("Refinery {Kind} {CampaignId} complete.", kind, id);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Stop requested. The controller already persists Stopped before rethrowing; MarkStoppedAsync is
+            // a defensive no-op in that case and covers cancellation points OUTSIDE the controller (seeding,
+            // plugin scope construction).
+            await MarkStoppedAsync(id, spec, kind);
         }
         catch (Exception ex)
         {
@@ -210,6 +267,36 @@ public sealed class RefineryCampaignService(
                 catch (Exception ex) { _log.LogWarning(ex, "Refinery {Kind} {CampaignId}: error disposing plugin scope.", kind, id); }
             }
             _runGate.Release();
+            RemoveRunCts(id);
+        }
+    }
+
+    /// <summary>Remove and dispose the campaign's stop CTS once the run can no longer be cancelled.</summary>
+    private void RemoveRunCts(string id)
+    {
+        if (_running.TryRemove(id, out CancellationTokenSource? cts))
+            cts.Dispose();
+    }
+
+    /// <summary>
+    /// Persist <see cref="CampaignStatus.Stopped"/> for a cancelled campaign unless the controller already
+    /// moved it to a terminal state (it saves Stopped itself before rethrowing the cancellation).
+    /// </summary>
+    private async Task MarkStoppedAsync(string id, CampaignSpec spec, string kind)
+    {
+        try
+        {
+            Campaign? c = await _store.GetAsync(id);
+            if (c is null || c.Status is CampaignStatus.Pending or CampaignStatus.Running)
+            {
+                Campaign stopped = (c ?? new Campaign { Id = id, Spec = spec }) with { Status = CampaignStatus.Stopped };
+                await _store.SaveAsync(stopped);
+            }
+            _log.LogInformation("Refinery {Kind} {CampaignId} stopped.", kind, id);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Refinery {Kind} {CampaignId}: failed to persist stopped state.", kind, id);
         }
     }
 
@@ -371,12 +458,15 @@ public sealed class RefineryCampaignService(
 
     /// <summary>
     /// Minimal unified-diff applier used by <see cref="PromoteVariantAsync"/> to reconstruct the full revised
-    /// agent definition from the stored <see cref="VariantRecord.Diff"/> (the SDK persists the diff, not the
-    /// full content). Supports standard <c>@@ -l,s +l,s @@</c> hunks with space/'-'/'+' line prefixes. This is
-    /// deliberately conservative: any structural surprise (no hunks, context/removed lines that do not match
-    /// the source, hunk header past EOF) fails the whole apply so we never write a corrupt <c>.agent</c> file.
+    /// agent definition from the stored <see cref="VariantRecord.Diff"/> when a record lacks
+    /// <see cref="VariantRecord.RevisedContent"/>. Supports standard <c>@@ -l,s +l,s @@</c> hunks with
+    /// space/'-'/'+' line prefixes — the exact format <c>LlmDiffProposer.UnifiedDiff</c> emits (one
+    /// full-context hunk), so every stored diff is re-appliable. This is deliberately conservative: any
+    /// structural surprise (no hunks, context/removed lines that do not match the source, hunk header past
+    /// EOF) fails the whole apply so we never write a corrupt <c>.agent</c> file. Internal (not private)
+    /// only so the round-trip contract with the proposer's diff format stays under test.
     /// </summary>
-    private static class UnifiedDiff
+    internal static class UnifiedDiff
     {
         public static bool TryApply(string source, string diff, out string result)
         {

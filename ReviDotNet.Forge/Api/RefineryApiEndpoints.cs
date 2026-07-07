@@ -88,6 +88,20 @@ public static class RefineryApiEndpoints
             return Results.Ok(entries);
         });
 
+        // Stop a queued/running campaign. 200 {stopped:true} when a live campaign was signalled (it lands in
+        // Stopped shortly), 404 for an unknown id, 400 when the campaign already reached a terminal state.
+        api.MapPost("/campaigns/{id}/stop",
+            async (string id, RefineryCampaignService campaigns, ICampaignStore store, CancellationToken ct) =>
+        {
+            if (campaigns.StopCampaign(id))
+                return Results.Ok(new { stopped = true });
+
+            Campaign? c = await store.GetAsync(id, ct);
+            return c is null
+                ? Results.NotFound(new { error = $"campaign '{id}' not found" })
+                : Results.BadRequest(new { stopped = false, error = $"campaign '{id}' is not running (status: {c.Status})" });
+        });
+
         api.MapPost("/campaigns/{id}/promote/{variantId}",
             async (string id, string variantId, RefineryCampaignService campaigns, CancellationToken ct) =>
         {

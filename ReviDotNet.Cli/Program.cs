@@ -162,6 +162,17 @@ static async Task<int> HandleRefineAsync(string[] args, string baseUrl, bool emi
         }
         case "ledger":
             return await HandleRefineLedgerAsync(args[1..], client, emitJson);
+        case "stop":
+        {
+            if (args.Length < 2) return Usage("Expected: refine stop <id>");
+            string id = args[1];
+            await client.StopCampaignAsync(id); // throws RefineryHttpException on 404/400 (exit code 2)
+            if (emitJson)
+                Console.WriteLine("""{"stopped":true}""");
+            else
+                Console.WriteLine($"Stop requested for campaign {id} — it will land in Stopped shortly. Check with: revi refine status {id}");
+            return 0;
+        }
         default:
             return Usage($"Unknown refine sub-command '{sub}'.");
     }
@@ -202,14 +213,13 @@ static async Task<int> HandleRefineRunAsync(string[] args, RefineryClient client
     // POST /campaigns
     if (emitJson)
     {
-        // --json must emit exactly one JSON document on stdout: the final Campaign.
+        // --json must emit exactly one JSON document on stdout: the final Campaign. Reuses the client's
+        // wire-format options (single source of truth) with indentation layered on for readability.
         (string jsonId, _) = await client.StartCampaignAsync(spec);
         Campaign final = await PollUntilTerminalAsync(jsonId, client, quiet: true);
-        var finalJson = JsonSerializer.Serialize(final, new JsonSerializerOptions
+        var finalJson = JsonSerializer.Serialize(final, new JsonSerializerOptions(RefineryClient.JsonOpts)
         {
             WriteIndented = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            Converters = { new JsonStringEnumConverter() },
         });
         Console.WriteLine(finalJson);
         return final.Status == CampaignStatus.Failed ? 2 : 0;
@@ -456,22 +466,43 @@ static async Task<Campaign> PollUntilTerminalAsync(string id, RefineryClient cli
     TimeSpan timeout = TimeSpan.FromMinutes(30);
     var deadline = DateTime.UtcNow + timeout;
 
-    while (true)
+    // Ctrl-C interrupts the WATCH only — the campaign keeps running server-side ('revi refine stop <id>'
+    // is what actually cancels it). e.Cancel = true keeps the process alive to print the parting message.
+    using var watchCts = new CancellationTokenSource();
+    ConsoleCancelEventHandler onCancel = (_, e) => { e.Cancel = true; watchCts.Cancel(); };
+    Console.CancelKeyPress += onCancel;
+    Campaign? last = null;
+    try
     {
-        Campaign c = await client.GetCampaignAsync(id);
-        if (IsTerminal(c.Status)) return c;
-
-        if (!quiet)
-            Console.Write($"\r  status={c.Status,-20} tokens={c.TokensSpent,10}  rounds={c.Iterations.Count,3}  ");
-
-        if (DateTime.UtcNow >= deadline)
+        while (true)
         {
-            if (!quiet) Console.WriteLine();
-            Console.Error.WriteLine($"Polling timed out after {timeout.TotalMinutes:0} minutes. Last status: {c.Status}");
-            return c;
-        }
+            Campaign c = last = await client.GetCampaignAsync(id, watchCts.Token);
+            if (IsTerminal(c.Status)) return c;
 
-        await Task.Delay(pollInterval);
+            if (!quiet)
+                Console.Write($"\r  status={c.Status,-20} tokens={c.TokensSpent,10}  rounds={c.Iterations.Count,3}  ");
+
+            if (DateTime.UtcNow >= deadline)
+            {
+                if (!quiet) Console.WriteLine();
+                Console.Error.WriteLine($"Polling timed out after {timeout.TotalMinutes:0} minutes. Last status: {c.Status}");
+                return c;
+            }
+
+            await Task.Delay(pollInterval, watchCts.Token);
+        }
+    }
+    catch (OperationCanceledException) when (watchCts.IsCancellationRequested)
+    {
+        if (!quiet) Console.WriteLine();
+        Console.Error.WriteLine(
+            $"Watch interrupted — the campaign keeps running on the server. " +
+            $"Check it with 'revi refine status {id}' or cancel it with 'revi refine stop {id}'.");
+        return last ?? await client.GetCampaignAsync(id);
+    }
+    finally
+    {
+        Console.CancelKeyPress -= onCancel;
     }
 }
 
@@ -699,6 +730,11 @@ static void PrintHelp()
 
           revi refine list
               List all campaigns.
+
+          revi refine stop <id>
+              Request cancellation of a queued or running campaign. The campaign lands
+              in Stopped status shortly after. Errors with exit code 2 when the id is
+              unknown or the campaign already finished.
 
           revi refine ledger <id>
               Print a table of all ledger entries for a campaign (round, knob type,

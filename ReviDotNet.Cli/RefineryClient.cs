@@ -20,7 +20,11 @@ internal sealed class RefineryClient
 {
     private readonly HttpClient _http;
 
-    private static readonly JsonSerializerOptions JsonOpts = new()
+    /// <summary>
+    /// The single wire-format contract for the Control API, shared with <c>Program</c> so the CLI can never
+    /// drift from the client (camelCase, case-insensitive reads, enums accepted as number OR string).
+    /// </summary>
+    internal static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true,
@@ -75,6 +79,16 @@ internal sealed class RefineryClient
             ?? throw new InvalidOperationException("Server returned no campaign id.");
         string status = doc.RootElement.TryGetProperty("status", out JsonElement se) ? (se.GetString() ?? "Pending") : "Pending";
         return (id, status);
+    }
+
+    /// <summary>
+    /// POST /api/refinery/campaigns/{id}/stop — request cancellation of a queued/running campaign. Throws
+    /// <see cref="RefineryHttpException"/> when the campaign is unknown (404) or already terminal (400).
+    /// </summary>
+    public async Task StopCampaignAsync(string id, CancellationToken ct = default)
+    {
+        using HttpResponseMessage resp = await _http.PostAsync($"api/refinery/campaigns/{Uri.EscapeDataString(id)}/stop", null, ct);
+        await EnsureSuccessAsync(resp);
     }
 
     public async Task<Campaign> GetCampaignAsync(string id, CancellationToken ct = default)
