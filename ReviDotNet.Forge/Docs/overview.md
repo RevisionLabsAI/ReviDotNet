@@ -10,8 +10,19 @@ separate tools:
 | **Prompt engineering studio** | Author, test, score and iteratively improve `.pmt` prompt files and `.agent` agent files. | Pages: Prompt Registry, Generate, Test Runner, Optimizer, Agent Workshop. |
 | **Observability console** | Live log feed for any process emitting ReviLog events — local dev runs, deployed services, and Forge's own gateway. | Page: Observer. Backed by MongoDB. |
 | **Inference gateway** | A small authenticated HTTP API that other applications call instead of talking to OpenAI / Anthropic / Google directly. Forge handles routing, failover, rate limiting, and usage accounting. | Endpoints: `POST /api/v1/infer`, `POST /api/v1/usage/report`, `GET /api/v1/prompts`, `GET /api/v1/models`. Pages: Usage, API Keys. |
+| **Refinery host** | Builds and loads refinement plugins from trusted local repos, then runs measurement/improvement campaigns against their agents — scenario suites, invariant + efficiency + LLM-judge scoring, regression-gated variant proposals, and human-gated promotion. | Page: `/refinery`. API: `/api/refinery/*` (consumed by the `revi` CLI). |
 
-The three roles share configuration (`RConfigs/`), the in-memory Revi registries
+The Refinery role sits slightly apart from the other three: it is a reusable toolkit
+(`ReviDotNet.Refinery.Sdk` / `.Refinery` / `.Refinery.Hosting`) that Forge merely hosts.
+Forge wires the engine into DI, points it at plugin repos via `Refinery:Repos`, and
+exposes the `/refinery` dashboard plus the `/api/refinery` Control API — the same API the
+standalone [`revi` CLI](revi-cli.md) drives. Campaign runs execute through the same Core
+inference/agent services as everything else, so their traces show up in Observer like any
+other run. See [features.md](features.md#refinery-refinery),
+[refinery-campaigns.md](refinery-campaigns.md), and
+[refinery-plugin-authoring.md](refinery-plugin-authoring.md).
+
+The roles share configuration (`RConfigs/`), the in-memory Revi registries
 (`IPromptManager`, `IModelManager`, `IProviderManager`, `IAgentManager`, `IToolManager`),
 and the ReviLog event publishing pipeline. That is why they are bundled: a prompt the
 engineer edits in the Registry is the same prompt the gateway can serve, and every run

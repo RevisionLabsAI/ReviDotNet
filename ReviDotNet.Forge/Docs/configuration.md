@@ -73,6 +73,95 @@ Per Core's convention, each provider's API key is read at startup from
 Hyphens and spaces in provider names become underscores when forming the variable name.
 See [provider-files.md](../../ReviDotNet.Core/Docs/provider-files.md) for the full rule.
 
+## Refinery
+
+Settings for the Refinery plugin host and campaign runner. See
+[refinery-plugin-authoring.md](refinery-plugin-authoring.md) for how to write a plugin.
+
+### `Refinery:Repos` (array, default empty)
+
+Local repo directories to scan for refinement plugins. Each entry is an object:
+
+| Key | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `Path` | string | — | Absolute path to the repo root (or any directory containing the plugin project). |
+| `BuildConfiguration` | string | global default | Optional per-repo build configuration override. |
+| `TargetFramework` | string | global default | Optional per-repo target framework override. |
+| `Projects` | string[] | — | Optional explicit plugin project paths (relative to `Path`); overrides discovery. |
+
+```jsonc
+// appsettings.local.json
+{
+  "Refinery": {
+    "Repos": [ { "Path": "C:/Projects/MyApp" } ]
+  }
+}
+```
+
+Without `Projects`, discovery checks a `.refinery.json` manifest at the repo root, then
+falls back to convention: any `.csproj` (excluding `bin`/`obj`) with an exact
+`ProjectReference`/`PackageReference` to `ReviDotNet.Refinery.Sdk`.
+
+**Plugins are arbitrary code running inside the Forge process** — only configure repos
+you trust.
+
+### Plugin host options (`Refinery:*`)
+
+Bound from the same `Refinery` section
+([RefineryHostingOptions](../../ReviDotNet.Refinery.Hosting/RefineryHostingOptions.cs)):
+
+| Key | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `Refinery:BuildOnStartup` | bool | `true` | Discover/build/load all configured repos at startup. |
+| `Refinery:WatchForChanges` | bool | `false` | Watch each repo's `*.cs`/`*.csproj` files and rebuild+reload the affected plugin on change (debounced). Reloads wait for running campaigns to finish. |
+| `Refinery:WatchDebounceMs` | int | `500` | Debounce window (ms) before a file-change burst triggers a reload. |
+| `Refinery:BuildConfiguration` | string | `Debug` | Default `dotnet build` configuration when a repo doesn't override it. |
+| `Refinery:TargetFramework` | string | `net9.0` | TFM to build/resolve — disambiguates the output assembly when a plugin multi-targets (`<TargetFrameworks>`). |
+
+### `Refinery:AgentRConfigPath` (string, default `GreatDebate.Researcher/RConfigs/Agents/{agent}.agent`)
+
+Fallback path template for resolving an agent's raw `.agent` definition text (used as
+judge context in campaigns). `{agent}` is replaced with the agent name; relative paths
+resolve under the plugin's repo root. Only consulted when the agent registry has neither
+a readable `SourcePath` nor a `SystemPrompt` for the agent; the final fallback is the
+bare agent name.
+
+### `Forge:RefineryApi:RequireApiKey` (bool, default `false`)
+
+API-key gate for the `/api/refinery/*` control endpoints (plugins, campaigns — the same
+backend the `/refinery` dashboard uses). When `true`, every request must carry a valid
+`X-Forge-ApiKey` header (validated by the same `ApiKeyAuth` check as the `/api/v1`
+gateway). Off by default so the local CLI and dashboard work without a key.
+
+### `Forge:CampaignStore` (string, default `inmemory`)
+
+Where Refinery campaign records live:
+
+- `inmemory` (or unset) — campaigns are lost on restart.
+- `mongo` — durable `MongoCampaignStore`, activated only when
+  `Observer:MongoDb:ConnectionString` is **also** non-empty (it reuses that same
+  connection string). The database name is fixed to `refinery`.
+
+### `REVI_RCONFIG_PATHS` (environment variable)
+
+Additional on-disk RConfig folders loaded **into** Forge on top of its own embedded set
+(Forge's own configs load first and win on a name clash). Each folder is an RConfigs
+root (`Providers/`, `Models/`, `Prompts/`, `Agents/`, `Tools/`). This is how a Refinery
+plugin's `.agent`/`.pmt` files get into Forge's registry. Two forms, combinable:
+
+- Semicolon-separated on one line (`;` is a fixed delimiter on every OS):
+  `REVI_RCONFIG_PATHS=C:/proj-a/RConfigs;C:/proj-b/RConfigs`
+- One folder per numbered variable: `REVI_RCONFIG_PATHS=...`, `REVI_RCONFIG_PATHS_2=...`
+
+The .NET config-array form `Revi:RConfigPaths` (e.g. `Revi__RConfigPaths__0` or an
+appsettings.json array) is also accepted.
+
+### `FORGE_URL` (environment variable, CLI-side)
+
+Base URL the `revi` CLI uses to reach Forge's Refinery API (default
+`http://localhost:5000`; the `--url` flag overrides it per invocation). Used by
+`revi plugins list | refresh | reload <name>` and the campaign commands.
+
 ## Client configuration (`forge.rcfg`)
 
 The settings above configure Forge as a **gateway server**. A separate, **client-side** file lets a *consumer* application route its inference through a Forge gateway. It is loaded by Core's `ForgeManager` from `RConfigs/forge.rcfg` (under the app base directory) at startup; when present and enabled, `IInferService.Completion`/`CompletionStream` route remotely through the gateway instead of calling providers directly (see [inference.md → Forge Gateway Routing](../../ReviDotNet.Core/Docs/inference.md)).

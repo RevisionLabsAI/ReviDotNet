@@ -6,9 +6,15 @@ context, runs the plugin's agents against its scenarios, captures the resulting 
 them with structural invariant checks, efficiency metrics, and an Opus-4.8 LLM judge. Over iterations it can
 propose, gate, and accept prompt/agent changes — always behind a human-gated promotion step.
 
-> **Status & roadmap** live in the consumer repo:
-> `GreatDebate/Documentation/SelfImprovement/04_REFINERY_STATUS.md`. As of this writing Phases 0-2 are
-> built (toolkit + Forge integration); campaign execution and the first real plugin are Phase 3.
+> **Status: shipped.** This document predates the implementation and describes the design. The toolkit
+> has since landed in full — Phases 2b–6 plus waves 1–3: campaign execution, the `revi` CLI, campaign
+> stop/promote, the optimize/test/calibration/scenario-generation surfaces, and the `/refinery` dashboard.
+> For current usage docs see the Forge docs:
+> [Refinery campaigns](ReviDotNet.Forge/Docs/refinery-campaigns.md),
+> [plugin authoring](ReviDotNet.Forge/Docs/refinery-plugin-authoring.md),
+> [the `revi` CLI](ReviDotNet.Forge/Docs/revi-cli.md), and the
+> [Refinery section of the Forge feature reference](ReviDotNet.Forge/Docs/features.md).
+> Where this file and those pages disagree, trust those pages.
 
 ## Assemblies
 

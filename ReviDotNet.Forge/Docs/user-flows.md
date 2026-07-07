@@ -4,8 +4,11 @@ The intended end-to-end journeys through Forge, mapped to the pages and services
 support each step. These are the "happy paths" the UI is designed around — any one of
 them can be entered partway and abandoned partway without state loss.
 
-The five flows below cover what the codebase actually supports today; an additional
+The flows below cover what the codebase actually supports today; an additional
 section at the bottom notes flows that are partially built and where the seams are.
+Flows 6–10 cover the Refinery ([features.md](features.md#refinery-refinery),
+[revi-cli.md](revi-cli.md)) and can be driven from either the `/refinery` dashboard or
+the `revi` CLI — the steps note both where they diverge.
 
 ---
 
@@ -286,6 +289,165 @@ environment variable is set on the Forge container so it can call upstream APIs.
 
 ---
 
+## Flow 6 — Measure an agent baseline
+
+**Who.** An agent author who wants a statistically honest "how good is this agent right
+now?" number before changing anything.
+
+**Pre-conditions.** A refinement plugin is loaded (`Refinery:Repos` points at the plugin
+repo; the `/refinery` catalog shows it as `Loaded` with at least one scenario suite).
+Provider credentials are configured, since scenario runs execute real inference.
+
+### Steps
+
+1. **Check the catalog.** Open **Refinery** in the nav (or run `revi plugins list`) and
+   confirm the plugin's agents, suites, and invariants loaded without errors.
+2. **Start the baseline.**
+   - UI: click **Run baseline** on the plugin card.
+   - CLI: `revi refine run --plugin <p> --agent <a> --suite <s> --baseline-only`
+     (add `--samples 5` for tighter aggregates; default is 3 per scenario).
+3. **Watch.** The CLI polls every 3 seconds and prints status/tokens/rounds on one
+   updating line; the dashboard's Campaigns table shows the same via **Refresh**.
+4. **Read the numbers.** On completion the summary shows the baseline
+   `SuiteAggregate`: invariant pass-rate over gated runs, quality mean and p10, cost
+   mean, and latency p90 — plus per-invariant pass-rates.
+5. **Record it.** `revi refine status <id> --json > baseline.json` captures the whole
+   campaign for later comparison.
+
+### Acceptance criteria
+
+- The campaign reaches `Converged` with a populated **Baseline** block and no error.
+- `revi refine list` shows the campaign with its token spend.
+
+---
+
+## Flow 7 — Run a refinement campaign and promote the winner
+
+**Who.** An agent author with a measured baseline who wants the engine to propose,
+evaluate, and gate improvements — and who will personally approve anything that lands.
+
+**Pre-conditions.** Same as Flow 6. Budget awareness: a full campaign runs
+`rounds × variants × scenarios × samples` agent executions plus judge calls.
+
+### Steps
+
+1. **Start the campaign.**
+   - UI: click **Refine** on the plugin card.
+   - CLI: `revi refine run --plugin <p> --agent <a> --suite <s> --budget 2000000
+     --max-rounds 10` (both limits optional; defaults are no token limit / 10 rounds).
+2. **Let the loop run.** Each round the engine proposes variants (LLM diff-proposer plus
+   deterministic knob mutators), scores them on train + held-out scenarios, and accepts
+   only those that clear the regression gate. Terminal states: `Converged`, `Failed`,
+   `Stopped`, `BudgetExhausted`.
+3. **Read the loop summary.** The CLI prints rounds run, variants proposed/accepted, and
+   baseline→final deltas for quality p10 and invariant pass-rate.
+4. **Audit the ledger.** `revi refine ledger <id>` (or the campaign detail view) lists
+   every accept/reject with the knob type, held-out scores, and reject reason. This is
+   the evidence for step 5.
+5. **Promote the winner.** In the campaign detail view on `/refinery`, click **Promote to
+   agent** on the accepted variant and confirm the dialog
+   (`POST /api/refinery/campaigns/{id}/promote/{variantId}` for API clients). This is the
+   only step that writes to the real `.agent`/`.pmt` files — nothing is promoted
+   automatically.
+6. **Verify.** Re-run the baseline (Flow 6) against the promoted agent, or run
+   `revi test <suite> --agent <name>` as a quick regression check.
+
+### Notes & gotchas
+
+- Ctrl-C during the CLI watch detaches the CLI only — **the campaign keeps running
+  server-side.** Reattach with `revi refine status <id>`; cancel with
+  `revi refine stop <id>` (Flow 8).
+- Accepted variants live in the campaign until promoted; restarting a campaign does not
+  touch the agent definition.
+
+---
+
+## Flow 8 — Stop a runaway campaign
+
+**Who.** Anyone watching a campaign burn tokens without converging — quality plateaued,
+every variant is being rejected, or the wrong suite was selected.
+
+**Pre-conditions.** A campaign is in `Pending` or `Running`. You have its id (from the
+start output, `revi refine list`, or the dashboard table).
+
+### Steps
+
+1. **Confirm it is still live.** `revi refine status <id>` — stopping a finished campaign
+   is a 400.
+2. **Stop it.** `revi refine stop <id>`
+   (`POST /api/refinery/campaigns/{id}/stop`). The CLI prints
+   `Stop requested for campaign <id> — it will land in Stopped shortly.`
+3. **Verify.** `revi refine status <id>` until the status reads `Stopped`. Cancellation
+   is a signal, not a kill — in-flight scenario runs finish or abort, then the campaign
+   lands terminal.
+4. **Keep the partial results.** Everything scored before the stop is preserved:
+   the ledger, baseline, and any accepted variants remain queryable, and an accepted
+   variant from a stopped campaign can still be promoted (Flow 7, step 5).
+
+### Failure-mode reading
+
+- Exit code 2 + HTTP 404 — no campaign with that id.
+- Exit code 2 + HTTP 400 (`is not running (status: …)`) — already terminal; nothing to do.
+
+---
+
+## Flow 9 — Calibrate a fact-checker agent
+
+**Who.** The owner of an agent that emits confidence levels alongside verdicts (a
+fact-checker pattern), who needs to know whether "confidence 4" actually means more
+than "confidence 2."
+
+**Pre-conditions.** The agent has accumulated scored runs against scenarios with ground
+truth — calibration is mined from past campaign/suite runs, not generated on demand.
+
+### Steps
+
+1. **Pull the report.** `revi calibrate --agent <name>` (add `--version <v>` to scope to
+   one agent version; `GET /api/refinery/calibration` for API clients).
+2. **Read the reliability table.** One row per confidence bucket: runs, correct count,
+   accuracy, and weighted error. Healthy calibration shows accuracy rising with
+   confidence.
+3. **Check the two headline numbers.**
+   - **ECE** (expected calibration error) — lower is better; it weights each bucket's
+     |confidence − accuracy| gap by its run count.
+   - **Monotonic** — `no` means some higher-confidence bucket is *less* accurate than a
+     lower one, which downstream consumers of the confidence signal need to know.
+4. **Act on it.** Poor calibration is a refinement target: run a campaign (Flow 7) whose
+   suite exercises the confidence-labelled scenarios, or revise the agent's confidence
+   rubric directly and re-measure.
+5. **Track over versions.** Re-run with `--version` after each promotion and compare ECE
+   (`--json` output diffs cleanly).
+
+---
+
+## Flow 10 — Generate new test scenarios
+
+**Who.** A plugin author whose scenario suite has a coverage hole — the agent passes
+everything, but only because the suite never asks the hard questions.
+
+**Pre-conditions.** The agent exists in a loaded plugin. Optionally, a text file
+describing the agent's contract (a spec excerpt) to ground the generator.
+
+### Steps
+
+1. **Pick the target category.** Scenario generation is category-directed —
+   e.g. `edge-cases`, `adversarial`, `multi-source`.
+2. **Generate.** `revi generate --agent <name> --category edge-cases --count 5
+   --spec agent-spec.md` (`POST /api/refinery/generate-scenarios`). The `--spec` file's
+   content is sent as the agent-spec section; without it the generator works from the
+   agent name and category alone (server default count: 5).
+3. **Review each scenario.** The output lists id, tags, notes, and ground truth per
+   scenario. Treat these as *drafts* — an LLM wrote them, so check that the ground truth
+   is actually true and the scenario is answerable.
+4. **Add the keepers to the suite.** Copy the accepted scenarios into the plugin's
+   scenario suite source (see
+   [refinery-plugin-authoring.md](refinery-plugin-authoring.md)) and reload the plugin
+   (`revi plugins reload <name>`).
+5. **Re-baseline.** Run Flow 6 against the enlarged suite — new scenarios usually move
+   the numbers, which is the point.
+
+---
+
 ## Partial / aspirational flows
 
 A few flows are foreshadowed in the code but aren't reachable through the UI yet:
@@ -298,7 +460,9 @@ A few flows are foreshadowed in the code but aren't reachable through the UI yet
 - **Promote a revision** — the optimizer / workshop write back over the same file. There
   is no concept of "promote v3 to production" or "rollback to v2." The `[[information]]
   version` increments but version 1 is overwritten by version 2 in place. Source control
-  is the only history.
+  is the only history. (The Refinery closes this gap for agents under refinement: variants
+  live in the campaign until explicitly promoted — see Flow 7 — but the Studio pages still
+  write in place.)
 - **Tier-based routing across providers** — `MinTier` works, but `Tier` is a single
   ordinal property on a model. There is no policy for "prefer cheaper for batch jobs,
   faster for interactive" beyond what callers send in `PreferredModels`.

@@ -13,6 +13,7 @@ ReviDotNet is a .NET library that makes working with modern LLMs straightforward
 - Supports multiple providers and models with configurable model routing
 - Chat and prompt completion interfaces (automatically chosen or forced per prompt/model)
 - Agent orchestration via `.agent` files (state loops, transitions, tool gating, guardrails)
+- Refinery: agent optimization campaigns — scenario-based scoring, regression-gated variant proposals, human-gated promotion — driven from the Forge `/refinery` dashboard or the `revi` CLI (see `ReviDotNet.Forge/Docs/refinery-campaigns.md` and `ReviDotNet.Forge/Docs/revi-cli.md`)
 - Structured output guidance options (JSON/Regex/GBNF – manual and auto variants)
 - Resilience: retries, timeout control, token accounting, safe JSON extraction from Markdown
 - Built‑in fixers for common issues (e.g., `json-fixer` and `enum-fixer` prompts)
@@ -69,7 +70,7 @@ The core docs are in this repo:
 Subsystem docs at the repo root:
 
 - ReviLogger (trace tree): `ReviLogger.md`
-- Refinery (agent self-improvement toolkit): `Refinery.md`
+- Refinery (agent self-improvement toolkit): `Refinery.md` (design); usage docs in `ReviDotNet.Forge/Docs/` — `refinery-campaigns.md`, `refinery-plugin-authoring.md`, `revi-cli.md`
 
 ## Quick start
 

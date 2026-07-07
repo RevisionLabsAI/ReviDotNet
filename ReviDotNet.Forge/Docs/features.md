@@ -8,6 +8,7 @@ The main nav drawer (`Components/Layout/MainLayout.razor`) groups features:
 
 - **Dashboard** (`/`) — landing card grid
 - **Studio** — Prompt Registry, Generate Prompt, Test Runner, Optimizer, Agent Workshop
+- **Refinery** (`/refinery`) — agent refinement campaigns (standalone nav link)
 - **Operations** — Observer, Usage, API Keys
 
 There is also a dark-mode toggle in the AppBar. The drawer state and color scheme are
@@ -223,6 +224,57 @@ populates it via `LoadSessionAsync(sessionId)`.
 A paginated table of prior sessions for the currently-selected agent, fetched from the
 log viewer (`GetAgentSessionsAsync`). Columns: started, duration, exit reason, event
 count, and a truncated final-output preview. **View** loads the session into Tab 2.
+
+---
+
+## Refinery (`/refinery`)
+
+Source: [Refinery.razor](../Components/Pages/Refinery/Refinery.razor),
+[RefineryApiEndpoints.cs](../Api/RefineryApiEndpoints.cs)
+
+The control surface for the Refinery — the agent measurement-and-improvement toolkit.
+Where the Agent Workshop is a single-run debugger, Refinery runs **campaigns**: an agent
+executed against a scenario suite, scored on invariants / efficiency / an LLM judge, with
+variant proposals accepted or rejected behind a regression gate. Concepts are documented
+in [refinery-campaigns.md](refinery-campaigns.md); writing a plugin is documented in
+[refinery-plugin-authoring.md](refinery-plugin-authoring.md).
+
+**Plugin catalog.** One card per configured plugin repo (`Refinery:Repos`) showing status,
+project path, agents, scenario suites, and invariant checkers, plus any build error or
+warning. **Build & reload all** refreshes every repo; per-plugin **Reload** hot-reloads
+one. Loaded plugins with suites get two actions: **Run baseline** (measure only) and
+**Refine** (full proposal loop).
+
+**Campaigns.** A table of every campaign (id, agent/suite, status, invariant pass-rate,
+quality mean, runs). Clicking a row opens the detail view: baseline vs. current
+aggregates, per-round iterations, the accept/reject ledger, and — for accepted variants —
+a **Promote to agent** button that (after a confirmation dialog) writes the variant back
+to the real agent definition. Promotion is the only step that touches production files,
+and it is always human-initiated.
+
+### Refinery Control API (`/api/refinery`)
+
+The same backend the dashboard uses, exposed over HTTP for the
+[`revi` CLI](revi-cli.md) and other clients. By default the group is **unauthenticated**
+(local/operator use); set `Forge:RefineryApi:RequireApiKey = true` to guard every
+endpoint with the same `X-Forge-ApiKey` validation the `/api/v1` gateway uses.
+
+| Endpoint | What it does |
+| --- | --- |
+| `GET /plugins` | Plugin catalog (status, agents, suites, invariants). |
+| `POST /plugins/refresh` | Rebuild + reload all plugin repos; returns the catalog. |
+| `POST /plugins/{name}/reload` | Hot-reload one plugin. 404 if unknown. |
+| `GET /campaigns` | List all campaigns. |
+| `POST /campaigns` | Start a campaign from a `CampaignSpec` (202 with `{id, status}`). `AutoPropose=false` runs a baseline only. |
+| `GET /campaigns/{id}` | Full campaign state (spec, status, iterations, aggregates). |
+| `GET /campaigns/{id}/ledger` | Accept/reject ledger entries for the campaign. |
+| `POST /campaigns/{id}/stop` | Request cancellation. 200 `{stopped:true}` when signalled; 404 unknown id; 400 already terminal. |
+| `POST /campaigns/{id}/promote/{variantId}` | Promote an accepted variant to the real agent files. |
+| `GET /meta` | Knob-effectiveness rollup mined from ledgers across campaigns (`?agent=` to scope). |
+| `POST /optimize` | One-shot prompt optimize: run models×runs, analyze, suggest, return the revised `.pmt`. |
+| `POST /test/run` | Run a saved suite by name (prompt- or agent-mode); returns the `SuiteRunSummary`. |
+| `GET /calibration` | Confidence-vs-accuracy calibration report (`?agent=` required, `&version=` optional). |
+| `POST /generate-scenarios` | LLM-author new evaluation scenarios for an agent/category. |
 
 ---
 
