@@ -45,12 +45,11 @@ public sealed class MetaAnalyzer(ICampaignStore store)
     {
         IReadOnlyList<Campaign> campaigns = await store.ListAsync(ct).ConfigureAwait(false);
 
-        List<LedgerEntry> entries = [];
-        foreach (Campaign campaign in campaigns)
-        {
-            ct.ThrowIfCancellationRequested();
-            entries.AddRange(await store.GetLedgerAsync(campaign.Id, ct).ConfigureAwait(false));
-        }
+        // Fetch every campaign's ledger concurrently — for the Mongo store this collapses N sequential
+        // round-trips into one parallel batch (the driver is thread-safe; the in-memory store locks per list).
+        IReadOnlyList<LedgerEntry>[] ledgers = await Task.WhenAll(
+            campaigns.Select(c => store.GetLedgerAsync(c.Id, ct))).ConfigureAwait(false);
+        List<LedgerEntry> entries = ledgers.SelectMany(l => l).ToList();
 
         IEnumerable<LedgerEntry> filtered = agentName is null
             ? entries

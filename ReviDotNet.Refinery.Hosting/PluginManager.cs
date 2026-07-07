@@ -281,9 +281,11 @@ public sealed class PluginManager : IDisposable
 
     private void SetupWatchers()
     {
-        if (_disposed) return;
         lock (_watchLock)
         {
+            // Checked INSIDE the lock: Dispose() tears down watch state under the same lock, so a
+            // watcher can never be created after (or while) disposal runs.
+            if (_disposed) return;
             DisposeWatchersNoLock();
 
             foreach (RepoSource repo in _options.Repos)
@@ -368,8 +370,10 @@ public sealed class PluginManager : IDisposable
         {
             if (_debounceTimers.Remove(projectPath, out Timer? t))
                 t.Dispose();
+            // Checked INSIDE the lock so a concurrent Dispose() (which sets _disposed and disposes _gate
+            // under this same lock) can never slip in between the check and the reload kick-off below.
+            if (_disposed) return;
         }
-        if (_disposed) return;
 
         // Fire-and-forget the reload; ReloadAsync serializes via _gate and waits on leases internally.
         _ = ReloadSafeAsync(projectPath);
@@ -380,6 +384,11 @@ public sealed class PluginManager : IDisposable
         try
         {
             await ReloadAsync(projectPath);
+        }
+        catch (ObjectDisposedException) when (_disposed)
+        {
+            // Shutdown race: the manager was disposed after this reload was queued (the disposed _gate
+            // throws). Nothing to reload; stay quiet rather than warn on every shutdown.
         }
         catch (Exception ex)
         {
@@ -403,10 +412,15 @@ public sealed class PluginManager : IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
+        // Set _disposed under _watchLock so the watch callbacks' inside-lock checks (SetupWatchers /
+        // DebounceReload / OnDebounceElapsed) are true mutual exclusion: after this block exits, no new
+        // watcher can be created and no new reload can be kicked off.
         lock (_watchLock)
+        {
+            if (_disposed) return;
+            _disposed = true;
             DisposeWatchersNoLock();
+        }
         _gate.Dispose();
     }
 

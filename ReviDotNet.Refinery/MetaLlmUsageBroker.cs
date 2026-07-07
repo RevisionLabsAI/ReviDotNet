@@ -19,8 +19,9 @@ namespace Revi.Refinery;
 /// </para>
 /// <para>
 /// This is a DI singleton, but its state is per-async-flow via an <see cref="AsyncLocal{T}"/>, so the single
-/// shared instance is safe across concurrent campaigns. Outside any scope, <see cref="Record"/> is a no-op
-/// and <see cref="Spent"/> is 0.
+/// shared instance is safe across concurrent campaigns. Within a scope, <see cref="Record"/> uses
+/// <see cref="Interlocked"/> so the total stays correct even if scoring is ever parallelized inside one
+/// campaign. Outside any scope, <see cref="Record"/> is a no-op and <see cref="Spent"/> is 0.
 /// </para>
 /// </summary>
 public sealed class MetaLlmUsageBroker
@@ -47,11 +48,11 @@ public sealed class MetaLlmUsageBroker
 
         long tokens = (usage.InputTokens ?? 0) + (usage.OutputTokens ?? 0);
         if (tokens > 0)
-            acc.Spent += tokens;
+            Interlocked.Add(ref acc.Spent, tokens);
     }
 
     /// <summary>Total meta-LLM tokens recorded in the current scope (0 when no scope is open).</summary>
-    public long Spent => Current.Value?.Spent ?? 0;
+    public long Spent => Current.Value is { } acc ? Interlocked.Read(ref acc.Spent) : 0;
 
     private void End() => Current.Value = null;
 
