@@ -9,7 +9,7 @@ namespace Revi.Refinery;
 /// <summary>A proposed revision to an agent/prompt definition.</summary>
 /// <param name="KnobType">The lever changed (system-prompt, few-shot, guardrail, …).</param>
 /// <param name="RevisedContent">The full revised .agent/.pmt content.</param>
-/// <param name="Diff">A unified diff vs the current definition (for display/review).</param>
+/// <param name="Diff">A standard unified diff (one full-context <c>@@</c> hunk) vs the current definition — human-readable AND machine re-appliable.</param>
 /// <param name="Rationale">Why this change should help.</param>
 public sealed record Proposal(string KnobType, string RevisedContent, string Diff, string Rationale);
 

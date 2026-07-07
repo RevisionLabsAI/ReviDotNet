@@ -127,9 +127,12 @@ public sealed class LlmDiffProposer(IInferService infer, MetaLlmUsageBroker meta
     }
 
     /// <summary>
-    /// A small, dependency-free unified-style line diff of <paramref name="oldText"/> vs
-    /// <paramref name="newText"/>. Uses an LCS to mark unchanged context lines and emits added/removed
-    /// lines with <c>+</c>/<c>-</c> prefixes. Intended for human review, not for machine re-application.
+    /// A small, dependency-free STANDARD unified line diff of <paramref name="oldText"/> vs
+    /// <paramref name="newText"/>: one full-context <c>@@ -1,n +1,m @@</c> hunk whose body uses the standard
+    /// single-character prefixes (<c>' '</c> context / <c>'-'</c> removed / <c>'+'</c> added). Because every
+    /// line is included as context, the output reads exactly like the old review-only diff while ALSO being
+    /// machine re-appliable (Forge's <c>PromoteVariantAsync</c> diff fallback parses this format). Uses an
+    /// LCS to mark unchanged lines.
     /// </summary>
     internal static string UnifiedDiff(string oldText, string newText)
     {
@@ -146,27 +149,28 @@ public sealed class LlmDiffProposer(IInferService infer, MetaLlmUsageBroker meta
                     : Math.Max(lcs[i + 1, j], lcs[i, j + 1]);
 
         StringBuilder sb = new();
+        sb.Append("@@ -1,").Append(n).Append(" +1,").Append(m).Append(" @@\n");
         int x = 0, y = 0;
         while (x < n && y < m)
         {
             if (a[x] == b[y])
             {
-                sb.Append("  ").Append(a[x]).Append('\n');
+                sb.Append(' ').Append(a[x]).Append('\n');
                 x++; y++;
             }
             else if (lcs[x + 1, y] >= lcs[x, y + 1])
             {
-                sb.Append("- ").Append(a[x]).Append('\n');
+                sb.Append('-').Append(a[x]).Append('\n');
                 x++;
             }
             else
             {
-                sb.Append("+ ").Append(b[y]).Append('\n');
+                sb.Append('+').Append(b[y]).Append('\n');
                 y++;
             }
         }
-        while (x < n) sb.Append("- ").Append(a[x++]).Append('\n');
-        while (y < m) sb.Append("+ ").Append(b[y++]).Append('\n');
+        while (x < n) sb.Append('-').Append(a[x++]).Append('\n');
+        while (y < m) sb.Append('+').Append(b[y++]).Append('\n');
 
         return sb.ToString();
     }

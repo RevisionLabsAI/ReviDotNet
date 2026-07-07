@@ -13,6 +13,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Revi;
 using Revi.Refinery;
+using ReviDotNet.Forge.Services;
 using Xunit;
 
 namespace ReviDotNet.Tests.Refinery;
@@ -120,6 +121,35 @@ public class LlmDiffProposerTests
         Proposal? result = await proposer.ProposeAsync("filer", CurrentDefinition, Scores(), Cards());
 
         result.Should().BeNull();
+    }
+
+    // ── Diff format: the proposer's unified diff must round-trip through the promote applier ──
+
+    [Fact]
+    public void UnifiedDiff_EmitsStandardHunkHeader_AndSingleCharPrefixes()
+    {
+        string diff = LlmDiffProposer.UnifiedDiff(CurrentDefinition, RevisedDefinition);
+
+        diff.Should().StartWith("@@ -1,");
+        diff.Should().Contain("-You route reports. You may update a contradicting claim.");
+        diff.Should().Contain("+You route reports. You MUST fact-check before updating a contradicting claim.");
+        diff.Should().Contain(" name = filer"); // unchanged line carried as single-space context
+    }
+
+    [Theory]
+    [InlineData(CurrentDefinition, RevisedDefinition)]                          // replace a middle line
+    [InlineData("a\nb\nc\n", "a\nb\nc\nd\n")]                                   // append at the end
+    [InlineData("a\nb\nc\n", "b\nc\n")]                                        // delete the first line
+    [InlineData("one\n\ntwo\n", "one\n\ntwo\nthree\n")]                        // blank context line survives
+    [InlineData("x\n", "y\n")]                                                  // full replacement
+    public void UnifiedDiff_RoundTrips_ThroughPromoteApplier(string oldText, string newText)
+    {
+        string diff = LlmDiffProposer.UnifiedDiff(oldText, newText);
+
+        bool applied = RefineryCampaignService.UnifiedDiff.TryApply(oldText, diff, out string result);
+
+        applied.Should().BeTrue("the promote fallback must be able to re-apply every diff the proposer stores");
+        result.Should().Be(newText.Replace("\r\n", "\n"));
     }
 
     /// <summary>
