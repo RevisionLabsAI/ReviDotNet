@@ -7,7 +7,7 @@ live local run (dark mode, default `1560px` desktop width, 2× device scale for 
 - **Branch:** `feature/refinery-phase-2b-4`
 - **How:** headless Edge driving each route on `http://localhost:5000`, waiting for the
   Blazor Server circuit to render, then full-page capture. Data shown is the app's real
-  current state (registries loaded from embedded + GreatDebate RConfigs; no MongoDB, so
+  current state (registries loaded from embedded + host-app RConfigs; no MongoDB, so
   Observer shows its empty state).
 
 The **session view** (10 & 11) is the agent event-log / trace view. It is rendered from a

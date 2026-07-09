@@ -26,7 +26,7 @@ have a public parameterless constructor — the loader instantiates it with
 
 | Member | Responsibility |
 | --- | --- |
-| `Name` | Stable display/identifier name, e.g. `"GreatDebate"`. This is what campaigns, the CLI, and the dashboard refer to. |
+| `Name` | Stable display/identifier name, e.g. `"MyApp"`. This is what campaigns, the CLI, and the dashboard refer to. |
 | `ConfigureServices(services, configuration)` | Register the app's services into a **per-campaign DI scope** — repositories bound to an **isolated test store**, search/scrape configuration, etc. Never wire production data sinks here. |
 | `CreateTools(services)` | Create the agent tools (e.g. domain bridge tools) resolved from that configured scope. Returns `IEnumerable<IBuiltInTool>`. |
 | `GetAgents()` | The agents this plugin exposes for evaluation/refinement, as `RefinableAgent(Name, Description)` records. |

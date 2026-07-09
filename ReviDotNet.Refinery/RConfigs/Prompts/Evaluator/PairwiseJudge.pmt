@@ -63,7 +63,7 @@ Chatbot answer to a user asking about a topic only partially covered by the prov
 "Support has grown to 62% in 2023..." (states a figure not present in the provided context; no disclaimer)
 
 [Output B]
-"Based on GreatDebate's coverage, ... On the specific 2023 figure, GreatDebate does not currently have
+"Based on the provided context, ... On the specific 2023 figure, the context does not currently include
 that data, so I can't state it." (grounded; discloses the gap)
 
 [[_exout_1]]

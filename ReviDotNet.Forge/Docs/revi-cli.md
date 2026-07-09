@@ -68,7 +68,7 @@ and invariant counts. Load errors and warnings print indented under the affected
 $ revi plugins list
 NAME                           STATUS       AGENTS SUITES   INV
 ----------------------------------------------------------------
-GreatDebate.Refinery           Loaded            2      3     5
+MyApp.Refinery           Loaded            2      3     5
 ```
 
 ### `revi plugins refresh`
@@ -82,7 +82,7 @@ Refreshing all plugins…
 Refresh complete.
 NAME                           STATUS       AGENTS SUITES   INV
 ----------------------------------------------------------------
-GreatDebate.Refinery           Loaded            2      3     5
+MyApp.Refinery           Loaded            2      3     5
 ```
 
 ### `revi plugins reload <name>`
@@ -91,10 +91,10 @@ GreatDebate.Refinery           Loaded            2      3     5
 prints its refreshed row. An unknown name is a 404 from the server → exit code 2.
 
 ```
-$ revi plugins reload GreatDebate.Refinery
-Reloading plugin 'GreatDebate.Refinery'…
+$ revi plugins reload MyApp.Refinery
+Reloading plugin 'MyApp.Refinery'…
 Reload complete.
-GreatDebate.Refinery           Loaded            2      3     5
+MyApp.Refinery           Loaded            2      3     5
 ```
 
 ### `revi refine run`
@@ -126,14 +126,14 @@ evaluates them on held-out scenarios, and accepts or rejects them against the re
 gate.
 
 ```
-$ revi refine run --plugin GreatDebate.Refinery --agent Researcher --suite core --samples 3
+$ revi refine run --plugin MyApp.Refinery --agent Researcher --suite core --samples 3
 Campaign started  id=1f3a…  status=Pending  mode=full refinement loop
 Polling http://localhost:5000/ every 3 s (timeout 30 min)…
   status=Running              tokens=    412 903  rounds=  4
 
 Campaign  : 1f3a…
 Status    : Converged
-Plugin    : GreatDebate.Refinery
+Plugin    : MyApp.Refinery
 Agent     : Researcher
 Suite     : core
 Tokens    : 812,455
@@ -181,7 +181,7 @@ agent, suite, tokens, rounds, baseline vs. current aggregates) for an existing c
 $ revi refine status 1f3a…
 Campaign  : 1f3a…
 Status    : Running
-Plugin    : GreatDebate.Refinery
+Plugin    : MyApp.Refinery
 Agent     : Researcher
 Suite     : core
 Tokens    : 412,903
@@ -201,8 +201,8 @@ Rounds    : 4
 $ revi refine list
 ID                                     STATUS           PLUGIN               AGENT                    TOKENS
 ------------------------------------------------------------------------------------------------------------
-1f3a…                                  Converged        GreatDebate.Refinery Researcher               812455
-9c02…                                  Running          GreatDebate.Refinery FactChecker              120884
+1f3a…                                  Converged        MyApp.Refinery Researcher               812455
+9c02…                                  Running          MyApp.Refinery FactChecker              120884
 ```
 
 ### `revi refine ledger <id>`

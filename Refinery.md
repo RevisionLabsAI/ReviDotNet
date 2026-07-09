@@ -25,7 +25,7 @@ propose, gate, and accept prompt/agent changes — always behind a human-gated p
 | `ReviDotNet.Refinery.Hosting` | **Plugin lifecycle**: discover plugin projects → `dotnet build` → load into a collectible `AssemblyLoadContext` → instantiate the plugin → catalog / reload. |
 | `ReviDotNet.Forge` | The **host**: wires the engine + hosting into DI, exposes the `/api/refinery` Control API and the `/refinery` dashboard. |
 
-Dependency direction: `Sdk ← Refinery ← Hosting ← Forge`, and a plugin (e.g. `GreatDebate.Refinery`)
+Dependency direction: `Sdk ← Refinery ← Hosting ← Forge`, and a plugin (e.g. `MyApp.Refinery`)
 references `Sdk` only. `Core` sits under everything.
 
 ## The plugin contract

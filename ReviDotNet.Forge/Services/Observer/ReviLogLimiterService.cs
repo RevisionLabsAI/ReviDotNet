@@ -203,7 +203,7 @@ public sealed class ReviLogLimiterService : IReviLogLimiter
             var dir = new DirectoryInfo(startDir);
             while (dir is not null)
             {
-                if (File.Exists(Path.Combine(dir.FullName, "BetterNamer.sln")))
+                if (Directory.GetFiles(dir.FullName, "*.sln").Length > 0)
                     return dir.FullName;
                 dir = dir.Parent;
             }

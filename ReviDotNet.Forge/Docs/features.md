@@ -380,7 +380,7 @@ Request body (`ForgeInferRequest`):
 
 ```json
 {
-  "ClientId": "BetterNamer-Prod",
+  "ClientId": "MyApp-Prod",
   "PromptName": "Search.AnalyzeSpecs",      // optional — looks up by name
   "PromptContent": "...",                    // optional — ad hoc system content
   "Inputs": [{ "Label": "Task", "Text": "..." }],

@@ -440,7 +440,7 @@ public sealed class RefineryCampaignService(
 
         // 2. Config-driven path template relative to the plugin's repo root.
         string template = _config["Refinery:AgentRConfigPath"]
-            ?? "GreatDebate.Researcher/RConfigs/Agents/{agent}.agent";
+            ?? "RConfigs/Agents/{agent}.agent";
         string relative = template.Replace("{agent}", agentName);
         string diskPath = Path.IsPathRooted(relative) ? relative : Path.Combine(lp.RepoPath, relative);
         if (File.Exists(diskPath))

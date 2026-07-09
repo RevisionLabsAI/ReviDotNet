@@ -83,7 +83,7 @@ Mongo/Workshop bus that the UI is watching.
 ## Persistence
 
 Forge stores three things in MongoDB when one is configured. The database name defaults
-to `BetterNamer` (configurable via `Observer:MongoDb:DatabaseName`).
+to `ReviForge` (configurable via `Observer:MongoDb:DatabaseName`).
 
 | Collection | Owner | What it holds |
 | --- | --- | --- |

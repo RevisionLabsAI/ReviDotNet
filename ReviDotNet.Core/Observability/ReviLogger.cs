@@ -631,8 +631,8 @@ public class ReviLogger : IReviLogger
 
 	private static string? ResolveLimiterPath()
 	{
-		// Priority: ENV var, then app base file (txt), then solution BetterNamer.Blazor root (txt),
-		// then legacy locations (.rcfg in RConfigs)
+		// Priority: ENV var, then app base file (txt), then the solution root and its immediate
+		// subprojects (txt), then legacy locations (.rcfg in RConfigs).
 		try
 		{
 			string? envPath = Environment.GetEnvironmentVariable("REVILOGGER_LIMITER_PATH");
@@ -644,12 +644,16 @@ public class ReviLogger : IReviLogger
 			string newTxt = Path.Combine(baseDir, "revilogger_limiter.txt");
 			if (File.Exists(newTxt)) return newTxt;
 
-			// When running from source, check solution root + BetterNamer.Blazor root for the new txt
+			// When running from source, check the solution root and its immediate
+			// subdirectories (host web/app projects) for the new txt.
 			string? solutionRoot = TryFindSolutionRoot(baseDir);
 			if (solutionRoot != null)
 			{
-				string blazorTxt = Path.Combine(solutionRoot, "BetterNamer.Blazor", "revilogger_limiter.txt");
-				if (File.Exists(blazorTxt)) return blazorTxt;
+				string rootTxt = Path.Combine(solutionRoot, "revilogger_limiter.txt");
+				if (File.Exists(rootTxt)) return rootTxt;
+
+				string? subTxt = FindInImmediateSubdirectories(solutionRoot, "revilogger_limiter.txt");
+				if (subTxt != null) return subTxt;
 			}
 
 			// Legacy fallbacks: RConfigs\revilogger_limiter.rcfg in app base and repo
@@ -659,8 +663,26 @@ public class ReviLogger : IReviLogger
 
 			if (solutionRoot != null)
 			{
-				string blazorPath = Path.Combine(solutionRoot, "BetterNamer.Blazor", "RConfigs", "revilogger_limiter.rcfg");
-				if (File.Exists(blazorPath)) return blazorPath;
+				string rootRcfg = Path.Combine(solutionRoot, "RConfigs", "revilogger_limiter.rcfg");
+				if (File.Exists(rootRcfg)) return rootRcfg;
+
+				string? subRcfg = FindInImmediateSubdirectories(
+					solutionRoot, Path.Combine("RConfigs", "revilogger_limiter.rcfg"));
+				if (subRcfg != null) return subRcfg;
+			}
+		}
+		catch { }
+		return null;
+	}
+
+	private static string? FindInImmediateSubdirectories(string root, string relativeFile)
+	{
+		try
+		{
+			foreach (string sub in Directory.GetDirectories(root))
+			{
+				string candidate = Path.Combine(sub, relativeFile);
+				if (File.Exists(candidate)) return candidate;
 			}
 		}
 		catch { }
@@ -674,8 +696,8 @@ public class ReviLogger : IReviLogger
 			string? dir = startDir;
 			for (int i = 0; i < 6 && dir != null; i++)
 			{
-				string sln = Path.Combine(dir, "BetterNamer.sln");
-				if (File.Exists(sln)) return dir;
+				if (Directory.Exists(dir) && Directory.GetFiles(dir, "*.sln").Length > 0)
+					return dir;
 				dir = Path.GetDirectoryName(dir);
 			}
 		}

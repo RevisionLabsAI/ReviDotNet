@@ -232,7 +232,7 @@ environment variable is set on the Forge container so it can call upstream APIs.
 1. **Issue an API key.**
    - Open **API Keys** in the Forge UI.
    - **Generate New Key.** Enter a `ClientId` that identifies the consuming application
-     (e.g., `BetterNamer-Prod`, `Search-Staging`).
+     (e.g., `MyApp-Prod`, `Search-Staging`).
    - Copy the raw key (`forge_…`) from the modal *immediately* — it is only shown once.
    - The grid will show the new key disabled-toggleable, with prefix and creation time.
 2. **Configure the client app.** If the client is a **ReviDotNet.Core** consumer, you don't need
@@ -248,7 +248,7 @@ environment variable is set on the Forge container so it can call upstream APIs.
    Content-Type: application/json
 
    {
-     "ClientId": "BetterNamer-Prod",
+     "ClientId": "MyApp-Prod",
      "PromptName": "Search.AnalyzeSpecs",
      "Inputs": [{ "Label": "Specs", "Text": "…" }],
      "MinTier": "B",

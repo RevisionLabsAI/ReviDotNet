@@ -43,7 +43,7 @@ switches three subsystems from in-memory to Mongo-backed:
 When empty, all three fall back to no-op / in-memory implementations. **API keys do not
 survive a restart in that mode.**
 
-### `Observer:MongoDb:DatabaseName` (string, default `BetterNamer`)
+### `Observer:MongoDb:DatabaseName` (string, default `ReviForge`)
 
 The database name inside the configured Mongo cluster. The default is a placeholder
 that reflects Forge's first internal user; change it for your own deployment.
@@ -118,7 +118,7 @@ Bound from the same `Refinery` section
 | `Refinery:BuildConfiguration` | string | `Debug` | Default `dotnet build` configuration when a repo doesn't override it. |
 | `Refinery:TargetFramework` | string | `net9.0` | TFM to build/resolve — disambiguates the output assembly when a plugin multi-targets (`<TargetFrameworks>`). |
 
-### `Refinery:AgentRConfigPath` (string, default `GreatDebate.Researcher/RConfigs/Agents/{agent}.agent`)
+### `Refinery:AgentRConfigPath` (string, default `RConfigs/Agents/{agent}.agent`)
 
 Fallback path template for resolving an agent's raw `.agent` definition text (used as
 judge context in campaigns). `{agent}` is replaced with the agent name; relative paths

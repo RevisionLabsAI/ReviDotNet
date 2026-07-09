@@ -10,7 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Revi.Refinery;
 
 /// <summary>
-/// A refinement plugin contributed by a host application (e.g. GreatDebate). It registers the app's
+/// A refinement plugin contributed by a host application (e.g. "MyApp"). It registers the app's
 /// runtime services and tools (bound to an ISOLATED test environment), and advertises the agents,
 /// scenario suites, and invariant checkers the Refinery engine should evaluate and improve.
 /// <para>
@@ -21,7 +21,7 @@ namespace Revi.Refinery;
 /// </summary>
 public interface IRefinementPlugin
 {
-    /// <summary>Stable display/identifier name, e.g. "GreatDebate".</summary>
+    /// <summary>Stable display/identifier name, e.g. "MyApp".</summary>
     string Name { get; }
 
     /// <summary>

@@ -15,7 +15,7 @@ public sealed class ForgeMongoConnectionService : IForgeMongoConnectionService
     public ForgeMongoConnectionService(IConfiguration configuration)
     {
         string connectionString = configuration["Observer:MongoDb:ConnectionString"]!;
-        string databaseName = configuration["Observer:MongoDb:DatabaseName"] ?? "BetterNamer";
+        string databaseName = configuration["Observer:MongoDb:DatabaseName"] ?? "ReviForge";
 
         var client = new MongoClient(connectionString);
         _database = client.GetDatabase(databaseName);
