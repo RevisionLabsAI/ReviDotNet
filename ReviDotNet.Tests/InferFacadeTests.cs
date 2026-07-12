@@ -76,7 +76,7 @@ public class InferFacadeTests
             ProviderName = providerName,
             Provider = provider,
             Tier = ModelTier.C,
-            TokenLimit = 10_000,
+            ContextWindow = 10_000,
             // Prompt-completion template pieces sufficient for CompletionPrompt.BuildString.
             Structure = "{system}{instruction}{input}{example}{output}",
             SystemSection = "SYS: {content}\n",

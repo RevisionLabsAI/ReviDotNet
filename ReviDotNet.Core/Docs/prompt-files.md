@@ -62,7 +62,7 @@ Operational settings that govern how the prompt is executed. All items in this s
 | `retry-prompt` | string | `default` | Custom instruction used during retries.                                                                                                                                                                                                                                                                |
 | `few-shot-examples` | integer | `all` | Number of examples to include in the prompt context.                                                                                                                                                                                                                                                   |
 | `best-of` | integer/string | `1` | Request multiple completions and return the best one.                                                                                                                                                                                                                                                  |
-| `max-tokens` | integer | `model default` | Maximum number of tokens to generate.                                                                                                                                                                                                                                                                  |
+| `output-budget` | integer | `model default` | Maximum number of tokens to generate.                                                                                                                                                                                                                                                                  |
 | `timeout` | integer/string | `30` | Request timeout in seconds.                                                                                                                                                                                                                                                                            |
 | `use-search-grounding`| boolean | `false` | If `true`, enables search-based grounding (if supported by model).                                                                                                                                                                                                                                     |
 | `thinking` | string | `null` | Per-request native thinking/reasoning amount as one of the five common words `minimal`/`low`/`medium`/`high`/`max`, or `none` to disable. **Overrides** the model's default `thinking` for this prompt; when **unset (the default), the prompt inherits the model's `thinking`**. The model's `thinking-conversion-*` table still translates the word into the provider value (Claude effort / Gemini budget / OpenAI `reasoning_effort`). See "Native thinking / reasoning" in `model-files.md`. |
@@ -200,20 +200,20 @@ request-json = true
 }
 ```
 
-#### Output-token budgets (`max-tokens`)
+#### Output-token budgets (`output-budget`)
 
-Declare an explicit `[[settings]] max-tokens` on any prompt whose output is machine-parsed: a
+Declare an explicit `[[settings]] output-budget` on any prompt whose output is machine-parsed: a
 truncated JSON document loses the entire result, and provider fallbacks are deliberately modest
 (the Anthropic client falls back to 4096 when nothing is configured). Size the ceiling to the
 artifact with generous headroom — `max_tokens` is a stop ceiling, not a billed amount, so a roomy
 value costs nothing unless the model actually generates that much.
 
 > **Model overrides WIN over prompt values.** On the standard inference path (`InferService`), a
-> model `.rcfg` `[[override-settings]] max-tokens` **replaces** the prompt's value for every prompt
-> that runs on that model — it is a forced override, not a cap. Set model-level `max-tokens` only
+> model `.rcfg` `[[override-settings]] output-budget` **replaces** the prompt's value for every prompt
+> that runs on that model — it is a forced override, not a cap. Set model-level `output-budget` only
 > when you really want to force one budget onto everything the model runs; otherwise leave it unset
 > and let each prompt declare its own. (Agent state inline settings are the opposite: a
-> `[[_state.X.settings]] max-tokens` beats the model value.)
+> `[[_state.X.settings]] output-budget` beats the model value.)
 
 ### Output Structure and Guidance
 
@@ -331,7 +331,7 @@ version = 1
 
 [[settings]]
 chain-of-thought = true
-max-tokens = 500
+output-budget = 500
 preferred-models = gpt-4o
 
 [[tuning]]

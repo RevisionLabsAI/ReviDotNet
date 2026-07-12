@@ -102,10 +102,10 @@ internal sealed class AgentTestHarness : IDisposable
             ProviderName = ProviderName,
             Provider = _provider,
             Tier = ModelTier.A,
-            TokenLimit = 8192,
+            ContextWindow = 8192,
             // Pin a small MaxTokens so cost projection roughly matches the fake server's
             // default output token count (50). This keeps budget tests' arithmetic predictable.
-            MaxTokens = "200",
+            OutputBudget = "200",
             CostPerMillionInputTokens = costPerMillionInputTokens,
             CostPerMillionOutputTokens = costPerMillionOutputTokens,
             DefaultSystemInputType = InputType.Filled,

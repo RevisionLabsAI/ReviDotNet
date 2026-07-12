@@ -382,6 +382,7 @@ public class AgentProfile
             }
         }
 
+        RConfigParser.ThrowOnRetiredKeys(dict);
         var settings = new Prompt();
         foreach (var prop in typeof(Prompt).GetProperties())
         {

@@ -16,7 +16,7 @@ preferred-models = claude-sonnet-4-6, claude-sonnet-4-5, claude-opus-4-8
 min-tier = A
 # The verdict must never be truncatable: an unfinished JSON object loses the quality score entirely.
 # Defense-in-depth alongside the provider payload fix — do not remove.
-max-tokens = 3000
+output-budget = 3000
 # The _exout examples are deliberately JSON, not the YAML .pmt files usually prefer: this output is
 # machine-parsed and is the refinement loop's single point of failure, so the examples must demonstrate
 # the exact JSON shape and scalar types the consumer deserializes (JsonifyExample passes them through).

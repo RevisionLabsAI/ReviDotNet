@@ -126,7 +126,7 @@ public class PromptRegistryService
         string? guidanceSchemaStr = ToGuidanceSchemaString(prompt.GuidanceSchema);
         bool hasSettings = prompt.RequestJson == true || guidanceSchemaStr is not null ||
                            prompt.ChainOfThought == true || prompt.FewShotExamples.HasValue ||
-                           prompt.MaxTokens.HasValue || prompt.Timeout.HasValue ||
+                           prompt.OutputBudget.HasValue || prompt.Timeout.HasValue ||
                            prompt.RequireValidOutput == true;
         if (hasSettings)
         {
@@ -136,7 +136,7 @@ public class PromptRegistryService
                 sb.AppendLine($"guidance-schema-type = {guidanceSchemaStr}");
             if (prompt.ChainOfThought == true) sb.AppendLine("chain-of-thought = true");
             if (prompt.FewShotExamples.HasValue) sb.AppendLine($"few-shot-examples = {prompt.FewShotExamples}");
-            if (prompt.MaxTokens.HasValue) sb.AppendLine($"max-tokens = {prompt.MaxTokens}");
+            if (prompt.OutputBudget.HasValue) sb.AppendLine($"output-budget = {prompt.OutputBudget}");
             if (prompt.Timeout.HasValue) sb.AppendLine($"timeout = {prompt.Timeout}");
             if (prompt.RequireValidOutput == true) sb.AppendLine("require-valid-output = true");
             sb.AppendLine();

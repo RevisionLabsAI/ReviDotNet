@@ -41,7 +41,7 @@ Guidelines:
   request-json = true); keep an example that is already strict JSON as strict JSON — that signals a
   machine-parsed contract where exact scalar types matter. Escape a literal [[ at line start inside
   raw sections as \[[...]]
-- If the output is machine-parsed, keep/declare an explicit max-tokens in [[settings]] large enough
+- If the output is machine-parsed, keep/declare an explicit output-budget in [[settings]] large enough
   that the output can never be truncated
 
 Output ONLY the revised .pmt file content with no additional explanation, commentary, or markdown code fences. Start directly with [[information]].

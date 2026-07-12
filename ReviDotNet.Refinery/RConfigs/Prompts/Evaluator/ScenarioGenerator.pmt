@@ -11,7 +11,7 @@ guidance-schema-type = disabled
 preferred-models = claude-opus-4-8, claude-sonnet-4-6, claude-sonnet-4-5
 min-tier = A
 # Generates multiple full scenarios per call — never let the output be cut (see AgentRunJudge.pmt).
-max-tokens = 8000
+output-budget = 8000
 # JSON (not YAML) example output: this contract is machine-parsed — see AgentRunJudge.pmt.
 
 [[_system]]

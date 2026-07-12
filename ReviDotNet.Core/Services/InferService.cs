@@ -856,7 +856,7 @@ public sealed class InferService(
                 {
                     totalLength = promptString.Length;
                     int estInputTokens = Util.EstTokenCountFromCharCount(totalLength);
-                    if (estInputTokens > model.TokenLimit)
+                    if (estInputTokens > model.ContextWindow)
                         throw new Exception("Too many tokens!");
 
                     response = await model.Provider.InferenceClient.GenerateAsync(
@@ -868,7 +868,7 @@ public sealed class InferService(
                         minP: (float?)SelectParam(model.MinP, prompt.MinP),
                         bestOf: (int?)SelectParam(model.BestOf, prompt.BestOf),
                         maxTokenType: model.MaxTokenType,
-                        maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.MaxTokens, prompt.MaxTokens), estInputTokens, model, prompt.Name ?? ""),
+                        maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.OutputBudget, prompt.OutputBudget), estInputTokens, model, prompt.Name ?? ""),
                         frequencyPenalty: (float?)SelectParam(model.FrequencyPenalty, prompt.FrequencyPenalty),
                         presencePenalty: (float?)SelectParam(model.PresencePenalty, prompt.PresencePenalty),
                         repetitionPenalty: (float?)SelectParam(model.RepetitionPenalty, prompt.RepetitionPenalty),
@@ -885,7 +885,7 @@ public sealed class InferService(
                 {
                     totalLength = messages.Sum(msg => msg.Role.Length + msg.Content.Length);
                     int estInputTokens = Util.EstTokenCountFromCharCount(totalLength);
-                    if (estInputTokens > model.TokenLimit)
+                    if (estInputTokens > model.ContextWindow)
                         throw new Exception("Too many tokens!");
 
                     response = await model.Provider.InferenceClient.GenerateAsync(
@@ -897,7 +897,7 @@ public sealed class InferService(
                         minP: (float?)SelectParam(model.MinP, prompt.MinP),
                         bestOf: (int?)SelectParam(model.BestOf, prompt.BestOf),
                         maxTokenType: model.MaxTokenType,
-                        maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.MaxTokens, prompt.MaxTokens), estInputTokens, model, prompt.Name ?? ""),
+                        maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.OutputBudget, prompt.OutputBudget), estInputTokens, model, prompt.Name ?? ""),
                         frequencyPenalty: (float?)SelectParam(model.FrequencyPenalty, prompt.FrequencyPenalty),
                         presencePenalty: (float?)SelectParam(model.PresencePenalty, prompt.PresencePenalty),
                         repetitionPenalty: (float?)SelectParam(model.RepetitionPenalty, prompt.RepetitionPenalty),
@@ -960,7 +960,7 @@ public sealed class InferService(
                 {
                     totalLength = promptString.Length;
                     int estInputTokens = Util.EstTokenCountFromCharCount(totalLength);
-                    if (estInputTokens > model.TokenLimit)
+                    if (estInputTokens > model.ContextWindow)
                         throw new Exception("Too many tokens!");
 
                     streamResult = model.Provider.InferenceClient.GenerateStreamAsync(
@@ -972,7 +972,7 @@ public sealed class InferService(
                         minP: (float?)SelectParam(model.MinP, prompt.MinP),
                         bestOf: (int?)SelectParam(model.BestOf, prompt.BestOf),
                         maxTokenType: model.MaxTokenType,
-                        maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.MaxTokens, prompt.MaxTokens), estInputTokens, model, prompt.Name ?? ""),
+                        maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.OutputBudget, prompt.OutputBudget), estInputTokens, model, prompt.Name ?? ""),
                         frequencyPenalty: (float?)SelectParam(model.FrequencyPenalty, prompt.FrequencyPenalty),
                         presencePenalty: (float?)SelectParam(model.PresencePenalty, prompt.PresencePenalty),
                         repetitionPenalty: (float?)SelectParam(model.RepetitionPenalty, prompt.RepetitionPenalty),
@@ -989,7 +989,7 @@ public sealed class InferService(
                 {
                     totalLength = messages.Sum(msg => msg.Role.Length + msg.Content.Length);
                     int estInputTokens = Util.EstTokenCountFromCharCount(totalLength);
-                    if (estInputTokens > model.TokenLimit)
+                    if (estInputTokens > model.ContextWindow)
                         throw new Exception("Too many tokens!");
 
                     streamResult = model.Provider.InferenceClient.GenerateStreamAsync(
@@ -1001,7 +1001,7 @@ public sealed class InferService(
                         minP: (float?)SelectParam(model.MinP, prompt.MinP),
                         bestOf: (int?)SelectParam(model.BestOf, prompt.BestOf),
                         maxTokenType: model.MaxTokenType,
-                        maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.MaxTokens, prompt.MaxTokens), estInputTokens, model, prompt.Name ?? ""),
+                        maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.OutputBudget, prompt.OutputBudget), estInputTokens, model, prompt.Name ?? ""),
                         frequencyPenalty: (float?)SelectParam(model.FrequencyPenalty, prompt.FrequencyPenalty),
                         presencePenalty: (float?)SelectParam(model.PresencePenalty, prompt.PresencePenalty),
                         repetitionPenalty: (float?)SelectParam(model.RepetitionPenalty, prompt.RepetitionPenalty),

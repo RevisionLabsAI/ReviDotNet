@@ -46,7 +46,7 @@
                     <MudItem xs="6"><MudSelect T="ModelTier" @bind-Value="_model.Tier" Label="tier" Variant="Variant.Outlined">
                         @foreach (var t in Enum.GetValues<ModelTier>()) { <MudSelectItem T="ModelTier" Value="@t">@t</MudSelectItem> }
                     </MudSelect></MudItem>
-                    <MudItem xs="6"><MudNumericField T="int" @bind-Value="_model.TokenLimit" Label="token-limit" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6"><MudNumericField T="int" @bind-Value="_model.ContextWindow" Label="context-window" Variant="Variant.Outlined" /></MudItem>
                     <MudItem xs="6"><MudTextField @bind-Value="_model.StopSequences" Label="stop-sequences" Variant="Variant.Outlined" /></MudItem>
                     <MudItem xs="6"><MudSelect T="MaxTokenType?" @bind-Value="_model.MaxTokenType" Label="max-token-type" Clearable="true" Variant="Variant.Outlined">
                         @foreach (var t in Enum.GetValues<MaxTokenType>()) { <MudSelectItem T="MaxTokenType?" Value="@t">@t</MudSelectItem> }
@@ -73,7 +73,7 @@
                     <MudItem xs="6"><MudTextField @bind-Value="_model.RetryPrompt" Label="retry-prompt" Variant="Variant.Outlined" /></MudItem>
                     <MudItem xs="6"><MudNumericField T="int?" @bind-Value="_model.FewShotExamples" Label="few-shot-examples" Variant="Variant.Outlined" Clearable="true" /></MudItem>
                     <MudItem xs="6"><MudTextField @bind-Value="_model.BestOf" Label="best-of" Variant="Variant.Outlined" /></MudItem>
-                    <MudItem xs="6"><MudTextField @bind-Value="_model.MaxTokens" Label="max-tokens" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6"><MudTextField @bind-Value="_model.OutputBudget" Label="output-budget" Variant="Variant.Outlined" /></MudItem>
                     <MudItem xs="6"><MudTextField @bind-Value="_model.Timeout" Label="timeout" Variant="Variant.Outlined" /></MudItem>
                     <MudItem xs="6"><MudTextField @bind-Value="_model.UseSearchGrounding" Label="use-search-grounding" Variant="Variant.Outlined" /></MudItem>
                     <MudItem xs="6"><MudSelect T="ModelTier?" @bind-Value="_model.MinTier" Label="min-tier" Clearable="true" Variant="Variant.Outlined">

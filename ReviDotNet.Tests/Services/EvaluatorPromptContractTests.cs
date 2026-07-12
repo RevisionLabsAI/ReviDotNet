@@ -56,9 +56,9 @@ public sealed class EvaluatorPromptContractTests
     [InlineData("PairwiseJudge.pmt", 2000)]
     [InlineData("Proposer.pmt", 8000)]
     [InlineData("ScenarioGenerator.pmt", 8000)]
-    public void Evaluator_prompts_declare_an_explicit_max_tokens(string file, int expected)
+    public void Evaluator_prompts_declare_an_explicit_output_budget(string file, int expected)
     {
-        LoadPrompt(file).MaxTokens.Should().Be(expected,
+        LoadPrompt(file).OutputBudget.Should().Be(expected,
             "evaluator outputs are machine-parsed; a truncated verdict loses the whole result, so the " +
             "budget must be declared on the prompt, not inherited from provider defaults");
     }

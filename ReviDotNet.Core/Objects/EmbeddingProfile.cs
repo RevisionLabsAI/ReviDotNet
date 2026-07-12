@@ -58,10 +58,11 @@ public class EmbeddingProfile
     public ModelTier Tier { get; set; } 
     
     /// <summary>
-    /// Gets or sets the maximum number of tokens that can be processed by this embedding model in a single request.
+    /// The maximum number of tokens this embedding model can process in a single request.
+    /// (Renamed from <c>token-limit</c>, 2026-07, to match the inference-model naming.)
     /// </summary>
-    [RConfigProperty("settings_token-limit")]
-    public int TokenLimit { get; set; } 
+    [RConfigProperty("settings_context-window")]
+    public int ContextWindow { get; set; }
     
     /// <summary>
     /// Gets or sets the type of token limit enforcement (Input, Output, or Combined).
@@ -70,11 +71,12 @@ public class EmbeddingProfile
     public MaxTokenType? MaxTokenType { get; set; }
     
     /// <summary>
-    /// Gets or sets the override for maximum number of tokens to process.
-    /// Can be a specific number or "disabled" to remove the limit.
+    /// Override for the maximum number of tokens to process — informational only for embeddings
+    /// (the embedding client does not truncate by token count).
+    /// Can be a specific number or "disabled". (Renamed from <c>max-tokens</c>, 2026-07.)
     /// </summary>
-    [RConfigProperty("override-settings_max-tokens")]
-    public string? MaxTokens { get; set; }
+    [RConfigProperty("override-settings_output-budget")]
+    public string? OutputBudget { get; set; }
     
     /// <summary>
     /// Gets or sets the override for request timeout duration.

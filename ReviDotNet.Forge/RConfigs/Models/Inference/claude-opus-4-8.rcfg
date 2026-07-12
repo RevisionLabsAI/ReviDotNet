@@ -6,7 +6,7 @@ provider-name = claude
 
 [[settings]]
 tier = A
-token-limit = 200000
+context-window = 200000
 supports-prompt-completion = true
 supports-response-completion = true
 # Default thinking amount for this model; a prompt's `thinking` overrides it, and a prompt that leaves
@@ -20,7 +20,7 @@ thinking-conversion-medium = medium
 thinking-conversion-high = high
 thinking-conversion-max = max
 
-# No [[override-settings]] max-tokens ON PURPOSE: a model-level max-tokens REPLACES every prompt's
+# No [[override-settings]] output-budget ON PURPOSE: a model-level output-budget REPLACES every prompt's
 # own value on this model (forced override, not a cap) — the old 32000 here silently discarded each
 # prompt's declared budget. Prompts declare their own ceilings; undeclared ones get the Anthropic
 # client's 4096 fallback.

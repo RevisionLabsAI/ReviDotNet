@@ -69,7 +69,7 @@
                     <MudItem xs="6"><MudCheckBox @bind-Value="_manualRequestJson" Label="request-json" Color="Color.Primary" /></MudItem>
                     <MudItem xs="6"><MudCheckBox @bind-Value="_manualChainOfThought" Label="chain-of-thought" Color="Color.Primary" /></MudItem>
                     <MudItem xs="6"><MudNumericField T="float?" @bind-Value="_manualTemperature" Label="temperature" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Step="0.05F" /></MudItem>
-                    <MudItem xs="6"><MudNumericField T="int?" @bind-Value="_manualMaxTokens" Label="max-tokens" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" /></MudItem>
+                    <MudItem xs="6"><MudNumericField T="int?" @bind-Value="_manualMaxTokens" Label="output-budget" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" /></MudItem>
                 </MudGrid>
                 <div class="d-flex gap-3 mt-4">
                     <MudButton Variant="Variant.Filled"
@@ -299,7 +299,7 @@
                 ChainOfThought = _manualChainOfThought ? true : null,
                 GuidanceSchema = _manualGuidance,
                 Temperature = _manualTemperature,
-                MaxTokens = _manualMaxTokens,
+                OutputBudget = _manualMaxTokens,
             };
             var content = PromptRegistryService.SerializePrompt(prompt);
             Registry.SaveNew(_manualName, content);

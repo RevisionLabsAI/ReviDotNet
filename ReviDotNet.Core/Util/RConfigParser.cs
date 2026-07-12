@@ -430,9 +430,40 @@ public static class RConfigParser
     /// <exception cref="ArgumentNullException">Thrown if the provided data is null.</exception>
     /// <exception cref="FormatException">Thrown if a value in the provided data cannot
     /// be converted to the type of the corresponding property in the object.</exception>
+    /// <summary>
+    /// Token-limit keys retired in the 2026-07 context/output naming cleanup, mapped to their canonical
+    /// replacement. Deliberately BREAKING: unknown keys are normally ignored silently, which would turn a
+    /// stale config into "no guard, provider fallback" with no signal — so a retired key fails the load
+    /// loudly instead (the per-file catch logs and skips the file).
+    /// </summary>
+    private static readonly Dictionary<string, string> RetiredKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["settings_token-limit"] = "context-window",
+        ["settings_max-output-tokens"] = "output-capacity",
+        ["settings_max-tokens"] = "output-budget",
+        ["override-settings_max-tokens"] = "output-budget",
+    };
+
+    /// <summary>Throws when <paramref name="data"/> contains a retired config key, naming the replacement.</summary>
+    public static void ThrowOnRetiredKeys(Dictionary<string, string> data)
+    {
+        foreach ((string retired, string replacement) in RetiredKeys)
+        {
+            if (data.ContainsKey(retired))
+            {
+                int sep = retired.IndexOf('_');
+                throw new FormatException(
+                    $"Config key '{retired[(sep + 1)..]}' (in [[{retired[..sep]}]]) was renamed to '{replacement}' — " +
+                    "context-window = total window, output-capacity = the model's max output per completion, " +
+                    "output-budget = the requested output ceiling for a call.");
+            }
+        }
+    }
+
     public static T? ToObject<T>(Dictionary<string, string> data, string? namePrefix = "") where T : new()
     {
         ArgumentNullException.ThrowIfNull(data);
+        ThrowOnRetiredKeys(data);
         var obj = new T();
         var properties = typeof(T).GetProperties();
 

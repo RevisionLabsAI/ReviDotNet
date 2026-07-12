@@ -1,4 +1,4 @@
-﻿[[general]]
+[[general]]
 name = gpt-4o-mini
 enabled = true
 model-string = gpt-4o-mini
@@ -6,6 +6,6 @@ provider-name = openai
 
 [[settings]]
 tier = C
-token-limit = 128000
+context-window = 128000
 # gpt-4o-mini is not a reasoning model; default off.
 thinking = none

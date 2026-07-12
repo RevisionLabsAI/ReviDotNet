@@ -80,7 +80,7 @@ else
         yield return ("Provider", _model.ProviderName ?? "");
         yield return ("Model string", _model.ModelString ?? "");
         yield return ("Tier", _model.Tier.ToString());
-        yield return ("Token limit", _model.TokenLimit.ToString());
+        yield return ("Context window", _model.ContextWindow.ToString());
         yield return ("Stop sequences", _model.StopSequences ?? "");
         yield return ("Max token type", _model.MaxTokenType?.ToString() ?? "");
         yield return ("Supports prompt completion", _model.SupportsPromptCompletion?.ToString() ?? "");
@@ -94,7 +94,7 @@ else
         yield return ("Override presence-penalty", _model.PresencePenalty ?? "");
         yield return ("Override frequency-penalty", _model.FrequencyPenalty ?? "");
         yield return ("Override repetition-penalty", _model.RepetitionPenalty ?? "");
-        yield return ("Override max-tokens", _model.MaxTokens ?? "");
+        yield return ("Override output-budget", _model.OutputBudget ?? "");
         yield return ("Override timeout", _model.Timeout ?? "");
         yield return ("Override request-json", _model.RequestJson ?? "");
         yield return ("Override guidance-schema-type", _model.GuidanceSchemaType?.ToString() ?? "");

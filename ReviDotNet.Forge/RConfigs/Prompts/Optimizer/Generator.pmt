@@ -14,7 +14,7 @@ version = 1
 \[[settings]]
 request-json = true          (only if JSON output is needed)
 guidance-schema-type = json-auto   (use json-auto when the output schema can be inferred from examples)
-max-tokens = <N>             (declare explicitly whenever the output is machine-parsed — a truncated JSON document loses the whole result; size it to the artifact with headroom)
+output-budget = <N>             (declare explicitly whenever the output is machine-parsed — a truncated JSON document loses the whole result; size it to the artifact with headroom)
 
 \[[_system]]
 <The system role / persona for the AI>

@@ -76,7 +76,7 @@ internal class Infer
 
 					// Prompt specific checks
 					totalLength = promptString.Length;
-					if (Util.EstTokenCountFromCharCount(totalLength) > model.TokenLimit)
+					if (Util.EstTokenCountFromCharCount(totalLength) > model.ContextWindow)
 						throw new Exception("Too many tokens!");
 
 					// Prompt completion
@@ -89,7 +89,7 @@ internal class Infer
 						minP: (float?)SelectParam(model.MinP, prompt.MinP),
 						bestOf: (int?)SelectParam(model.BestOf, prompt.BestOf),
 						maxTokenType: model.MaxTokenType,
-						maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.MaxTokens, prompt.MaxTokens), Util.EstTokenCountFromCharCount(totalLength), model, prompt.Name ?? ""),
+						maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.OutputBudget, prompt.OutputBudget), Util.EstTokenCountFromCharCount(totalLength), model, prompt.Name ?? ""),
 						frequencyPenalty: (float?)SelectParam(model.FrequencyPenalty, prompt.FrequencyPenalty),
 						presencePenalty: (float?)SelectParam(model.PresencePenalty, prompt.PresencePenalty),
 						repetitionPenalty: (float?)SelectParam(model.RepetitionPenalty, prompt.RepetitionPenalty),
@@ -109,7 +109,7 @@ internal class Infer
 
 					// Chat specific checks
 					totalLength = messages.Sum(msg => msg.Role.Length + msg.Content.Length);
-					if (Util.EstTokenCountFromCharCount(totalLength) > model.TokenLimit)
+					if (Util.EstTokenCountFromCharCount(totalLength) > model.ContextWindow)
 						throw new Exception("Too many tokens!");
 
 					// Chat completion
@@ -122,7 +122,7 @@ internal class Infer
 						minP: (float?)SelectParam(model.MinP, prompt.MinP),
 						bestOf: (int?)SelectParam(model.BestOf, prompt.BestOf),
 						maxTokenType: model.MaxTokenType,
-						maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.MaxTokens, prompt.MaxTokens), Util.EstTokenCountFromCharCount(totalLength), model, prompt.Name ?? ""),
+						maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.OutputBudget, prompt.OutputBudget), Util.EstTokenCountFromCharCount(totalLength), model, prompt.Name ?? ""),
 						frequencyPenalty: (float?)SelectParam(model.FrequencyPenalty, prompt.FrequencyPenalty),
 						presencePenalty: (float?)SelectParam(model.PresencePenalty, prompt.PresencePenalty),
 						repetitionPenalty: (float?)SelectParam(model.RepetitionPenalty, prompt.RepetitionPenalty),
@@ -392,7 +392,7 @@ internal class Infer
 				{
 					// Prompt specific checks
 					totalLength = promptString.Length;
-					if (Util.EstTokenCountFromCharCount(totalLength) > model.TokenLimit)
+					if (Util.EstTokenCountFromCharCount(totalLength) > model.ContextWindow)
 						throw new Exception("Too many tokens!");
 
 					// Streaming prompt completion
@@ -405,7 +405,7 @@ internal class Infer
 						minP: (float?)SelectParam(model.MinP, prompt.MinP),
 						bestOf: (int?)SelectParam(model.BestOf, prompt.BestOf),
 						maxTokenType: model.MaxTokenType,
-						maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.MaxTokens, prompt.MaxTokens), Util.EstTokenCountFromCharCount(totalLength), model, prompt.Name ?? ""),
+						maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.OutputBudget, prompt.OutputBudget), Util.EstTokenCountFromCharCount(totalLength), model, prompt.Name ?? ""),
 						frequencyPenalty: (float?)SelectParam(model.FrequencyPenalty, prompt.FrequencyPenalty),
 						presencePenalty: (float?)SelectParam(model.PresencePenalty, prompt.PresencePenalty),
 						repetitionPenalty: (float?)SelectParam(model.RepetitionPenalty, prompt.RepetitionPenalty),
@@ -423,7 +423,7 @@ internal class Infer
 				{
 					// Chat specific checks
 					totalLength = messages.Sum(msg => msg.Role.Length + msg.Content.Length);
-					if (Util.EstTokenCountFromCharCount(totalLength) > model.TokenLimit)
+					if (Util.EstTokenCountFromCharCount(totalLength) > model.ContextWindow)
 						throw new Exception("Too many tokens!");
 
 					// Streaming chat completion
@@ -436,7 +436,7 @@ internal class Infer
 						minP: (float?)SelectParam(model.MinP, prompt.MinP),
 						bestOf: (int?)SelectParam(model.BestOf, prompt.BestOf),
 						maxTokenType: model.MaxTokenType,
-						maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.MaxTokens, prompt.MaxTokens), Util.EstTokenCountFromCharCount(totalLength), model, prompt.Name ?? ""),
+						maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.OutputBudget, prompt.OutputBudget), Util.EstTokenCountFromCharCount(totalLength), model, prompt.Name ?? ""),
 						frequencyPenalty: (float?)SelectParam(model.FrequencyPenalty, prompt.FrequencyPenalty),
 						presencePenalty: (float?)SelectParam(model.PresencePenalty, prompt.PresencePenalty),
 						repetitionPenalty: (float?)SelectParam(model.RepetitionPenalty, prompt.RepetitionPenalty),

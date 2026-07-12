@@ -93,7 +93,7 @@ Supported keys:
 
 | Key | Type | Description |
 | :--- | :--- | :--- |
-| `max-tokens` | integer | Max tokens to generate for calls in this state. |
+| `output-budget` | integer | Max tokens to generate for calls in this state. |
 | `best-of` | integer | Request multiple completions and keep the best. |
 | `use-search-grounding` | boolean | Enable search grounding (if the model/provider supports it). |
 | `temperature` | float | Sampling temperature. |
@@ -107,7 +107,7 @@ Supported keys:
 ```ini
 [[_state.draft.settings]]
 temperature = 0.2
-max-tokens = 800
+output-budget = 800
 ```
 
 ### `[[_loop]]` (Required for transitions)

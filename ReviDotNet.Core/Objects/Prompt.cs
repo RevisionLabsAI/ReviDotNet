@@ -60,8 +60,11 @@ public class Prompt
     [JsonProperty("best-of"), RConfigProperty("settings_best-of")]
     public int? BestOf { get; set; }
     
-    [JsonProperty("max-tokens"), RConfigProperty("settings_max-tokens")]
-    public int? MaxTokens { get; set; }
+    // The requested output ceiling for this prompt's calls (a hard stop enforced by the provider —
+    // finish reason max_tokens/length; the model does not see it and will not "wrap up" to fit).
+    // (Renamed from max-tokens, 2026-07.)
+    [JsonProperty("output-budget"), RConfigProperty("settings_output-budget")]
+    public int? OutputBudget { get; set; }
     
     [JsonProperty("timeout"), RConfigProperty("settings_timeout")]
     public int? Timeout { get; set; }
@@ -580,6 +583,7 @@ public class Prompt
     /// <returns>A Prompt object deserialized from the dictionary.</returns>
     public static Prompt ToObject(Dictionary<string, string> data, string? namePrefix = "")
     {
+        RConfigParser.ThrowOnRetiredKeys(data);
         var prompt = new Prompt();
         var properties = typeof(Prompt).GetProperties();
         var processedKeys = new HashSet<string>();

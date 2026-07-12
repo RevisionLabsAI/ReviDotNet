@@ -6,7 +6,7 @@ provider-name = gemini
 
 [[settings]]
 tier = B
-token-limit = 1048576
+context-window = 1048576
 supports-response-completion = true
 # Default thinking amount; a prompt overrides it, an unset prompt inherits it, `none` disables (budget 0).
 # Gemini 2.5 controls thinking with a numeric token budget, so the 5 common words map onto budgets

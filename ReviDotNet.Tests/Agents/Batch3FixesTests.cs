@@ -36,7 +36,7 @@ description = draft state
 [[_state.draft.settings]]
 temperature = 0.2
 top-p = 0.9
-max-tokens = 800
+output-budget = 800
 
 [[_loop]]
 draft
@@ -48,7 +48,7 @@ draft
         draft.InlineSettings.Should().NotBeNull();
         draft.InlineSettings!.Temperature.Should().Be(0.2f);   // tuning_* key now binds
         draft.InlineSettings!.TopP.Should().Be(0.9f);          // tuning_* key now binds
-        draft.InlineSettings!.MaxTokens.Should().Be(800);      // settings_* key still binds
+        draft.InlineSettings!.OutputBudget.Should().Be(800);      // settings_* key still binds
     }
 
     // ── D30: a -> self transition now counts toward cycle-limit, bounding self-looping states ──

@@ -11,7 +11,7 @@ guidance-schema-type = disabled
 preferred-models = claude-sonnet-4-6, claude-sonnet-4-5, claude-opus-4-8
 min-tier = A
 # A truncated verdict loses the winner — never let the output be cut (see AgentRunJudge.pmt).
-max-tokens = 2000
+output-budget = 2000
 # JSON (not YAML) example output: this contract is machine-parsed — see AgentRunJudge.pmt.
 
 [[_system]]

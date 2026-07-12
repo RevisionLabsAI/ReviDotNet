@@ -207,7 +207,7 @@ else
         _requireValidOutput = p.RequireValidOutput ?? false;
         _useSearchGrounding = p.UseSearchGrounding ?? false;
         _guidance = p.GuidanceSchema;
-        _maxTokens = p.MaxTokens;
+        _maxTokens = p.OutputBudget;
         _timeout = p.Timeout;
         _retryAttempts = p.RetryAttempts;
         _fewShot = p.FewShotExamples;
@@ -242,7 +242,7 @@ else
         _prompt.RequireValidOutput = _requireValidOutput ? true : null;
         _prompt.UseSearchGrounding = _useSearchGrounding ? true : null;
         _prompt.GuidanceSchema = _guidance;
-        _prompt.MaxTokens = _maxTokens;
+        _prompt.OutputBudget = _maxTokens;
         _prompt.Timeout = _timeout;
         _prompt.RetryAttempts = _retryAttempts;
         _prompt.FewShotExamples = _fewShot;

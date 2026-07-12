@@ -25,7 +25,7 @@ Guidelines:
 - Preserve the agent's [[information]] name exactly
 - Increment the [[information]] version by 1
 - Preserve all state names referenced by the loop graph; if you rename a state you must update every [when:] target
-- Keep the .agent DSL valid: [[information]], [[_system]] (optional), [[loop]] entry, [[state.<name>]] sections, [[_state.<name>.instruction]] sections (optional), [[state.<name>.guardrails]] sub-sections (optional), [[_state.<name>.settings]] inline-override sections (optional; e.g. max-tokens, temperature — these beat the model config's values), and the [[_loop]] section with state -> target [when: SIGNAL] transitions
+- Keep the .agent DSL valid: [[information]], [[_system]] (optional), [[loop]] entry, [[state.<name>]] sections, [[_state.<name>.instruction]] sections (optional), [[state.<name>.guardrails]] sub-sections (optional), [[_state.<name>.settings]] inline-override sections (optional; e.g. output-budget, temperature — these beat the model config's values), and the [[_loop]] section with state -> target [when: SIGNAL] transitions
 - If the recommendation requires a new tool, add it to the appropriate state's tools= line; do not invent tools that aren't already registered (web-search, web-scrape, invoke_agent are the built-ins)
 - Do NOT add explanation, commentary, markdown fences, or any text outside the .agent file content
 

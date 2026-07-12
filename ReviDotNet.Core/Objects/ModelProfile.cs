@@ -39,8 +39,13 @@ public class ModelProfile
     [RConfigProperty("settings_tier")]
     public ModelTier Tier { get; set; } 
     
-    [RConfigProperty("settings_token-limit")]
-    public int TokenLimit { get; set; } 
+    /// <summary>
+    /// The model's context window — the TOTAL token capacity a request lives in (input and output share
+    /// it). Guards input size pre-flight and feeds the combined budget check in <c>TokenBudgetGuard</c>.
+    /// (Renamed from <c>token-limit</c>, 2026-07 — the old key fails the load with a rename message.)
+    /// </summary>
+    [RConfigProperty("settings_context-window")]
+    public int ContextWindow { get; set; }
     
     [RConfigProperty("settings_stop-sequences")]
     public string? StopSequences { get; set; }
@@ -50,12 +55,13 @@ public class ModelProfile
 
     /// <summary>
     /// The model's real maximum OUTPUT tokens per completion — a hardware capability declaration, distinct
-    /// from both <see cref="TokenLimit"/> (the context window, which guards INPUT size) and the
-    /// <c>[[override-settings]] max-tokens</c> forced override. When set, any requested max-tokens larger
+    /// from both <see cref="ContextWindow"/> (the total window) and the <c>[[override-settings]]</c>
+    /// <c>output-budget</c> forced override (the requested ceiling). When set, any requested budget larger
     /// than this is clamped down (with a log line) instead of being rejected by the provider.
+    /// (Renamed from <c>max-output-tokens</c>, 2026-07.)
     /// </summary>
-    [RConfigProperty("settings_max-output-tokens")]
-    public int? MaxOutputTokens { get; set; }
+    [RConfigProperty("settings_output-capacity")]
+    public int? OutputCapacity { get; set; }
 
     /// <summary>
     /// Named loop-detection algorithm for this model's completions, or null/unset for OFF (the default).
@@ -226,8 +232,11 @@ public class ModelProfile
     [RConfigProperty("override-settings_best-of")]
     public string? BestOf { get; set; }
     
-    [RConfigProperty("override-settings_max-tokens")]
-    public string? MaxTokens { get; set; }
+    // Forced override of the requested output ceiling for EVERY prompt on this model (replaces the
+    // prompt's own output-budget — a forced value, not a cap; leave unset so prompts own their budgets).
+    // (Renamed from max-tokens, 2026-07.)
+    [RConfigProperty("override-settings_output-budget")]
+    public string? OutputBudget { get; set; }
     
     [RConfigProperty("override-settings_timeout")]
     public string? Timeout { get; set; }

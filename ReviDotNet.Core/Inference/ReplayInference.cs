@@ -184,8 +184,8 @@ public static class ReplayInference
             ProviderName = provider.Name!,
             Provider = provider,
             Tier = ModelTier.A,
-            TokenLimit = 8192,
-            MaxTokens = "512",
+            ContextWindow = 8192,
+            OutputBudget = "512",
             DefaultSystemInputType = InputType.Filled,
             DefaultInstructionInputType = InputType.Filled,
         };

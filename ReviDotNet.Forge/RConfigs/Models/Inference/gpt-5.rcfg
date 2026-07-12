@@ -6,7 +6,7 @@ provider-name = openai
 
 [[settings]]
 tier = A
-token-limit = 400000
+context-window = 400000
 # Reasoning models require max_completion_tokens (not max_tokens) on Chat Completions.
 max-token-type = MaxCompletionTokens
 # Default thinking amount; a prompt overrides it, an unset prompt inherits it, `none` disables thinking.
@@ -20,7 +20,7 @@ thinking-conversion-high = high
 thinking-conversion-max = high
 
 [[override-settings]]
-max-tokens = 16000
+output-budget = 16000
 
 [[override-tuning]]
 temperature = 1

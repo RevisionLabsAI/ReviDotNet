@@ -92,8 +92,8 @@ public class LiveAgentTests
             ProviderName = providerName,
             Provider = provider,
             Tier = ModelTier.A,
-            TokenLimit = tokenLimit,
-            MaxTokens = "512",
+            ContextWindow = tokenLimit,
+            OutputBudget = "512",
             DefaultSystemInputType = InputType.Filled,
             DefaultInstructionInputType = InputType.Filled,
         };

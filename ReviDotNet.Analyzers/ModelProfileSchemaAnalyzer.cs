@@ -1,4 +1,4 @@
-﻿// ===================================================================
+// ===================================================================
 //  Copyright © 2026 Revision Labs and contributors
 //  SPDX-License-Identifier: MIT
 //  See LICENSE.txt in the project root for full license information.
@@ -24,7 +24,7 @@ namespace ReviDotNet.Analyzers
     /// Rules (initial minimal pass):
     /// - Require a [[general]] section with non-empty keys: name, model-string, provider-name.
     /// - Optional: enabled should be boolean when present.
-    /// - Optional [[settings]]: if present, validate numeric non-negative token-limit; tier in {A,B,C}.
+    /// - Optional [[settings]]: if present, validate numeric non-negative context-window; tier in {A,B,C}.
     /// - Optional [[override-tuning]]: if present, numeric sampling values must be parseable if not 'disabled'.
     ///
     /// Diagnostics are reported with precise file/line locations when possible.
@@ -143,11 +143,11 @@ namespace ReviDotNet.Analyzers
                     }
                 }
 
-                if (TryGet(doc, "settings", "token-limit", out RcfgValue tokenLimit))
+                if (TryGet(doc, "settings", "context-window", out RcfgValue tokenLimit))
                 {
                     if (!int.TryParse(tokenLimit.Raw.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int tl) || tl < 0)
                     {
-                        ReportWarning(context, file, tokenLimit.Line, tokenLimit.Raw.Trim(), "settings.token-limit", suffix: " (>= 0)");
+                        ReportWarning(context, file, tokenLimit.Line, tokenLimit.Raw.Trim(), "settings.context-window", suffix: " (>= 0)");
                     }
                 }
 

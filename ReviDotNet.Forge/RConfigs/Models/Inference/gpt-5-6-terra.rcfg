@@ -6,13 +6,13 @@ provider-name = openai
 
 [[settings]]
 tier = A
-token-limit = 1000000
+context-window = 1000000
 cost-per-million-input-tokens = 2.5
 cost-per-million-output-tokens = 15.0
 # Reasoning models require max_completion_tokens (not max_tokens) on Chat Completions.
 max-token-type = MaxCompletionTokens
 # The model's real output capability - requests above this are clamped down (TokenBudgetGuard).
-max-output-tokens = 128000
+output-capacity = 128000
 # Mid tier of the GPT-5.6 family (GPT-5.5-class at roughly half the cost) — default medium reasoning.
 thinking = medium
 # GPT-5.6 reasoning_effort accepts none/low/medium/high/xhigh/max; `minimal` floors to none.
@@ -23,10 +23,10 @@ thinking-conversion-high = high
 thinking-conversion-max = max
 
 [[override-settings]]
-# Forced max-tokens kept ON PURPOSE for reasoning models (reasoning tokens share the output budget,
+# Forced output-budget kept ON PURPOSE for reasoning models (reasoning tokens share the output budget,
 # so prompt-declared small budgets would strangle reasoning). 128000 = the model's actual maximum
 # output - a stop ceiling, not a billed amount, so matching the hardware limit costs nothing.
-max-tokens = 128000
+output-budget = 128000
 
 [[override-tuning]]
 temperature = 1

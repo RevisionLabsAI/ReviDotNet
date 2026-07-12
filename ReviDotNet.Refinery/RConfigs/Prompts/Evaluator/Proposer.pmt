@@ -13,7 +13,7 @@ preferred-models = claude-opus-4-8, claude-sonnet-4-6, claude-sonnet-4-5
 min-tier = A
 # The proposer returns a COMPLETE revised agent definition — a truncated one fails validation (or worse,
 # validates with rules cut off). Sized for multi-KB .agent files; never let this output be cut.
-max-tokens = 8000
+output-budget = 8000
 # JSON (not YAML) example output: this contract is machine-parsed — see AgentRunJudge.pmt.
 
 [[_system]]

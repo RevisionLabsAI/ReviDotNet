@@ -578,7 +578,7 @@ public class AgentRunner
         // ~4 characters per token is the standard rough estimate for English text.
         int estInputTokens = Math.Max(1, approxInputChars / 4);
 
-        int estOutputTokens = ParseInt(model.MaxTokens) ?? DefaultProjectedOutputTokens;
+        int estOutputTokens = ParseInt(model.OutputBudget) ?? DefaultProjectedOutputTokens;
 
         return ComputeCost(model, estInputTokens, estOutputTokens);
     }
@@ -842,7 +842,7 @@ public class AgentRunner
             minP: s?.MinP ?? ParseFloat(model.MinP),
             bestOf: s?.BestOf ?? null,
             maxTokenType: model.MaxTokenType,
-            maxTokens: TokenBudgetGuard.Clamp(s?.MaxTokens ?? ParseInt(model.MaxTokens), estInputTokens, model, _profile.Name ?? "(agent)"),
+            maxTokens: TokenBudgetGuard.Clamp(s?.OutputBudget ?? ParseInt(model.OutputBudget), estInputTokens, model, _profile.Name ?? "(agent)"),
             frequencyPenalty: s?.FrequencyPenalty ?? ParseFloat(model.FrequencyPenalty),
             presencePenalty: s?.PresencePenalty ?? ParseFloat(model.PresencePenalty),
             repetitionPenalty: s?.RepetitionPenalty ?? ParseFloat(model.RepetitionPenalty),

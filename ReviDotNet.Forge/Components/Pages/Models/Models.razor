@@ -49,7 +49,7 @@
                 <MudChip T="string" Size="Size.Small">@context.Item.Tier</MudChip>
             </CellTemplate>
         </TemplateColumn>
-        <PropertyColumn Property="m => m.TokenLimit" Title="Token Limit" />
+        <PropertyColumn Property="m => m.ContextWindow" Title="Context Window" />
         <TemplateColumn Title="Enabled">
             <CellTemplate>
                 @if (context.Item.Enabled)

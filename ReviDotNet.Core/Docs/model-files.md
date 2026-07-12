@@ -33,11 +33,11 @@ Core operational parameters for the model.
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `tier` | enum | `C` | The performance tier of the model. Order is `C` < `B` < `A` (A is highest). Selection (`ModelManager.Find`) returns the **lowest-tier enabled model whose tier ≥ the requested minimum** — so a prompt's `min-tier = B` can match a B or A model, preferring B. Tier parsing is **case-insensitive** (`a`/`A` both work); an empty/unrecognized value is treated as `C` (no minimum). |
-| `token-limit` | integer | `0` | The maximum context window size (in tokens). Guards INPUT size pre-flight, and (together with `max-output-tokens`) feeds the combined budget check: a requested max-tokens that would not fit in `token-limit − estimated_input` is clamped down with a log line instead of drawing a provider 400. |
-| `max-output-tokens` | integer | `null` | The model's real maximum OUTPUT tokens per completion — a hardware **capability**, not an override. Any requested max-tokens above it is clamped down (logged). Distinct from `token-limit` (context window, input guard) and from `[[override-settings]] max-tokens` (a forced request value). Unset = no capability clamp. |
+| `context-window` | integer | `0` | The maximum context window size (in tokens). Guards INPUT size pre-flight, and (together with `output-capacity`) feeds the combined budget check: a requested output-budget that would not fit in `context-window − estimated_input` is clamped down with a log line instead of drawing a provider 400. |
+| `output-capacity` | integer | `null` | The model's real maximum OUTPUT tokens per completion — a hardware **capability**, not an override. Any requested output-budget above it is clamped down (logged). Distinct from `context-window` (the total window, input guard) and from `[[override-settings]] output-budget` (a forced request value). Unset = no capability clamp. |
 | `loop-detection` | string | `null` | Named loop-detection circuit-breaker algorithm; unset = OFF. Currently `repeat-N` (e.g. `repeat-512`): flags a completion whose TRAILING text is ≥4 consecutive exact repeats of one unit spanning ≥ N chars (whitespace-normalized; never trips under 512 chars of total output). On trip: non-streaming completions get `FinishReason = "repetition"`; streaming stops consuming (cancelling the provider request). Intended for small/local models; a malformed algorithm name fails the file load loudly. |
 | `stop-sequences` | string | `null` | Optional stop sequences to terminate generation. |
-| `max-token-type` | enum | `null` | Which OpenAI-style max-tokens field to emit. Allowed values: `MaxTokens` (sends `max_tokens`) or `MaxCompletionTokens` (sends `max_completion_tokens`). When unset, a configured max-tokens value is emitted under the standard `max_tokens` key (before 2026-07 an unset type silently **dropped** the value — the bug that truncated a whole Refinery campaign at Anthropic's fallback). Set it explicitly only for models that need the alternate key (e.g. OpenAI reasoning models). An invalid value throws and the whole model file is skipped — use the exact enum names. |
+| `max-token-type` | enum | `null` | Which OpenAI-style max-tokens field to emit. Allowed values: `MaxTokens` (sends `max_tokens`) or `MaxCompletionTokens` (sends `max_completion_tokens`). When unset, a configured output-budget value is emitted under the standard `max_tokens` key (before 2026-07 an unset type silently **dropped** the value — the bug that truncated a whole Refinery campaign at Anthropic's fallback). Set it explicitly only for models that need the alternate key (e.g. OpenAI reasoning models). An invalid value throws and the whole model file is skipped — use the exact enum names. |
 | `supports-prompt-completion` | boolean | `null` | Whether this specific model supports legacy prompt completion (non-chat) endpoints. Overrides provider-level defaults when set. |
 | `supports-response-completion` | boolean | `null` | Whether this specific model supports the Responses API completion endpoint. Overrides provider-level defaults when set. |
 | `cost-per-million-input-tokens` | decimal | `null` | USD cost per 1,000,000 prompt/input tokens. Used by `AgentRunner` to enforce `cost-budget` guardrails. When unset, this model contributes 0 to cost tracking (suitable for free or locally-hosted models). |
@@ -104,7 +104,7 @@ Allows this model to override default settings normally found in `.pmt` files.
 | `retry-prompt` | string | Override for custom retry instruction. |
 | `few-shot-examples` | integer | Override for number of examples to include. |
 | `best-of` | string | Override for "best of" count. |
-| `max-tokens` | string | Override for maximum tokens to generate. **This REPLACES the prompt's own `max-tokens` for every prompt run on this model** (model overrides win on the `InferService` path) — it is a forced value, not a cap. Leave it unset so each prompt's declared budget applies (unset falls back to the provider default, e.g. 4096 on the Anthropic client); set it only to deliberately force one budget model-wide. Agent `[[_state.X.settings]]` inline values are the exception: they beat the model value. |
+| `output-budget` | string | Override for maximum tokens to generate. **This REPLACES the prompt's own `output-budget` for every prompt run on this model** (model overrides win on the `InferService` path) — it is a forced value, not a cap. Leave it unset so each prompt's declared budget applies (unset falls back to the provider default, e.g. 4096 on the Anthropic client); set it only to deliberately force one budget model-wide. Agent `[[_state.X.settings]]` inline values are the exception: they beat the model value. |
 | `timeout` | string | Override for request timeout. |
 | `preferred-models` | list | Override for preferred models list. |
 | `blocked-models` | list | Override for blocked models list. |
@@ -201,7 +201,7 @@ Core parameters for the embedding model.
 | Option | Type | Description |
 | :--- | :--- | :--- |
 | `tier` | enum | The performance tier (`A`, `B`, or `C`). Used for default selection — see note below. |
-| `token-limit` | integer | Maximum tokens per request. **Metadata only — not enforced.** The embedding client does not truncate or validate inputs against this; oversized inputs are sent unchanged. |
+| `context-window` | integer | Maximum tokens per request. **Metadata only — not enforced.** The embedding client does not truncate or validate inputs against this; oversized inputs are sent unchanged. |
 | `max-token-type` | enum | Token limit enforcement type. (Not enforced for embeddings.) |
 
 > **Default embedding selection.** When you call `embed.Generate(text)` / `IEmbedService.Generate` without a model name or profile, the registry auto-selects via `Find(minTier: C)` — which returns the **lowest-tier** enabled embedding model (tier order is `C` < `B` < `A`, so `A` is highest). If you want a specific/best model, **pass an explicit model name** rather than relying on the default.
@@ -211,7 +211,7 @@ Overrides for embedding requests.
 
 | Option | Type | Description |
 | :--- | :--- | :--- |
-| `max-tokens` | string | Maximum-tokens metadata for this embedding model. **Not enforced** — the embedding client does not truncate inputs by token count; this is informational only. |
+| `output-budget` | string | Maximum-tokens metadata for this embedding model. **Not enforced** — the embedding client does not truncate inputs by token count; this is informational only. |
 | `timeout` | string | Per-model request timeout in seconds (or `disabled`/unset to use the provider default). Honored per request via a linked cancellation; note the provider's `[[limiting]] timeout-seconds` acts as an upper bound. |
 | `retry-attempts` | integer | Per-model retry-attempt limit for failed embedding requests, overriding the provider's `[[limiting]] retry-attempt-limit`. |
 
@@ -238,7 +238,7 @@ provider-name = claude
 
 [[settings]]
 tier = A
-token-limit = 100000
+context-window = 100000
 supports-prompt-completion = true
 supports-response-completion = true
 
@@ -272,7 +272,7 @@ provider-name = openai
 
 [[settings]]
 tier = A
-token-limit = 8191
+context-window = 8191
 
 [[embedding-settings]]
 dimensions = 1536

@@ -31,8 +31,8 @@ timeout = 60
 cost-budget = 0.10        (USD, optional)
 
 \[[_state.<name>.settings]]
-max-tokens = 8192         (optional inline overrides for this state's LLM calls; these BEAT the
-temperature = 0.4          model config's values. Set max-tokens generously for states whose answer
+output-budget = 8192         (optional inline overrides for this state's LLM calls; these BEAT the
+temperature = 0.4          model config's values. Set output-budget generously for states whose answer
                            must never be cut mid-output — it is a stop ceiling, not a billed amount.)
 
 \[[_loop]]

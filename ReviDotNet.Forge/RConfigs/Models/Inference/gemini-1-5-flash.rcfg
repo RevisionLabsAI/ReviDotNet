@@ -1,4 +1,4 @@
-﻿[[general]]
+[[general]]
 name = gemini-1-5-flash
 enabled = true
 model-string = gemini-1.5-flash
@@ -6,7 +6,7 @@ provider-name = gemini
 
 [[settings]]
 tier = C
-token-limit = 1048576
+context-window = 1048576
 # Gemini 1.5 has no thinking support; default off.
 thinking = none
 

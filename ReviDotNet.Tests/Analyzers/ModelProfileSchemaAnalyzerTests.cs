@@ -1,4 +1,4 @@
-﻿// ===================================================================
+// ===================================================================
 //  Copyright © 2026 Revision Labs and contributors
 //  SPDX-License-Identifier: MIT
 //  See LICENSE.txt in the project root for full license information.
@@ -48,13 +48,13 @@ model-string = id
 provider-name = prov
 
 [[settings]]
-token-limit = -1
+context-window = -1
 ")
             };
 
             DiagnosticResult expected = DiagnosticResult.CompilerWarning(ModelProfileSchemaAnalyzer.DiagnosticId)
                 .WithSpan("RConfigs/Models/Inference/neg.rcfg", 7, 1, 7, 1)
-                .WithArguments("-1", "settings.token-limit", " (>= 0)");
+                .WithArguments("-1", "settings.context-window", " (>= 0)");
 
             await AnalyzerTestHelper.RunAsync<ModelProfileSchemaAnalyzer>(code, files, expected);
         }
@@ -73,7 +73,7 @@ provider-name = claude
 
 [[settings]]
 tier = A
-token-limit = 100000
+context-window = 100000
 ")
             };
 
