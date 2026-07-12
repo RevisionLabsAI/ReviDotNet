@@ -1,4 +1,4 @@
-// ===================================================================
+﻿// ===================================================================
 //  Copyright © 2026 Revision Labs and contributors
 //  SPDX-License-Identifier: MIT
 //  See LICENSE.txt in the project root for full license information.
@@ -86,6 +86,12 @@ public sealed class RefinementController(
         int total = suite.Scenarios.Count * Math.Max(1, spec.SamplesPerScenario);
         int done = 0;
 
+        // Baseline-only campaigns spend real judge tokens too: open a meta scope so that spend is
+        // visible on the campaign, and roll up agent tokens per run so mid-baseline status shows the
+        // live meter instead of 0 until the end.
+        using MetaLlmUsageBroker.Scope metaScope = _metaUsage.BeginScope();
+        long agentTokens = 0;
+
         try
         {
             foreach (Scenario scenario in suite.Scenarios)
@@ -97,6 +103,10 @@ public sealed class RefinementController(
 
                     ScoreCard card = await ScoreOnceAsync(scenario, spec.AgentName, agentDefinition, checkers, spec.Mode, sample, ct, seedScenario, toolManager);
                     cards.Add(card);
+
+                    agentTokens += card.Efficiency is { } e ? e.InputTokens + e.OutputTokens : 0;
+                    campaign = campaign with { TokensSpent = agentTokens, MetaTokensSpent = _metaUsage.Spent };
+                    await _store.SaveAsync(campaign, ct);
                 }
             }
 
@@ -106,23 +116,26 @@ public sealed class RefinementController(
             {
                 Status = CampaignStatus.Converged,
                 Baseline = aggregate,
-                Current = aggregate
+                Current = aggregate,
+                TokensSpent = agentTokens,
+                MetaTokensSpent = _metaUsage.Spent
             };
             await _store.SaveAsync(campaign, ct);
             progress?.Report(new RefineryProgress(
-                $"baseline: invariant pass-rate {aggregate.InvariantPassRate:P0}, quality mean {aggregate.QualityMean:F1} (p10 {aggregate.QualityP10:F1}) over {aggregate.RunCount} runs",
+                $"baseline: invariant pass-rate {aggregate.InvariantPassRate:P0}, quality mean {aggregate.QualityMean:F1} (p10 {aggregate.QualityP10:F1}) over {aggregate.RunCount} runs" +
+                (aggregate.QualityJudgeFailures > 0 ? $" — WARNING: {aggregate.QualityJudgeFailures} judge verdict(s) missing/unparsed" : ""),
                 cards));
             return campaign;
         }
         catch (OperationCanceledException)
         {
-            campaign = campaign with { Status = CampaignStatus.Stopped };
+            campaign = campaign with { Status = CampaignStatus.Stopped, TokensSpent = agentTokens, MetaTokensSpent = _metaUsage.Spent };
             await _store.SaveAsync(campaign, ct: default);
             throw;
         }
         catch (Exception ex)
         {
-            campaign = campaign with { Status = CampaignStatus.Failed, Error = ex.Message };
+            campaign = campaign with { Status = CampaignStatus.Failed, Error = ex.Message, TokensSpent = agentTokens, MetaTokensSpent = _metaUsage.Spent };
             await _store.SaveAsync(campaign, ct: default);
             throw;
         }
@@ -194,17 +207,25 @@ public sealed class RefinementController(
         using MetaLlmUsageBroker.Scope metaScope = _metaUsage.BeginScope();
         long metaSpentLastSnapshot = 0;
 
+        // Persist the live meters after every scored run so `refine status` answers "how much have I
+        // spent?" and "is the judge working?" WHILE the campaign runs, not only at round boundaries.
+        async Task PersistSpendAsync()
+        {
+            campaign = campaign with { TokensSpent = governor.Spent, MetaTokensSpent = _metaUsage.Spent };
+            await _store.SaveAsync(campaign, ct);
+        }
+
         try
         {
             // (b) Baseline: score train + held-out once each, keeping per-scenario train OUTPUT text for pairwise.
             string currentDefinition = agentDefinition;
 
             (List<ScoreCard> baselineTrainCards, Dictionary<string, string> baselineTrainOutputs) =
-                await ScoreSetAsync(train, spec.AgentName, currentDefinition, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager);
+                await ScoreSetAsync(train, spec.AgentName, currentDefinition, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager, PersistSpendAsync);
 
             List<ScoreCard> baselineHeldOutCards = heldOutMirrorsTrain
                 ? baselineTrainCards
-                : (await ScoreSetAsync(heldOut, spec.AgentName, currentDefinition, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager)).Cards;
+                : (await ScoreSetAsync(heldOut, spec.AgentName, currentDefinition, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager, PersistSpendAsync)).Cards;
 
             await PersistScoreCardsAsync(id, baselineTrainCards, ct);
             if (!heldOutMirrorsTrain)
@@ -216,10 +237,11 @@ public sealed class RefinementController(
             // Roll any meta tokens spent measuring the baseline into the meta governor.
             ChargeMetaDelta(metaGovernor, ref metaSpentLastSnapshot);
 
-            campaign = campaign with { Baseline = baselineTrain, Current = baselineTrain, TokensSpent = governor.Spent };
+            campaign = campaign with { Baseline = baselineTrain, Current = baselineTrain, TokensSpent = governor.Spent, MetaTokensSpent = _metaUsage.Spent };
             await _store.SaveAsync(campaign, ct);
             progress?.Report(new RefineryProgress(
-                $"baseline: invariant pass-rate {baselineTrain.InvariantPassRate:P0}, quality p10 {baselineTrain.QualityP10:F1} over {baselineTrain.RunCount} train runs",
+                $"baseline: invariant pass-rate {baselineTrain.InvariantPassRate:P0}, quality p10 {baselineTrain.QualityP10:F1} over {baselineTrain.RunCount} train runs" +
+                (baselineTrain.QualityJudgeFailures > 0 ? $" — WARNING: {baselineTrain.QualityJudgeFailures} judge verdict(s) missing/unparsed" : ""),
                 baselineTrainCards));
 
             List<ScoreCard> currentTrainCards = baselineTrainCards;
@@ -233,7 +255,7 @@ public sealed class RefinementController(
                 // Budget gate at the top of the round — either budget exhausting stops the campaign.
                 if (BudgetsExhausted(governor, metaGovernor, out string topReason))
                 {
-                    campaign = campaign with { Status = CampaignStatus.BudgetExhausted, TokensSpent = governor.Spent };
+                    campaign = campaign with { Status = CampaignStatus.BudgetExhausted, TokensSpent = governor.Spent, MetaTokensSpent = _metaUsage.Spent };
                     await _store.SaveAsync(campaign, ct);
                     progress?.Report(new RefineryProgress($"round {round}: {topReason}"));
                     return campaign;
@@ -263,7 +285,7 @@ public sealed class RefinementController(
                                 AcceptedVariantId = null
                             }
                         ],
-                        TokensSpent = governor.Spent
+                        TokensSpent = governor.Spent, MetaTokensSpent = _metaUsage.Spent
                     };
                     await _store.SaveAsync(campaign, ct);
                     progress?.Report(new RefineryProgress($"round {round}: no candidates (no-improvement {noImprove}/{spec.StopAfterNoImprovementRounds})"));
@@ -312,11 +334,11 @@ public sealed class RefinementController(
                     // Cards are filed under the REAL agent + this variant id (not the transient candidate
                     // profile name), so calibration can slice by variant via CalibrationAnalyzer(agent, version).
                     (List<ScoreCard> candTrainCards, Dictionary<string, string> candTrainOutputs) =
-                        await ScoreSetAsync(train, candidateProfile, spec.AgentName, variantId, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager);
+                        await ScoreSetAsync(train, candidateProfile, spec.AgentName, variantId, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager, PersistSpendAsync);
 
                     List<ScoreCard> candHeldOutCards = heldOutMirrorsTrain
                         ? candTrainCards
-                        : (await ScoreSetAsync(heldOut, candidateProfile, spec.AgentName, variantId, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager)).Cards;
+                        : (await ScoreSetAsync(heldOut, candidateProfile, spec.AgentName, variantId, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager, PersistSpendAsync)).Cards;
 
                     // Capture this variant's cards (stamped agent + variantId) for per-variant calibration.
                     await PersistScoreCardsAsync(id, candTrainCards, ct);
@@ -362,7 +384,7 @@ public sealed class RefinementController(
                             AcceptedVariantId = acceptedId
                         }
                     ],
-                    TokensSpent = governor.Spent
+                    TokensSpent = governor.Spent, MetaTokensSpent = _metaUsage.Spent
                 };
 
                 // (b·4) Adopt the best passing candidate, or count a no-improvement round.
@@ -390,7 +412,7 @@ public sealed class RefinementController(
                 if (budgetStop || BudgetsExhausted(governor, metaGovernor, out endReason))
                 {
                     string reason = budgetStop ? "token budget exhausted" : endReason;
-                    campaign = campaign with { Status = CampaignStatus.BudgetExhausted, TokensSpent = governor.Spent };
+                    campaign = campaign with { Status = CampaignStatus.BudgetExhausted, TokensSpent = governor.Spent, MetaTokensSpent = _metaUsage.Spent };
                     await _store.SaveAsync(campaign, ct);
                     progress?.Report(new RefineryProgress($"round {round}: {reason}"));
                     return campaign;
@@ -401,7 +423,7 @@ public sealed class RefinementController(
             }
 
             // (h) Terminal status — Converged unless an earlier branch already set a terminal state.
-            campaign = campaign with { Status = CampaignStatus.Converged, TokensSpent = governor.Spent };
+            campaign = campaign with { Status = CampaignStatus.Converged, TokensSpent = governor.Spent, MetaTokensSpent = _metaUsage.Spent };
             await _store.SaveAsync(campaign, ct);
             progress?.Report(new RefineryProgress(
                 $"campaign converged: current quality p10 {baselineTrain.QualityP10:F1}, {governor.Spent} agent tokens / {metaGovernor.Spent} meta tokens spent"));
@@ -409,13 +431,13 @@ public sealed class RefinementController(
         }
         catch (OperationCanceledException)
         {
-            campaign = campaign with { Status = CampaignStatus.Stopped, TokensSpent = governor.Spent };
+            campaign = campaign with { Status = CampaignStatus.Stopped, TokensSpent = governor.Spent, MetaTokensSpent = _metaUsage.Spent };
             await _store.SaveAsync(campaign, ct: default);
             throw;
         }
         catch (Exception ex)
         {
-            campaign = campaign with { Status = CampaignStatus.Failed, Error = ex.Message, TokensSpent = governor.Spent };
+            campaign = campaign with { Status = CampaignStatus.Failed, Error = ex.Message, TokensSpent = governor.Spent, MetaTokensSpent = _metaUsage.Spent };
             await _store.SaveAsync(campaign, ct: default);
             throw;
         }
@@ -672,8 +694,9 @@ public sealed class RefinementController(
         BudgetGovernor governor,
         CancellationToken ct,
         Func<Scenario, CancellationToken, Task>? seedScenario,
-        IToolManager? toolManager = null)
-        => ScoreSetCoreAsync(scenarios, agentName, agentProfile: null, agentDefinition, checkers, mode, samples, governor, ct, seedScenario, toolManager);
+        IToolManager? toolManager = null,
+        Func<Task>? persistSpend = null)
+        => ScoreSetCoreAsync(scenarios, agentName, agentProfile: null, agentDefinition, checkers, mode, samples, governor, ct, seedScenario, toolManager, persistSpend: persistSpend);
 
     /// <summary>
     /// Candidate overload of <see cref="ScoreSetAsync(IReadOnlyList{Scenario}, string, string, IReadOnlyList{IInvariantChecker}, string, int, BudgetGovernor, CancellationToken, Func{Scenario, CancellationToken, Task}?, IToolManager?)"/>:
@@ -694,8 +717,9 @@ public sealed class RefinementController(
         BudgetGovernor governor,
         CancellationToken ct,
         Func<Scenario, CancellationToken, Task>? seedScenario,
-        IToolManager? toolManager = null)
-        => ScoreSetCoreAsync(scenarios, agentProfile.Name ?? "", agentProfile, agentDefinition, checkers, mode, samples, governor, ct, seedScenario, toolManager, realAgentName, variantId);
+        IToolManager? toolManager = null,
+        Func<Task>? persistSpend = null)
+        => ScoreSetCoreAsync(scenarios, agentProfile.Name ?? "", agentProfile, agentDefinition, checkers, mode, samples, governor, ct, seedScenario, toolManager, realAgentName, variantId, persistSpend);
 
     /// <summary>
     /// Shared body for both <c>ScoreSetAsync</c> overloads (name-based and candidate-profile). When
@@ -715,7 +739,8 @@ public sealed class RefinementController(
         Func<Scenario, CancellationToken, Task>? seedScenario,
         IToolManager? toolManager,
         string? cardAgentName = null,
-        string? cardAgentVersion = null)
+        string? cardAgentVersion = null,
+        Func<Task>? persistSpend = null)
     {
         List<ScoreCard> cards = [];
         Dictionary<string, string> outputs = [];
@@ -730,6 +755,10 @@ public sealed class RefinementController(
                 cards.Add(card);
                 outputs[scenario.Id] = output; // last sample wins — a representative output for pairwise
                 governor.Record(card.Efficiency is { } e ? e.InputTokens + e.OutputTokens : 0);
+
+                // Publish the live spend meters after every run (see PersistSpendAsync in RunCampaignAsync).
+                if (persistSpend is not null)
+                    await persistSpend();
             }
         }
 

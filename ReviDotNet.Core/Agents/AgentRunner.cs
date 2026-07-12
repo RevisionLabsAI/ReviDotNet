@@ -1105,7 +1105,10 @@ public class AgentRunner
         {
             inputTokens = TryGetIntProperty(result, "InputTokens"),
             outputTokens = TryGetIntProperty(result, "OutputTokens"),
-            model = TryGetStringProperty(result, "Model")
+            model = TryGetStringProperty(result, "Model"),
+            // Surfaced so trace consumers (e.g. Refinery truncation invariants) can detect steps that
+            // hit the output-token ceiling ("max_tokens" / "length") without re-querying the provider.
+            finishReason = TryGetStringProperty(result, "FinishReason")
         };
     }
 

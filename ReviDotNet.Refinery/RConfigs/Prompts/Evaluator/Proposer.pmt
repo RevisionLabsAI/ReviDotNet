@@ -6,8 +6,15 @@ version = 1
 request-json = true
 # Disabled (not json-auto) so the snake_case JSON contract is provider-independent — see AgentRunJudge.pmt.
 guidance-schema-type = disabled
-preferred-models = claude-opus-4-8
+# Explicit fallback chain so the proposer model is CHOSEN, never silently substituted. Opus first,
+# deliberately: the proposer runs ONCE per round (cost negligible) and its reasoning depth decides what
+# the whole round tests. Falls back to sonnet where a deployment does not register opus.
+preferred-models = claude-opus-4-8, claude-sonnet-4-6, claude-sonnet-4-5
 min-tier = A
+# The proposer returns a COMPLETE revised agent definition — a truncated one fails validation (or worse,
+# validates with rules cut off). Sized for multi-KB .agent files; never let this output be cut.
+max-tokens = 8000
+# JSON (not YAML) example output: this contract is machine-parsed — see AgentRunJudge.pmt.
 
 [[_system]]
 You are an expert prompt and agent engineer. You sit in the proposer seat of a recursive self-improvement
@@ -90,17 +97,9 @@ per-invariant pass-rate: F-2=0.00, F-3=1.00
 system-prompt | state-instruction | few-shot | sampling | guardrail | state-graph | model | tool-gating
 
 [[_exout_1]]
-knob_type: guardrail
-rationale: "The root cause is that fact-check-before-override is phrased as an optional permission ('you may update the claim'), so the model overrides contradictions directly — the F-2 failure. Promoting it to a blocking precondition the model must satisfy before update-issue removes the ambiguity without touching the passing F-3 segmentation behavior."
-revised_definition: |
-  [[information]]
-  name = filer
-
-  [[_system]]
-  You route research reports into relevant issues. Update any issue the report is relevant to.
-  Rules:
-  1. Be conservative about relevance.
-  2. BLOCKING PRECONDITION: if a report contradicts an existing claim, you MUST call the fact-checker
-     (invoke_agent -> fact-checker) and obtain its verdict BEFORE issuing any update-issue on that claim.
-     Never override a contradiction without a completed fact-check first.
-expected_impact: "high — directly converts the F-2 failure into a hard, ordered precondition while leaving F-3 untouched"
+{
+  "knob_type": "guardrail",
+  "rationale": "The root cause is that fact-check-before-override is phrased as an optional permission ('you may update the claim'), so the model overrides contradictions directly — the F-2 failure. Promoting it to a blocking precondition the model must satisfy before update-issue removes the ambiguity without touching the passing F-3 segmentation behavior.",
+  "revised_definition": "[[information]]\nname = filer\n\n[[_system]]\nYou route research reports into relevant issues. Update any issue the report is relevant to.\nRules:\n1. Be conservative about relevance.\n2. BLOCKING PRECONDITION: if a report contradicts an existing claim, you MUST call the fact-checker\n   (invoke_agent -> fact-checker) and obtain its verdict BEFORE issuing any update-issue on that claim.\n   Never override a contradiction without a completed fact-check first.\n",
+  "expected_impact": "high — directly converts the F-2 failure into a hard, ordered precondition while leaving F-3 untouched"
+}

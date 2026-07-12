@@ -1532,6 +1532,10 @@ internal class Infer
  			foundModel = ModelManager.Get(preferredModelName);
  			if ((foundModel is not null) && foundModel.Enabled)
  				return foundModel;
+
+ 			// Silent substitution changes output quality and cost — log every skipped preference.
+ 			Util.Log($"FindModel: preferred model '{preferredModelName}' for prompt '{prompt.Name}' " +
+ 			         $"is {(foundModel is null ? "not registered" : "disabled")}; trying next preference/tier fallback.");
  		}
  	}
 
@@ -1539,7 +1543,12 @@ internal class Infer
  	// TODO: Allow global setting that forces chat completion for prompt completion prompts
  	foundModel = ModelManager.Find(prompt.MinTier, prompt.IsCompletion(), prompt.BlockedModels);
  	if ((foundModel is not null) && foundModel.Enabled)
+ 	{
+ 		if (prompt.PreferredModels is { Count: > 0 })
+ 			Util.Log($"FindModel: prompt '{prompt.Name}' fell back to tier-{prompt.MinTier} model '{foundModel.Name}' " +
+ 			         $"(none of its preferred models resolved).");
  		return foundModel;
+ 	}
 		
  	// TODO: Global setting which allows using sub-par models when other models are unavailable
  	foundModel = ModelManager.Find(ModelTier.C, false, prompt.BlockedModels);

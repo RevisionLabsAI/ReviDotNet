@@ -87,6 +87,13 @@ public sealed record ScoreCard
     /// <summary>Quality assessment (null if not judged).</summary>
     public QualityScore? Quality { get; init; }
 
+    /// <summary>
+    /// True when this run's scenario carried a quality rubric, i.e. a judge score was expected.
+    /// <see cref="Quality"/> null while this is true means the judge call failed or didn't parse —
+    /// aggregation surfaces those as judge failures instead of silently shrinking the quality sample.
+    /// </summary>
+    public bool QualityExpected { get; init; }
+
     /// <summary>Efficiency metrics (null if not extracted).</summary>
     public EfficiencyMetrics? Efficiency { get; init; }
 

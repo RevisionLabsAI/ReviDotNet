@@ -36,6 +36,7 @@ public static class ScoreCardBuilder
             Outcome = trace.ExitReason,
             Invariants = invariants,
             Quality = quality,
+            QualityExpected = scenario.Rubric.Count > 0,
             Efficiency = efficiency,
             SessionId = trace.SessionId,
             FactCheckerDetermination = ParseDetermination(trace.FinalOutput)

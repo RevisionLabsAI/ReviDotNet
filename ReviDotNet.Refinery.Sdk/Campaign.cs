@@ -75,6 +75,17 @@ public sealed record SuiteAggregate
     /// <summary>Number of runs aggregated.</summary>
     public int RunCount { get; init; }
 
+    /// <summary>Runs that actually received a judge quality score.</summary>
+    public int QualityScoredRuns { get; init; }
+
+    /// <summary>
+    /// Runs that expected a quality score (their scenario had a rubric) but got none — i.e. the judge
+    /// call failed or its verdict didn't parse. Non-zero here means <see cref="QualityMean"/> /
+    /// <see cref="QualityP10"/> are computed over fewer runs than were evaluated: a broken judge must
+    /// look like a broken judge, not like "quality = 0".
+    /// </summary>
+    public int QualityJudgeFailures { get; init; }
+
     /// <summary>
     /// How many of the runs actually had at least one invariant evaluated. When 0, the structural
     /// <see cref="InvariantPassRate"/> is meaningless (nothing was gated) — surface this so a suite that
@@ -130,7 +141,13 @@ public sealed record Campaign
     public SuiteAggregate? Baseline { get; init; }
     public SuiteAggregate? Current { get; init; }
     public IReadOnlyList<CampaignIteration> Iterations { get; init; } = [];
+
+    /// <summary>Agent-execution tokens spent so far (updated as runs complete, not just at round ends).</summary>
     public long TokensSpent { get; init; }
+
+    /// <summary>Meta-LLM tokens (judge / pairwise / proposer) spent so far — the other half of the bill.</summary>
+    public long MetaTokensSpent { get; init; }
+
     public string? Error { get; init; }
 }
 

@@ -42,6 +42,9 @@ public sealed class LlmJudge(IInferService infer, MetaLlmUsageBroker meta) : ILl
             new("Agent Name", trace.AgentName),
             new("Agent Definition", agentDefinition),
             new("Scenario", RenderScenario(scenario)),
+            // Always filled (never an unfilled placeholder): the prompt tells the judge to grade factual
+            // correctness against it when present and to ignore the "(none provided)" sentinel otherwise.
+            new("Ground Truth", string.IsNullOrWhiteSpace(scenario.GroundTruth) ? "(none provided)" : scenario.GroundTruth),
             new("Invariants", RenderInvariants(invariants)),
             new("Quality Rubric", scenario.Rubric.Count > 0 ? string.Join("\n", scenario.Rubric.Select(r => "- " + r)) : "(none specified)"),
             new("Activity Log", RenderActivityLog(trace)),
@@ -100,23 +103,17 @@ public sealed class LlmJudge(IInferService infer, MetaLlmUsageBroker meta) : ILl
     private static string Truncate(string? s, int max) =>
         string.IsNullOrEmpty(s) ? string.Empty : s.Length > max ? s[..max] + "…" : s;
 
-    /// <summary>DTO matching the <c>Evaluator.AgentRunJudge</c> prompt's JSON output.</summary>
+    /// <summary>
+    /// DTO matching the <c>Evaluator.AgentRunJudge</c> prompt's JSON output. Deliberately slim: the contract
+    /// asks the judge for ONLY what this consumer keeps (quality first, so a degraded/truncated verdict still
+    /// yields a score). Invariant findings are the deterministic checkers' job (they are judge INPUT), and
+    /// improvement proposals are the Proposer's job — neither belongs in the verdict.
+    /// </summary>
     private sealed class AgentRunJudgeResponse
     {
-        [JsonProperty("verdict")] public string? Verdict { get; set; }
-        [JsonProperty("invariant_findings")] public List<InvariantFinding>? InvariantFindings { get; set; }
         [JsonProperty("quality")] public QualityBlock? Quality { get; set; }
-        [JsonProperty("strengths")] public List<string>? Strengths { get; set; }
         [JsonProperty("weaknesses")] public List<string>? Weaknesses { get; set; }
-        [JsonProperty("recommendations")] public List<Recommendation>? Recommendations { get; set; }
         [JsonProperty("confidence")] public int Confidence { get; set; }
-
-        public sealed class InvariantFinding
-        {
-            [JsonProperty("id")] public string? Id { get; set; }
-            [JsonProperty("passed")] public bool Passed { get; set; }
-            [JsonProperty("evidence")] public string? Evidence { get; set; }
-        }
 
         public sealed class QualityBlock
         {
@@ -129,14 +126,6 @@ public sealed class LlmJudge(IInferService infer, MetaLlmUsageBroker meta) : ILl
             [JsonProperty("name")] public string? Name { get; set; }
             [JsonProperty("score")] public int Score { get; set; }
             [JsonProperty("rationale")] public string? Rationale { get; set; }
-        }
-
-        public sealed class Recommendation
-        {
-            [JsonProperty("title")] public string? Title { get; set; }
-            [JsonProperty("knob")] public string? Knob { get; set; }
-            [JsonProperty("rationale")] public string? Rationale { get; set; }
-            [JsonProperty("expected_impact")] public string? ExpectedImpact { get; set; }
         }
     }
 }

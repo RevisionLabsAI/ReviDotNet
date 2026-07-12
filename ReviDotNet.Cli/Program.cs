@@ -480,7 +480,7 @@ static async Task<Campaign> PollUntilTerminalAsync(string id, RefineryClient cli
             if (IsTerminal(c.Status)) return c;
 
             if (!quiet)
-                Console.Write($"\r  status={c.Status,-20} tokens={c.TokensSpent,10}  rounds={c.Iterations.Count,3}  ");
+                Console.Write($"\r  status={c.Status,-20} agent-tokens={c.TokensSpent,10}  meta-tokens={c.MetaTokensSpent,10}  rounds={c.Iterations.Count,3}  ");
 
             if (DateTime.UtcNow >= deadline)
             {
@@ -549,7 +549,7 @@ static void PrintCampaignSummary(Campaign c)
     Console.WriteLine($"Plugin    : {c.Spec.PluginName}");
     Console.WriteLine($"Agent     : {c.Spec.AgentName}");
     Console.WriteLine($"Suite     : {c.Spec.SuiteName}");
-    Console.WriteLine($"Tokens    : {c.TokensSpent:N0}");
+    Console.WriteLine($"Tokens    : {c.TokensSpent:N0} agent + {c.MetaTokensSpent:N0} meta (judge/gate/proposer)");
     Console.WriteLine($"Rounds    : {c.Iterations.Count}");
     if (c.Error is not null) Console.WriteLine($"Error     : {c.Error}");
 
@@ -611,7 +611,7 @@ static void PrintAggregate(string label, SuiteAggregate? agg)
     if (agg is null) { Console.WriteLine($"  {label}: (not yet available)"); return; }
     Console.WriteLine($"  {label}:");
     Console.WriteLine($"    Inv pass-rate : {agg.InvariantPassRate:P1}  (gated runs: {agg.GatedRunCount}/{agg.RunCount})");
-    Console.WriteLine($"    Quality mean  : {agg.QualityMean:F2}  p10={agg.QualityP10:F2}");
+    Console.WriteLine($"    Quality mean  : {agg.QualityMean:F2}  p10={agg.QualityP10:F2}  (judged: {agg.QualityScoredRuns}/{agg.RunCount}{(agg.QualityJudgeFailures > 0 ? $", JUDGE FAILURES: {agg.QualityJudgeFailures}" : "")})");
     Console.WriteLine($"    Cost mean     : ${agg.CostMean:F4}  latency p90={agg.LatencyP90Ms} ms");
     if (agg.InvariantPassRateById.Count > 0)
     {

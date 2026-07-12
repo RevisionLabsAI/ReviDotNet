@@ -317,11 +317,13 @@ public class PayloadTransformer
         if (payload.TryGetValue("stop", out var stop))
             outPayload["stop_sequences"] = stop;
         
-        // Anthropic requires max_tokens; provide default if missing
+        // Anthropic requires max_tokens; provide a default if missing. 4096 (not the old 1024): this
+        // fallback is a last resort for callers that configured nothing, and 1024 silently truncated
+        // real answers and structured (JSON) outputs mid-document.
         if (payload.TryGetValue("max_tokens", out var maxTokens))
             outPayload["max_tokens"] = maxTokens;
         else
-            outPayload["max_tokens"] = 1024;
+            outPayload["max_tokens"] = 4096;
 
         // Native thinking / reasoning. The mode is either an effort level (e.g. "high") which uses the
         // adaptive thinking API of newer models (Opus 4.8+):
@@ -477,12 +479,17 @@ public class PayloadTransformer
         string? chosenString = guidanceString ?? _config.DefaultGuidanceString;
         //Util.Log($"guidanceString: {guidanceString}, _protocol: {_protocol}");
         
-        switch (maxTokenType)
+        // A null maxTokenType means the model rcfg set no max-token-type — the overwhelmingly common case.
+        // It must still emit the configured max-tokens under the standard "max_tokens" key: previously a
+        // null type matched neither case and the value was silently DROPPED, so providers that require the
+        // field fell back to their transformer default (Claude: 1024), truncating long outputs. Models that
+        // need the non-standard key (e.g. OpenAI reasoning models) declare max-token-type explicitly.
+        switch (maxTokenType ?? MaxTokenType.MaxTokens)
         {
             case MaxTokenType.MaxTokens:
                 if (maxTokens.HasValue) parameters.Add("max_tokens", maxTokens.Value);
                 break;
-            
+
             case MaxTokenType.MaxCompletionTokens:
                 if (maxTokens.HasValue) parameters.Add("max_completion_tokens", maxTokens.Value);
                 break;

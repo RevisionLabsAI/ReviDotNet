@@ -6,8 +6,13 @@ version = 1
 request-json = true
 # Disabled (not json-auto) so the snake_case JSON contract is provider-independent — see AgentRunJudge.pmt.
 guidance-schema-type = disabled
-preferred-models = claude-opus-4-8
+# Explicit fallback chain so the generator model is CHOSEN, never silently substituted. Opus first for
+# the same reason as Proposer.pmt: rare, depth-bound authoring calls where cost is negligible.
+preferred-models = claude-opus-4-8, claude-sonnet-4-6, claude-sonnet-4-5
 min-tier = A
+# Generates multiple full scenarios per call — never let the output be cut (see AgentRunJudge.pmt).
+max-tokens = 8000
+# JSON (not YAML) example output: this contract is machine-parsed — see AgentRunJudge.pmt.
 
 [[_system]]
 You are an expert test author for autonomous AI agents. You sit in the scenario-generation seat of a
@@ -93,37 +98,35 @@ factual contradiction with conflicting evidence
 2
 
 [[_exout_1]]
-scenarios:
-  - id: fc-conflicting-dates
-    inputs:
-      claim: "The treaty was signed in 1648, ending the war."
-      evidence: "Source A: 'signed in 1648 at Westphalia.' Source B (op-ed): 'most historians now place it in 1650.'"
-    world_seed: null
-    rubric:
-      - Evidence weighting
-      - Calibration
-    expected_invariants:
-      - FC-1
-    held_out: false
-    tags:
-      - factual contradiction with conflicting evidence
-      - sourcing
-    notes: "A reliable primary source conflicts with an unsourced op-ed claim; the agent should weight the primary source and not over-claim confidence."
-    ground_truth: "1648 is correct. Source A is a sourced primary reference; Source B is an unsourced op-ed and should not override it. Expected determination: claim is TRUE, moderate-to-high confidence."
-  - id: fc-no-evidence
-    inputs:
-      claim: "Company X's revenue grew 40% last quarter."
-      evidence: "No figures are provided in the supplied context."
-    world_seed: null
-    rubric:
-      - Calibration
-      - Refusal to fabricate
-    expected_invariants:
-      - FC-1
-      - FC-2
-    held_out: false
-    tags:
-      - factual contradiction with conflicting evidence
-      - insufficient evidence
-    notes: "The context contains no numbers; the agent must decline to confirm rather than invent a figure."
-    ground_truth: "Insufficient evidence. The correct behavior is UNDETERMINED / low confidence with an explicit note that no figures were provided — NOT a fabricated confirmation."
+{
+  "scenarios": [
+    {
+      "id": "fc-conflicting-dates",
+      "inputs": {
+        "claim": "The treaty was signed in 1648, ending the war.",
+        "evidence": "Source A: 'signed in 1648 at Westphalia.' Source B (op-ed): 'most historians now place it in 1650.'"
+      },
+      "world_seed": null,
+      "rubric": ["Evidence weighting", "Calibration"],
+      "expected_invariants": ["FC-1"],
+      "held_out": false,
+      "tags": ["factual contradiction with conflicting evidence", "sourcing"],
+      "notes": "A reliable primary source conflicts with an unsourced op-ed claim; the agent should weight the primary source and not over-claim confidence.",
+      "ground_truth": "1648 is correct. Source A is a sourced primary reference; Source B is an unsourced op-ed and should not override it. Expected determination: claim is TRUE, moderate-to-high confidence."
+    },
+    {
+      "id": "fc-no-evidence",
+      "inputs": {
+        "claim": "Company X's revenue grew 40% last quarter.",
+        "evidence": "No figures are provided in the supplied context."
+      },
+      "world_seed": null,
+      "rubric": ["Calibration", "Refusal to fabricate"],
+      "expected_invariants": ["FC-1", "FC-2"],
+      "held_out": false,
+      "tags": ["factual contradiction with conflicting evidence", "insufficient evidence"],
+      "notes": "The context contains no numbers; the agent must decline to confirm rather than invent a figure.",
+      "ground_truth": "Insufficient evidence. The correct behavior is UNDETERMINED / low confidence with an explicit note that no figures were provided — NOT a fabricated confirmation."
+    }
+  ]
+}

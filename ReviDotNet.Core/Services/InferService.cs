@@ -1043,12 +1043,23 @@ public sealed class InferService(
                 ModelProfile? preferred = models.Get(preferredModelName);
                 if (preferred is not null && preferred.Enabled)
                     return preferred;
+
+                // A preferred model that isn't registered (or is disabled) silently changes which model
+                // actually runs — and with it both output quality and cost. Log every skip so a
+                // substitution is a visible, deliberate fact instead of a surprise in the usage report.
+                Util.Log($"FindModel: preferred model '{preferredModelName}' for prompt '{prompt.Name}' " +
+                         $"is {(preferred is null ? "not registered" : "disabled")}; trying next preference/tier fallback.");
             }
         }
 
         ModelProfile? tieredModel = models.Find(prompt.MinTier, prompt.IsCompletion(), prompt.BlockedModels);
         if (tieredModel is not null && tieredModel.Enabled)
+        {
+            if (prompt.PreferredModels is { Count: > 0 })
+                Util.Log($"FindModel: prompt '{prompt.Name}' fell back to tier-{prompt.MinTier} model '{tieredModel.Name}' " +
+                         $"(none of its preferred models resolved).");
             return tieredModel;
+        }
 
         ModelProfile? fallbackModel = models.Find(ModelTier.C, false, prompt.BlockedModels);
         if (fallbackModel is not null && fallbackModel.Enabled)

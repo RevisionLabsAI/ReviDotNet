@@ -6,6 +6,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -123,6 +124,31 @@ public class LlmDiffProposerTests
         result.Should().BeNull();
     }
 
+    [Fact]
+    public async Task ProposeAsync_RoutesJudgeWeaknesses_IntoTheQualityWeaknessesInput()
+    {
+        // D2: the judge's weaknesses land in QualityScore.Rationale (and low-facet rationales); the
+        // proposer must actually receive them — with 0 parsed verdicts it proposed blind for a whole
+        // campaign without anything flagging it.
+        FakeInferService infer = new(new
+        {
+            knob_type = "guardrail",
+            rationale = "r",
+            revised_definition = RevisedDefinition,
+            expected_impact = "high"
+        });
+        LlmDiffProposer proposer = new(infer, new MetaLlmUsageBroker());
+
+        await proposer.ProposeAsync("filer", CurrentDefinition, Scores(), Cards());
+
+        Input weaknesses = infer.CapturedInputs!.Single(i => i.Label == "Quality Weaknesses");
+        weaknesses.Text.Should().Contain("Overrode a contradiction without fact-checking.",
+            "the judge's overall weaknesses (QualityScore.Rationale) must reach the proposer");
+        weaknesses.Text.Should().Contain("Bypassed the fact-checker.",
+            "the lowest-scoring facet rationales must reach the proposer");
+        weaknesses.Text.Should().Contain("[Conflict handling 2/10]");
+    }
+
     // ── Diff format: the proposer's unified diff must round-trip through the promote applier ──
 
     [Fact]
@@ -161,6 +187,9 @@ public class LlmDiffProposerTests
     {
         private readonly string? _json = canned is null ? null : JsonConvert.SerializeObject(canned);
 
+        /// <summary>The inputs the proposer passed on its last call (for asserting what it was shown).</summary>
+        public List<Input>? CapturedInputs { get; private set; }
+
         public Task<T?> ToObject<T>(
             string promptName,
             List<Input>? inputs = null,
@@ -172,6 +201,7 @@ public class LlmDiffProposerTests
         {
             promptName.Should().Be("Evaluator.Proposer");
             inputs.Should().NotBeNull();
+            CapturedInputs = inputs;
             T? value = _json is null ? default : JsonConvert.DeserializeObject<T>(_json);
             return Task.FromResult(value);
         }

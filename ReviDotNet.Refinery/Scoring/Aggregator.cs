@@ -34,6 +34,10 @@ public static class Aggregator
         double qMean = qualities.Count > 0 ? qualities.Average() : 0;
         double qP10 = Percentile(qualities, 10);
 
+        // A run that expected a judge score (rubric present) but has none is a JUDGE failure, not a
+        // quality signal — count it so quality stats over a shrunken sample can't pass for full coverage.
+        int qualityJudgeFailures = cards.Count(c => c.QualityExpected && c.Quality is null);
+
         List<decimal> costs = cards.Where(c => c.Efficiency is not null).Select(c => c.Efficiency!.CostUsd).ToList();
         decimal costMean = costs.Count > 0 ? costs.Average() : 0m;
 
@@ -58,6 +62,8 @@ public static class Aggregator
             LatencyP90Ms = latP90,
             RunCount = cards.Count,
             GatedRunCount = gatedCount,
+            QualityScoredRuns = qualities.Count,
+            QualityJudgeFailures = qualityJudgeFailures,
             InvariantPassRateById = byId
         };
     }

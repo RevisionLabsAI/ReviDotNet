@@ -6,8 +6,13 @@ version = 1
 request-json = true
 # Disabled (not json-auto) so the snake_case JSON contract is provider-independent — see AgentRunJudge.pmt.
 guidance-schema-type = disabled
-preferred-models = claude-opus-4-8
+# Explicit fallback chain so the gate model is CHOSEN, never silently substituted. Sonnet first for the
+# same cost reason as AgentRunJudge.pmt: pairwise runs up to 8× per candidate, so it is a volume call.
+preferred-models = claude-sonnet-4-6, claude-sonnet-4-5, claude-opus-4-8
 min-tier = A
+# A truncated verdict loses the winner — never let the output be cut (see AgentRunJudge.pmt).
+max-tokens = 2000
+# JSON (not YAML) example output: this contract is machine-parsed — see AgentRunJudge.pmt.
 
 [[_system]]
 You are an impartial pairwise judge. You compare two candidate outputs, A and B, produced for the SAME
@@ -67,15 +72,22 @@ Chatbot answer to a user asking about a topic only partially covered by the prov
 that data, so I can't state it." (grounded; discloses the gap)
 
 [[_exout_1]]
-winner: B
-confidence: 5
-rationale: "B grounds every claim in the provided context and explicitly discloses the uncovered 2023 figure rather than inventing one; A asserts a specific statistic absent from the context, a grounding-guardrail violation that outweighs its slightly more confident tone."
-per_facet:
-  - name: Groundedness
-    winner: B
-    note: "A fabricates a 2023 percentage not in the context; B discloses the gap."
-  - name: Neutrality
-    winner: tie
-    note: "Both are even-handed and non-advocating."
-a_summary: "Confident but ungrounded — invents an unsupported statistic."
-b_summary: "Fully grounded and guardrail-compliant; honestly flags the coverage gap."
+{
+  "winner": "B",
+  "confidence": 5,
+  "rationale": "B grounds every claim in the provided context and explicitly discloses the uncovered 2023 figure rather than inventing one; A asserts a specific statistic absent from the context, a grounding-guardrail violation that outweighs its slightly more confident tone.",
+  "per_facet": [
+    {
+      "name": "Groundedness",
+      "winner": "B",
+      "note": "A fabricates a 2023 percentage not in the context; B discloses the gap."
+    },
+    {
+      "name": "Neutrality",
+      "winner": "tie",
+      "note": "Both are even-handed and non-advocating."
+    }
+  ],
+  "a_summary": "Confident but ungrounded — invents an unsupported statistic.",
+  "b_summary": "Fully grounded and guardrail-compliant; honestly flags the coverage gap."
+}
