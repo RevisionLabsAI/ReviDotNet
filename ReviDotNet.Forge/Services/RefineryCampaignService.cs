@@ -90,6 +90,9 @@ public sealed class RefineryCampaignService(
         {
             q.Enqueue($"{DateTime.Now:HH:mm:ss}  {p.Message}");
             while (q.Count > MaxProgressLines && q.TryDequeue(out _)) { }
+            // Mirror into the host log so campaign progress survives the process (file log) — the ring
+            // buffer above only serves the live UI and dies with the process.
+            _log.LogInformation("campaign {CampaignId}: {Message}", id, p.Message);
         });
     }
 

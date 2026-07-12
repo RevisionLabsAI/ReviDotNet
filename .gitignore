@@ -58,3 +58,7 @@ TestResults/
 # Claude Code local state (worktrees, session data) — keep the tracked launch.json
 .claude/*
 !.claude/launch.json
+
+# Forge local runtime artifacts (file log + file-backed campaign store)
+ReviDotNet.Forge/logs/
+ReviDotNet.Forge/data/

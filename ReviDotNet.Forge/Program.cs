@@ -19,6 +19,7 @@ using ReviDotNet.Forge.Api;
 using ReviDotNet.Forge.Components;
 using ReviDotNet.Forge.Services;
 using ReviDotNet.Forge.Services.ApiKeys;
+using ReviDotNet.Forge.Services.FileLog;
 using ReviDotNet.Forge.Services.Gateway;
 using ReviDotNet.Forge.Services.Mongo;
 using ReviDotNet.Forge.Services.Observer;
@@ -39,6 +40,20 @@ builder.Configuration
     .AddEnvironmentVariables();
 
 bool useAuthentication = builder.Configuration.GetValue<bool>("Forge:UseAuthentication");
+
+// Rolling file log (logs/forge-yyyyMMdd.log under the content root, or Forge:FileLog:Directory) so a
+// crash or silent process death leaves evidence that outlives the console buffer. Disable with
+// Forge:FileLog:Enabled=false. A once-a-minute MemoryStatsLogger line makes memory growth diagnosable
+// after the fact.
+if (builder.Configuration.GetValue("Forge:FileLog:Enabled", defaultValue: true))
+{
+    string logDir = builder.Configuration["Forge:FileLog:Directory"] is { Length: > 0 } configured
+        ? (Path.IsPathRooted(configured) ? configured : Path.Combine(builder.Environment.ContentRootPath, configured))
+        : Path.Combine(builder.Environment.ContentRootPath, "logs");
+    builder.Logging.AddProvider(new FileLoggerProvider(logDir));
+    builder.Services.AddHostedService<MemoryStatsLogger>();
+    Console.WriteLine($"[Forge] File log: {logDir}");
+}
 
 // Blazor / MudBlazor
 builder.Services.AddRazorComponents()
@@ -130,11 +145,14 @@ else
             sp.GetRequiredService<IWorkshopEventBus>()));
 }
 
-// Refinery durable store (config-gated). Register a Mongo-backed ICampaignStore BEFORE AddRefinery() so its
+// Refinery durable store (config-gated). Register the durable ICampaignStore BEFORE AddRefinery() so its
 // guard ("only register InMemory if no ICampaignStore exists") skips the in-memory default and the durable
-// store wins. Activated when Forge:CampaignStore == "mongo" AND an Observer Mongo connection is configured
-// (reusing the same connection string key the Observer/ReviLog use). Default (unset) keeps in-memory.
-string campaignStoreMode = builder.Configuration["Forge:CampaignStore"] ?? "inmemory";
+// store wins. Modes (Forge:CampaignStore):
+//   "file"     (default) — JSON files under Forge:CampaignStoreDir (default data/refinery, content-root
+//              relative); campaigns survive restarts with no external database.
+//   "mongo"    — MongoCampaignStore, requires the Observer Mongo connection string.
+//   "inmemory" — the pre-existing volatile behavior (campaigns are lost on restart).
+string campaignStoreMode = builder.Configuration["Forge:CampaignStore"] ?? "file";
 string? refineryMongoConn = builder.Configuration["Observer:MongoDb:ConnectionString"];
 if (string.Equals(campaignStoreMode, "mongo", StringComparison.OrdinalIgnoreCase)
     && !string.IsNullOrWhiteSpace(refineryMongoConn))
@@ -143,6 +161,14 @@ if (string.Equals(campaignStoreMode, "mongo", StringComparison.OrdinalIgnoreCase
     builder.Services.AddSingleton<ICampaignStore>(_ =>
         new MongoCampaignStore(refineryMongoConn!, refineryDbName));
     Console.WriteLine($"[Refinery] Campaign store: Mongo (db='{refineryDbName}').");
+}
+else if (string.Equals(campaignStoreMode, "file", StringComparison.OrdinalIgnoreCase))
+{
+    string storeDir = builder.Configuration["Forge:CampaignStoreDir"] is { Length: > 0 } configuredDir
+        ? (Path.IsPathRooted(configuredDir) ? configuredDir : Path.Combine(builder.Environment.ContentRootPath, configuredDir))
+        : Path.Combine(builder.Environment.ContentRootPath, "data", "refinery");
+    builder.Services.AddSingleton<ICampaignStore>(_ => new FileCampaignStore(storeDir));
+    Console.WriteLine($"[Refinery] Campaign store: file ({storeDir}).");
 }
 else
 {
