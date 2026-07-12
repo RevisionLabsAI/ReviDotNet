@@ -2,6 +2,7 @@
 @using Revi.Refinery
 @using Revi.Refinery.Hosting
 @using ReviDotNet.Forge.Services
+@implements IDisposable
 @inject PluginManager Plugins
 @inject RefineryCampaignService Campaigns
 @inject ICampaignStore CampaignStore
@@ -39,23 +40,9 @@ else
                 <MudText Typo="Typo.h6">@p.Name</MudText>
                 <MudText Typo="Typo.body2" Color="@StatusColor(p.Status)">(@p.Status)</MudText>
                 <MudSpacer />
-                @if (p.Status == PluginStatus.Loaded && p.Plugin is not null && p.Plugin.GetScenarioSuites().Any())
-                {
-                    <MudButton Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined"
-                               StartIcon="@Icons.Material.Filled.PlayArrow"
-                               OnClick="@(() => RunBaseline(p))" Disabled="_busy">Run baseline</MudButton>
-                    <MudButton Size="Size.Small" Color="Color.Secondary" Variant="Variant.Filled"
-                               StartIcon="@Icons.Material.Filled.AutoFixHigh"
-                               OnClick="@(() => RunCampaign(p))" Disabled="_busy">Refine</MudButton>
-                }
                 <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Sync"
                            OnClick="@(() => Reload(p.Name))" Disabled="_busy">Reload</MudButton>
             </MudStack>
-
-            @if (_lastStartedBy.TryGetValue(p.Name, out string? startedId))
-            {
-                <MudText Typo="Typo.caption" Class="mt-1">Started campaign <code>@startedId</code> — poll below.</MudText>
-            }
             <MudText Typo="Typo.caption">@p.ProjectPath</MudText>
 
             @if (!string.IsNullOrEmpty(p.Error))
@@ -69,21 +56,51 @@ else
 
             @if (p.Plugin is not null)
             {
-                <div class="mt-3">
+                <div class="mt-2">
                     <MudText Typo="Typo.subtitle2">Agents</MudText>
                     <MudText Typo="Typo.body2">@string.Join(", ", p.Plugin.GetAgents().Select(a => a.Name))</MudText>
-                </div>
-                <div class="mt-2">
-                    <MudText Typo="Typo.subtitle2">Scenario suites</MudText>
-                    @foreach (ScenarioSuite s in p.Plugin.GetScenarioSuites())
-                    {
-                        <MudText Typo="Typo.body2">@s.Name (@s.AgentName) — @s.Scenarios.Count scenarios</MudText>
-                    }
                 </div>
                 <div class="mt-2">
                     <MudText Typo="Typo.subtitle2">Invariants</MudText>
                     <MudText Typo="Typo.body2">@string.Join(", ", p.Plugin.GetInvariantCheckers().Select(i => i.Id))</MudText>
                 </div>
+
+                @if (p.Status == PluginStatus.Loaded && p.Plugin.GetScenarioSuites().Any())
+                {
+                    <MudDivider Class="my-3" />
+                    <MudText Typo="Typo.subtitle2" Class="mb-1">Start a run</MudText>
+                    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" AlignItems="AlignItems.Center">
+                        <MudSelect T="string" Label="Suite" Dense="true" Style="min-width: 220px;"
+                                   @bind-Value="_startSuite">
+                            @foreach (ScenarioSuite s in p.Plugin.GetScenarioSuites())
+                            {
+                                <MudSelectItem T="string" Value="@s.Name">@s.Name (@s.Scenarios.Count scenarios, @s.AgentName)</MudSelectItem>
+                            }
+                        </MudSelect>
+                        <MudSelect T="string" Label="Mode" Dense="true" Style="min-width: 110px;" @bind-Value="_startMode">
+                            <MudSelectItem T="string" Value="@("replay")">replay</MudSelectItem>
+                            <MudSelectItem T="string" Value="@("live")">live</MudSelectItem>
+                        </MudSelect>
+                        <MudNumericField T="int" Label="Samples" Dense="true" Min="1" Max="10" Style="width: 90px;" @bind-Value="_startSamples" />
+                        <MudNumericField T="int" Label="Rounds" Dense="true" Min="1" Max="20" Style="width: 90px;" @bind-Value="_startRounds" />
+                        <MudNumericField T="int" Label="Parallel" Dense="true" Min="1" Max="16" Style="width: 90px;" @bind-Value="_startParallel" />
+                        <MudNumericField T="long?" Label="Agent budget" Dense="true" Style="width: 140px;" Clearable="true" @bind-Value="_startBudget" />
+                        <MudNumericField T="long?" Label="Meta budget" Dense="true" Style="width: 140px;" Clearable="true" @bind-Value="_startMetaBudget" />
+                        <MudSwitch T="bool" Label="Screen candidates" Color="Color.Primary" @bind-Value="_startScreen" />
+                    </MudStack>
+                    <MudStack Row="true" Spacing="2" Class="mt-2">
+                        <MudButton Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined"
+                                   StartIcon="@Icons.Material.Filled.PlayArrow"
+                                   OnClick="@(() => Start(p, refine: false))" Disabled="_busy">Run baseline</MudButton>
+                        <MudButton Size="Size.Small" Color="Color.Secondary" Variant="Variant.Filled"
+                                   StartIcon="@Icons.Material.Filled.AutoFixHigh"
+                                   OnClick="@(() => Start(p, refine: true))" Disabled="_busy">Refine</MudButton>
+                        @if (_lastStartedBy.TryGetValue(p.Name, out string? startedId))
+                        {
+                            <MudText Typo="Typo.caption" Class="mt-1">Started <code>@startedId</code> — tracking below.</MudText>
+                        }
+                    </MudStack>
+                }
             }
         </MudPaper>
     }
@@ -92,6 +109,10 @@ else
 <MudPaper Class="pa-4 mb-3 mt-6" Outlined="true">
     <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
         <MudText Typo="Typo.h6">Campaigns</MudText>
+        @if (_campaigns.Any(c => c.Status is CampaignStatus.Running or CampaignStatus.Pending))
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Info" Icon="@Icons.Material.Filled.Autorenew">live — auto-refreshing</MudChip>
+        }
         <MudSpacer />
         <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Refresh"
                    OnClick="RefreshCampaigns" Disabled="_busy">Refresh</MudButton>
@@ -108,10 +129,12 @@ else
                 <tr>
                     <th>Id</th>
                     <th>Agent / Suite</th>
+                    <th>Mode</th>
                     <th>Status</th>
-                    <th>Invariant pass-rate</th>
-                    <th>Quality mean</th>
-                    <th>Runs</th>
+                    <th>Inv pass-rate</th>
+                    <th>Quality (judged)</th>
+                    <th>Agent tok</th>
+                    <th>Meta tok</th>
                 </tr>
             </thead>
             <tbody>
@@ -120,12 +143,14 @@ else
                     <tr style="cursor: pointer;"
                         class="@(_selected?.Id == c.Id ? "mud-selected-item" : null)"
                         @onclick="@(() => SelectCampaign(c))">
-                        <td><code>@c.Id</code></td>
+                        <td><code>@Shorten(c.Id)</code></td>
                         <td>@c.Spec.AgentName / @c.Spec.SuiteName</td>
+                        <td>@c.Spec.Mode</td>
                         <td>@c.Status</td>
                         <td>@(c.Current is null ? "—" : c.Current.InvariantPassRate.ToString("P0"))</td>
-                        <td>@(c.Current is null ? "—" : c.Current.QualityMean.ToString("F1"))</td>
-                        <td>@(c.Current?.RunCount.ToString() ?? "—")</td>
+                        <td>@QualityCell(c.Current)</td>
+                        <td>@c.TokensSpent.ToString("N0")</td>
+                        <td>@c.MetaTokensSpent.ToString("N0")</td>
                     </tr>
                 }
             </tbody>
@@ -137,9 +162,22 @@ else
 {
     <MudPaper Class="pa-4 mb-3" Outlined="true">
         <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
-            <MudText Typo="Typo.h6">Campaign <code>@_selected.Id</code></MudText>
+            <MudText Typo="Typo.h6">Campaign <code>@Shorten(_selected.Id)</code></MudText>
             <MudChip T="string" Size="Size.Small" Color="@StatusChipColor(_selected.Status)">@_selected.Status</MudChip>
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@_selected.Spec.Mode</MudChip>
+            @if (JudgeFailures(_selected) > 0)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Warning" Icon="@Icons.Material.Filled.Gavel">
+                    @JudgeFailures(_selected) judge verdict(s) missing/unparsed
+                </MudChip>
+            }
             <MudSpacer />
+            @if (_selected.Status is CampaignStatus.Running or CampaignStatus.Pending)
+            {
+                <MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined"
+                           StartIcon="@Icons.Material.Filled.Stop"
+                           OnClick="@(() => Stop(_selected))">Stop</MudButton>
+            }
             <MudText Typo="Typo.body2">@_selected.Spec.AgentName / @_selected.Spec.SuiteName</MudText>
         </MudStack>
 
@@ -148,30 +186,67 @@ else
             <MudAlert Severity="Severity.Error" Dense="true" Class="mb-2">@_selected.Error</MudAlert>
         }
 
-        <MudStack Row="true" Spacing="6" Class="mb-3">
-            <div>
+        @* ── Live spend meters ─────────────────────────────────────────────── *@
+        <MudGrid Spacing="4" Class="mb-2">
+            <MudItem xs="12" sm="6">
+                <MudText Typo="Typo.caption">
+                    Agent tokens: <b>@_selected.TokensSpent.ToString("N0")</b>@(_selected.Spec.TokenBudget is { } tb ? $" / {tb:N0}" : " (no cap)")
+                </MudText>
+                @if (_selected.Spec.TokenBudget is { } tbb && tbb > 0)
+                {
+                    <MudProgressLinear Color="@BudgetColor(_selected.TokensSpent, tbb)" Value="@Percent(_selected.TokensSpent, tbb)" Class="my-1" />
+                }
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudText Typo="Typo.caption">
+                    Meta tokens (judge/gate/proposer): <b>@_selected.MetaTokensSpent.ToString("N0")</b>@(_selected.Spec.MetaTokenBudget is { } mb ? $" / {mb:N0}" : " (no cap)")
+                </MudText>
+                @if (_selected.Spec.MetaTokenBudget is { } mbb && mbb > 0)
+                {
+                    <MudProgressLinear Color="@BudgetColor(_selected.MetaTokensSpent, mbb)" Value="@Percent(_selected.MetaTokensSpent, mbb)" Class="my-1" />
+                }
+            </MudItem>
+        </MudGrid>
+
+        @* ── Baseline / Current aggregates ─────────────────────────────────── *@
+        <MudGrid Spacing="4" Class="mb-2">
+            <MudItem xs="12" sm="6">
                 <MudText Typo="Typo.caption">Baseline</MudText>
-                <MudText Typo="Typo.body2">
-                    @(_selected.Baseline is null ? "—"
-                        : $"inv {_selected.Baseline.InvariantPassRate:P0} · q {_selected.Baseline.QualityMean:F1} (p10 {_selected.Baseline.QualityP10:F1})")
-                </MudText>
-            </div>
-            <div>
+                <MudText Typo="Typo.body2">@AggSummary(_selected.Baseline)</MudText>
+            </MudItem>
+            <MudItem xs="12" sm="6">
                 <MudText Typo="Typo.caption">Current</MudText>
-                <MudText Typo="Typo.body2">
-                    @(_selected.Current is null ? "—"
-                        : $"inv {_selected.Current.InvariantPassRate:P0} · q {_selected.Current.QualityMean:F1} (p10 {_selected.Current.QualityP10:F1})")
-                </MudText>
-            </div>
-            <div>
-                <MudText Typo="Typo.caption">Tokens spent</MudText>
-                <MudText Typo="Typo.body2">@_selected.TokensSpent.ToString("N0")</MudText>
-            </div>
-        </MudStack>
+                <MudText Typo="Typo.body2">@AggSummary(_selected.Current)</MudText>
+            </MudItem>
+        </MudGrid>
+
+        @* ── Per-invariant pass-rate table: the most actionable live signal ── *@
+        @{ SuiteAggregate? invAgg = _selected.Current ?? _selected.Baseline; }
+        @if (invAgg is not null && invAgg.InvariantPassRateById.Count > 0)
+        {
+            <MudText Typo="Typo.caption" Class="mt-1">Per-invariant pass rate (@(_selected.Current is not null ? "current" : "baseline"))</MudText>
+            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1" Class="mb-2 mt-1">
+                @foreach (var kv in invAgg.InvariantPassRateById.OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    <MudChip T="string" Size="Size.Small"
+                             Color="@(kv.Value >= 0.999 ? Color.Success : kv.Value >= 0.8 ? Color.Warning : Color.Error)"
+                             Variant="@(kv.Value >= 0.999 ? Variant.Outlined : Variant.Filled)">
+                        @kv.Key @kv.Value.ToString("P0")
+                    </MudChip>
+                }
+            </MudStack>
+        }
+
+        @* ── Live activity feed ────────────────────────────────────────────── *@
+        @if (_progressLines.Count > 0)
+        {
+            <MudText Typo="Typo.caption">Activity (@_progressLines.Count lines, newest last)</MudText>
+            <pre style="font-family: monospace; font-size: 0.75rem; white-space: pre-wrap; max-height: 240px; overflow-y: auto; background: var(--mud-palette-background-grey); padding: 8px; border-radius: 4px; display: flex; flex-direction: column-reverse;">@string.Join("\n", _progressLines.TakeLast(60).Reverse())</pre>
+        }
 
         @if (_selected.Iterations.Count == 0)
         {
-            <MudText Typo="Typo.body2">No refinement rounds recorded yet.</MudText>
+            <MudText Typo="Typo.body2" Class="mt-2">No refinement rounds recorded yet.</MudText>
         }
         else
         {
@@ -246,18 +321,54 @@ else
     private List<LoadedPlugin> _plugins = new();
     private List<Campaign> _campaigns = new();
     private Campaign? _selected;
+    private IReadOnlyList<string> _progressLines = Array.Empty<string>();
     private readonly Dictionary<string, string> _lastStartedBy = new();
+    private System.Threading.Timer? _pollTimer;
+
+    // Start-a-run options (shared across plugins; sensible defaults for a cheap first run).
+    private string? _startSuite;
+    private string _startMode = "replay";
+    private int _startSamples = 1;
+    private int _startRounds = 3;
+    private int _startParallel = 4;
+    private long? _startBudget;
+    private long? _startMetaBudget;
+    private bool _startScreen = true;
 
     protected override async Task OnInitializedAsync()
     {
         _plugins = Plugins.Catalog.ToList();
+        _startSuite ??= _plugins.FirstOrDefault(p => p.Plugin is not null)?.Plugin!.GetScenarioSuites().FirstOrDefault()?.Name;
         await RefreshCampaigns();
+
+        // Live view: poll the store + progress feed every 2 s. Cheap when idle; keeps the page current
+        // while a campaign runs without any manual clicking.
+        _pollTimer = new System.Threading.Timer(_ => _ = InvokeAsync(TickAsync), null, 2000, 2000);
     }
 
-    private async Task RunBaseline(LoadedPlugin p)
+    public void Dispose() => _pollTimer?.Dispose();
+
+    private async Task TickAsync()
+    {
+        try
+        {
+            await RefreshCampaigns();
+            if (_selected is not null)
+                _progressLines = Campaigns.GetProgress(_selected.Id);
+            StateHasChanged();
+        }
+        catch
+        {
+            // Poll ticks must never crash the circuit; the next tick retries.
+        }
+    }
+
+    private async Task Start(LoadedPlugin p, bool refine)
     {
         if (p.Plugin is null) return;
-        ScenarioSuite? suite = p.Plugin.GetScenarioSuites().FirstOrDefault();
+        ScenarioSuite? suite = p.Plugin.GetScenarioSuites()
+            .FirstOrDefault(s => string.Equals(s.Name, _startSuite, StringComparison.OrdinalIgnoreCase))
+            ?? p.Plugin.GetScenarioSuites().FirstOrDefault();
         if (suite is null) return;
 
         _busy = true;
@@ -268,44 +379,39 @@ else
                 PluginName = p.Name,
                 AgentName = suite.AgentName,
                 SuiteName = suite.Name,
-                SamplesPerScenario = 1
+                SamplesPerScenario = _startSamples,
+                Mode = _startMode,
+                MaxRounds = _startRounds,
+                MaxParallelRuns = _startParallel,
+                TokenBudget = _startBudget,
+                MetaTokenBudget = _startMetaBudget,
+                ScreenCandidates = _startScreen,
+                AutoPropose = refine
             };
-            string id = await Campaigns.StartBaselineAsync(spec);
+            string id = refine ? await Campaigns.StartCampaignAsync(spec) : await Campaigns.StartBaselineAsync(spec);
             _lastStartedBy[p.Name] = id;
             await RefreshCampaigns();
+            _selected = _campaigns.FirstOrDefault(c => c.Id == id) ?? _selected;
+        }
+        catch (ArgumentException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
         }
         finally { _busy = false; }
     }
 
-    private async Task RunCampaign(LoadedPlugin p)
+    private async Task Stop(Campaign c)
     {
-        if (p.Plugin is null) return;
-        ScenarioSuite? suite = p.Plugin.GetScenarioSuites().FirstOrDefault();
-        if (suite is null) return;
-
-        _busy = true;
-        try
-        {
-            CampaignSpec spec = new()
-            {
-                PluginName = p.Name,
-                AgentName = suite.AgentName,
-                SuiteName = suite.Name,
-                SamplesPerScenario = 2,
-                MaxRounds = 3,
-                AutoPropose = true
-            };
-            string id = await Campaigns.StartCampaignAsync(spec);
-            _lastStartedBy[p.Name] = id;
-            await RefreshCampaigns();
-        }
-        finally { _busy = false; }
+        bool signalled = Campaigns.StopCampaign(c.Id);
+        Snackbar.Add(signalled ? "Stop requested — the campaign will land in Stopped shortly." : "Campaign is not running.",
+            signalled ? Severity.Info : Severity.Warning);
+        await RefreshCampaigns();
     }
 
     private async Task RefreshCampaigns()
     {
         IReadOnlyList<Campaign> all = await CampaignStore.ListAsync();
-        _campaigns = all.ToList();
+        _campaigns = all.OrderByDescending(c => c.Status is CampaignStatus.Running or CampaignStatus.Pending).ToList();
         // Re-bind the selected campaign to its freshest snapshot (or drop it if it vanished).
         if (_selected is not null)
             _selected = _campaigns.FirstOrDefault(c => c.Id == _selected.Id);
@@ -315,6 +421,7 @@ else
     {
         // Always pull the latest snapshot for the detail view.
         _selected = await CampaignStore.GetAsync(c.Id) ?? c;
+        _progressLines = Campaigns.GetProgress(_selected.Id);
     }
 
     private async Task Promote(Campaign campaign, VariantRecord variant)
@@ -341,6 +448,22 @@ else
         finally { _busy = false; }
     }
 
+    private static string Shorten(string id) => id.Length <= 12 ? id : id[..12];
+
+    private static int JudgeFailures(Campaign c) =>
+        Math.Max(c.Current?.QualityJudgeFailures ?? 0, c.Baseline?.QualityJudgeFailures ?? 0);
+
+    private static string QualityCell(SuiteAggregate? a) =>
+        a is null ? "—"
+            : $"{a.QualityMean:F1} (p10 {a.QualityP10:F1}) · {a.QualityScoredRuns}/{a.RunCount}"
+              + (a.QualityJudgeFailures > 0 ? $" ⚠{a.QualityJudgeFailures}" : "");
+
+    private static double Percent(long spent, long budget) =>
+        budget <= 0 ? 0 : Math.Min(100.0, 100.0 * spent / budget);
+
+    private static Color BudgetColor(long spent, long budget) =>
+        Percent(spent, budget) switch { >= 90 => Color.Error, >= 70 => Color.Warning, _ => Color.Info };
+
     private static string ScoreSummary(VariantRecord v)
     {
         SuiteAggregate? a = v.HeldOutScores ?? v.TrainScores;
@@ -348,7 +471,9 @@ else
     }
 
     private static string AggSummary(SuiteAggregate? a) =>
-        a is null ? "—" : $"inv {a.InvariantPassRate:P0} · q {a.QualityMean:F1} (p10 {a.QualityP10:F1}) · n={a.RunCount}";
+        a is null ? "—"
+            : $"inv {a.InvariantPassRate:P0} · q {a.QualityMean:F1} (p10 {a.QualityP10:F1}) · judged {a.QualityScoredRuns}/{a.RunCount}"
+              + (a.QualityJudgeFailures > 0 ? $" · ⚠ {a.QualityJudgeFailures} judge failure(s)" : "");
 
     private static Color StatusChipColor(CampaignStatus s) => s switch
     {

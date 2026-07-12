@@ -68,6 +68,32 @@ public sealed class RefineryCampaignService(
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _running = new();
 
     /// <summary>
+    /// Per-campaign ring buffer of <see cref="RefineryProgress"/> messages — the live activity feed the
+    /// dashboard renders. Kept after the campaign ends (session-lifetime) so a finished run's feed is still
+    /// reviewable; capped per campaign so a long campaign cannot grow without bound.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, ConcurrentQueue<string>> _progress = new();
+
+    private const int MaxProgressLines = 300;
+
+    /// <summary>The campaign's captured progress lines, oldest first (empty for unknown ids).</summary>
+    public IReadOnlyList<string> GetProgress(string id) =>
+        _progress.TryGetValue(id, out ConcurrentQueue<string>? q) ? q.ToArray() : Array.Empty<string>();
+
+    /// <summary>A progress sink that appends timestamped lines into the campaign's ring buffer.</summary>
+    private IProgress<RefineryProgress> CreateProgressSink(string id)
+    {
+        ConcurrentQueue<string> q = _progress.GetOrAdd(id, _ => new ConcurrentQueue<string>());
+        // Progress<T> posts via the captured SynchronizationContext; the background body runs on the thread
+        // pool (none captured), so the handler runs inline on pool threads — ConcurrentQueue keeps it safe.
+        return new Progress<RefineryProgress>(p =>
+        {
+            q.Enqueue($"{DateTime.Now:HH:mm:ss}  {p.Message}");
+            while (q.Count > MaxProgressLines && q.TryDequeue(out _)) { }
+        });
+    }
+
+    /// <summary>
     /// Validate the spec, pre-create a Pending campaign, and start a baseline-only measurement on a
     /// background task. Returns the campaign id immediately. Throws <see cref="ArgumentException"/> on
     /// validation failure (the API maps it to 400/404).
@@ -202,8 +228,12 @@ public sealed class RefineryCampaignService(
             // Optional seeding hook: if the plugin manages an isolated test store, reset it once before the
             // run and seed it before every sample run via the callback. Plugins that do not implement
             // IScenarioWorld (e.g. the chatbot) pass a null callback — behaviour is unchanged.
+            // Engage the world hook only when this SUITE actually seeds a world: a suite whose scenarios
+            // carry no WorldSeed (e.g. the chatbot's inline-input scenarios) needs no isolated store, and
+            // resetting one anyway couples it to infrastructure (Mongo) the run never uses — a store
+            // outage would fail a campaign that had no store dependency at all.
             Func<Scenario, CancellationToken, Task>? seed = null;
-            if (lp.Plugin is IScenarioWorld world)
+            if (lp.Plugin is IScenarioWorld world && suite.Scenarios.Any(s => !string.IsNullOrEmpty(s.WorldSeed)))
             {
                 await world.ResetAsync(pluginProvider, ct);
                 seed = (s, c) => world.SeedAsync(s, pluginProvider, c);
@@ -218,15 +248,16 @@ public sealed class RefineryCampaignService(
             // lease that blocks teardown until disposed; it is a no-op disposable if the plugin is absent.
             using (_plugins.Acquire(spec.PluginName))
             {
+                IProgress<RefineryProgress> progressSink = CreateProgressSink(id);
                 if (refine)
                 {
                     await _controller.RunCampaignAsync(
-                        spec, suite, agentDefinition, checkers, progress: null, ct: ct, campaignId: id, seedScenario: seed, toolManager: runTools);
+                        spec, suite, agentDefinition, checkers, progress: progressSink, ct: ct, campaignId: id, seedScenario: seed, toolManager: runTools);
                 }
                 else
                 {
                     await _controller.MeasureBaselineAsync(
-                        spec, suite, agentDefinition, checkers, progress: null, ct: ct, campaignId: id, seedScenario: seed, toolManager: runTools);
+                        spec, suite, agentDefinition, checkers, progress: progressSink, ct: ct, campaignId: id, seedScenario: seed, toolManager: runTools);
                 }
             }
 
