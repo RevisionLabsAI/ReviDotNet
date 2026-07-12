@@ -67,10 +67,10 @@ Return a JSON object with exactly these fields:
 filer
 
 [Current Definition]
-[[information]]
+\[[information]]
 name = filer
 
-[[_system]]
+\[[_system]]
 You route research reports into relevant issues. Update any issue the report is relevant to.
 Rules:
 1. Be conservative about relevance.
