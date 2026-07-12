@@ -901,7 +901,9 @@ public sealed class InferService(
         }
         catch (Exception e)
         {
-            Util.Log($"InferService.CallInference Exception: \"{e.Message}\"");
+            // Log the full exception (type + stack), not just the message: a bare "Object reference
+            // not set…" from a provider call is undiagnosable without knowing where it was thrown.
+            Util.Log($"InferService.CallInference Exception: \"{e.Message}\"\n{e}");
         }
 
         string dump = $"CallInference:\n\nMessages:\n{prompt}\n\nOutput:\n";
@@ -1174,17 +1176,20 @@ public sealed class InferService(
         return null;
     }
 
-    private static object? SelectParam(string? modelString, object? promptObj)
+    /// <summary>
+    /// Resolves an inference parameter: a model-profile override string wins when set
+    /// ("disabled" turns the parameter off entirely); otherwise the prompt's value applies.
+    /// A prompt that leaves the parameter unset while the model supplies an override is a normal
+    /// case — the override is parsed to the parameter's type. (The previous object-typed
+    /// implementation switched on the prompt value's runtime type, so a null prompt value threw an
+    /// NRE via <c>promptObj.GetType()</c> — e.g. the Refinery judge prompt, which sets no
+    /// max-tokens, against any model profile that does — and bool parameters always threw.)
+    /// </summary>
+    private static T? SelectParam<T>(string? modelString, T? promptValue) where T : struct
     {
-        if (modelString is null) return promptObj;
-        if (modelString is "disabled") return null;
-        return promptObj switch
-        {
-            string => modelString,
-            int => int.Parse(modelString),
-            float => float.Parse(modelString),
-            _ => throw new Exception($"Unexpected type: {promptObj.GetType()}")
-        };
+        if (modelString is null) return promptValue;
+        if (string.Equals(modelString, "disabled", StringComparison.OrdinalIgnoreCase)) return null;
+        return (T)Convert.ChangeType(modelString, typeof(T), System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static string[]? ToArray(string? input)
