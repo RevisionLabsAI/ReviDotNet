@@ -189,7 +189,9 @@ static async Task<int> HandleRefineRunAsync(string[] args, RefineryClient client
     string? metaBudgetStr = GetFlag(args, "--meta-budget");
     string? maxRoundsStr = GetFlag(args, "--max-rounds");
     string? mode         = GetFlag(args, "--mode") ?? "live";
+    string? parallelStr  = GetFlag(args, "--parallel");
     bool baselineOnly    = HasFlag(args, "--baseline-only");
+    bool noScreen        = HasFlag(args, "--no-screen");
 
     if (plugin is null) return Usage("--plugin is required for 'refine run'.");
     if (agent  is null) return Usage("--agent is required for 'refine run'.");
@@ -199,6 +201,7 @@ static async Task<int> HandleRefineRunAsync(string[] args, RefineryClient client
     long? budget  = budgetStr   is not null && long.TryParse(budgetStr,  out long b) ? b : null;
     long? metaBudget = metaBudgetStr is not null && long.TryParse(metaBudgetStr, out long mb) ? mb : null;
     int maxRounds = maxRoundsStr is not null && int.TryParse(maxRoundsStr, out int m) ? m : 10;
+    int parallel  = parallelStr is not null && int.TryParse(parallelStr, out int p) ? p : 4;
 
     var spec = new CampaignSpec
     {
@@ -211,6 +214,8 @@ static async Task<int> HandleRefineRunAsync(string[] args, RefineryClient client
         MaxRounds          = maxRounds,
         Mode               = mode,
         AutoPropose        = !baselineOnly,
+        MaxParallelRuns    = parallel,
+        ScreenCandidates   = !noScreen,
     };
 
     // POST /campaigns
@@ -726,6 +731,8 @@ static void PrintHelp()
                 --budget N        Agent token budget (long, default: no limit)
                 --meta-budget N   Meta-LLM token budget for judge/gate/proposer (long, default: no limit)
                 --max-rounds N    Maximum improvement rounds (default 10)
+                --parallel N      Max concurrent scenario runs (default 4; forced 1 for seeded suites)
+                --no-screen       Disable the cheap 1-sample candidate screen before full evaluation
                 --mode            "live" or "replay" (default live)
                 --baseline-only   Measure baseline only; skip proposal loop
 

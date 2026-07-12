@@ -13,6 +13,8 @@ cost-per-million-input-tokens = 1.0
 cost-per-million-output-tokens = 6.0
 # Reasoning models require max_completion_tokens (not max_tokens) on Chat Completions.
 max-token-type = MaxCompletionTokens
+# The model's real output capability - requests above this are clamped down (TokenBudgetGuard).
+max-output-tokens = 128000
 # High-volume tier — default low reasoning; a prompt's `thinking` overrides it.
 thinking = low
 # GPT-5.6 reasoning_effort accepts none/low/medium/high/xhigh/max; `minimal` floors to none.

@@ -855,7 +855,8 @@ public sealed class InferService(
                 case string promptString:
                 {
                     totalLength = promptString.Length;
-                    if (Util.EstTokenCountFromCharCount(totalLength) > model.TokenLimit)
+                    int estInputTokens = Util.EstTokenCountFromCharCount(totalLength);
+                    if (estInputTokens > model.TokenLimit)
                         throw new Exception("Too many tokens!");
 
                     response = await model.Provider.InferenceClient.GenerateAsync(
@@ -867,7 +868,7 @@ public sealed class InferService(
                         minP: (float?)SelectParam(model.MinP, prompt.MinP),
                         bestOf: (int?)SelectParam(model.BestOf, prompt.BestOf),
                         maxTokenType: model.MaxTokenType,
-                        maxTokens: (int?)SelectParam(model.MaxTokens, prompt.MaxTokens),
+                        maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.MaxTokens, prompt.MaxTokens), estInputTokens, model, prompt.Name ?? ""),
                         frequencyPenalty: (float?)SelectParam(model.FrequencyPenalty, prompt.FrequencyPenalty),
                         presencePenalty: (float?)SelectParam(model.PresencePenalty, prompt.PresencePenalty),
                         repetitionPenalty: (float?)SelectParam(model.RepetitionPenalty, prompt.RepetitionPenalty),
@@ -883,7 +884,8 @@ public sealed class InferService(
                 case List<Message> messages:
                 {
                     totalLength = messages.Sum(msg => msg.Role.Length + msg.Content.Length);
-                    if (Util.EstTokenCountFromCharCount(totalLength) > model.TokenLimit)
+                    int estInputTokens = Util.EstTokenCountFromCharCount(totalLength);
+                    if (estInputTokens > model.TokenLimit)
                         throw new Exception("Too many tokens!");
 
                     response = await model.Provider.InferenceClient.GenerateAsync(
@@ -895,7 +897,7 @@ public sealed class InferService(
                         minP: (float?)SelectParam(model.MinP, prompt.MinP),
                         bestOf: (int?)SelectParam(model.BestOf, prompt.BestOf),
                         maxTokenType: model.MaxTokenType,
-                        maxTokens: (int?)SelectParam(model.MaxTokens, prompt.MaxTokens),
+                        maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.MaxTokens, prompt.MaxTokens), estInputTokens, model, prompt.Name ?? ""),
                         frequencyPenalty: (float?)SelectParam(model.FrequencyPenalty, prompt.FrequencyPenalty),
                         presencePenalty: (float?)SelectParam(model.PresencePenalty, prompt.PresencePenalty),
                         repetitionPenalty: (float?)SelectParam(model.RepetitionPenalty, prompt.RepetitionPenalty),
@@ -907,6 +909,16 @@ public sealed class InferService(
                         inactivityTimeoutSeconds: inactivityTimeoutSeconds);
                     break;
                 }
+            }
+
+            // Loop-detection circuit breaker (post-hoc classification): a completed response whose tail is a
+            // degenerate repetition loop is flagged with FinishReason = "repetition" so callers and trace
+            // consumers see a truthful signal instead of treating looped output as a normal answer.
+            if (response is not null &&
+                RepetitionDetector.TryDetect(response.Selected, model.LoopDetection, out string loopEvidence))
+            {
+                Util.Log($"RepetitionDetector: prompt '{prompt.Name}' on model '{model.Name}' produced a degenerate loop — {loopEvidence}");
+                response.FinishReason = "repetition";
             }
         }
         catch (Exception e)
@@ -947,7 +959,8 @@ public sealed class InferService(
                 case string promptString:
                 {
                     totalLength = promptString.Length;
-                    if (Util.EstTokenCountFromCharCount(totalLength) > model.TokenLimit)
+                    int estInputTokens = Util.EstTokenCountFromCharCount(totalLength);
+                    if (estInputTokens > model.TokenLimit)
                         throw new Exception("Too many tokens!");
 
                     streamResult = model.Provider.InferenceClient.GenerateStreamAsync(
@@ -959,7 +972,7 @@ public sealed class InferService(
                         minP: (float?)SelectParam(model.MinP, prompt.MinP),
                         bestOf: (int?)SelectParam(model.BestOf, prompt.BestOf),
                         maxTokenType: model.MaxTokenType,
-                        maxTokens: (int?)SelectParam(model.MaxTokens, prompt.MaxTokens),
+                        maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.MaxTokens, prompt.MaxTokens), estInputTokens, model, prompt.Name ?? ""),
                         frequencyPenalty: (float?)SelectParam(model.FrequencyPenalty, prompt.FrequencyPenalty),
                         presencePenalty: (float?)SelectParam(model.PresencePenalty, prompt.PresencePenalty),
                         repetitionPenalty: (float?)SelectParam(model.RepetitionPenalty, prompt.RepetitionPenalty),
@@ -975,7 +988,8 @@ public sealed class InferService(
                 case List<Message> messages:
                 {
                     totalLength = messages.Sum(msg => msg.Role.Length + msg.Content.Length);
-                    if (Util.EstTokenCountFromCharCount(totalLength) > model.TokenLimit)
+                    int estInputTokens = Util.EstTokenCountFromCharCount(totalLength);
+                    if (estInputTokens > model.TokenLimit)
                         throw new Exception("Too many tokens!");
 
                     streamResult = model.Provider.InferenceClient.GenerateStreamAsync(
@@ -987,7 +1001,7 @@ public sealed class InferService(
                         minP: (float?)SelectParam(model.MinP, prompt.MinP),
                         bestOf: (int?)SelectParam(model.BestOf, prompt.BestOf),
                         maxTokenType: model.MaxTokenType,
-                        maxTokens: (int?)SelectParam(model.MaxTokens, prompt.MaxTokens),
+                        maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.MaxTokens, prompt.MaxTokens), estInputTokens, model, prompt.Name ?? ""),
                         frequencyPenalty: (float?)SelectParam(model.FrequencyPenalty, prompt.FrequencyPenalty),
                         presencePenalty: (float?)SelectParam(model.PresencePenalty, prompt.PresencePenalty),
                         repetitionPenalty: (float?)SelectParam(model.RepetitionPenalty, prompt.RepetitionPenalty),
@@ -1012,10 +1026,32 @@ public sealed class InferService(
 
         bool hasYieldedAnyChunks = false;
 
+        // Loop-detection circuit breaker (streaming): watch the accumulating tail and STOP CONSUMING when a
+        // degenerate repetition loop forms. Breaking out disposes the stream enumerator, which cancels the
+        // provider request — unlike the post-hoc non-streaming classification, this actually stops paying
+        // for further looped tokens. Checked every ~256 new chars so per-chunk overhead stays negligible.
+        System.Text.StringBuilder? loopBuffer = model.LoopDetection is null ? null : new System.Text.StringBuilder();
+        int loopCheckedLength = 0;
+
         await foreach (string chunk in streamResult.Stream.WithCancellation(token))
         {
             hasYieldedAnyChunks = true;
             yield return chunk;
+
+            if (loopBuffer is null)
+                continue;
+
+            loopBuffer.Append(chunk);
+            if (loopBuffer.Length - loopCheckedLength < 256)
+                continue;
+
+            loopCheckedLength = loopBuffer.Length;
+            if (RepetitionDetector.TryDetect(loopBuffer.ToString(), model.LoopDetection, out string loopEvidence))
+            {
+                Util.Log($"RepetitionDetector: stream for prompt '{prompt.Name}' on model '{model.Name}' entered a degenerate loop; " +
+                         $"stopping generation — {loopEvidence}");
+                yield break; // enumerator disposal cancels the underlying provider request
+            }
         }
 
         StreamingMetadata metadata = await streamResult.Completion;

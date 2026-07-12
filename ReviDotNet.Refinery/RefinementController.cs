@@ -94,21 +94,55 @@ public sealed class RefinementController(
 
         try
         {
+            // Same parallel shape as ScoreSetCoreAsync: flatten the grid, run with bounded concurrency
+            // (sequential when a seeding hook exists), reassemble deterministically. Progress and the
+            // per-run campaign save mutate shared state, so they run under a lock.
+            int maxParallel = seedScenario is null ? Math.Max(1, spec.MaxParallelRuns) : 1;
+            List<(Scenario Scenario, int Sample, int Index)> work = [];
+            int nextIndex = 0;
             foreach (Scenario scenario in suite.Scenarios)
-            {
                 for (int sample = 0; sample < Math.Max(1, spec.SamplesPerScenario); sample++)
+                    work.Add((scenario, sample, nextIndex++));
+
+            var results = new ScoreCard[work.Count];
+            using SemaphoreSlim stateLock = new(1, 1);
+
+            async Task RunOneAsync((Scenario Scenario, int Sample, int Index) item, CancellationToken innerCt)
+            {
+                ScoreCard card = await ScoreOnceAsync(item.Scenario, spec.AgentName, agentDefinition, checkers, spec.Mode, item.Sample, innerCt, seedScenario, toolManager);
+                results[item.Index] = card;
+
+                await stateLock.WaitAsync(innerCt);
+                try
                 {
-                    ct.ThrowIfCancellationRequested();
-                    progress?.Report(new RefineryProgress($"[{++done}/{total}] {scenario.Id} sample {sample + 1}"));
-
-                    ScoreCard card = await ScoreOnceAsync(scenario, spec.AgentName, agentDefinition, checkers, spec.Mode, sample, ct, seedScenario, toolManager);
-                    cards.Add(card);
-
                     agentTokens += card.Efficiency is { } e ? e.InputTokens + e.OutputTokens : 0;
+                    progress?.Report(new RefineryProgress($"[{++done}/{total}] {item.Scenario.Id} sample {item.Sample + 1}"));
                     campaign = campaign with { TokensSpent = agentTokens, MetaTokensSpent = _metaUsage.Spent };
-                    await _store.SaveAsync(campaign, ct);
+                    await _store.SaveAsync(campaign, innerCt);
+                }
+                finally
+                {
+                    stateLock.Release();
                 }
             }
+
+            if (maxParallel <= 1)
+            {
+                foreach ((Scenario Scenario, int Sample, int Index) item in work)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    await RunOneAsync(item, ct);
+                }
+            }
+            else
+            {
+                await Parallel.ForEachAsync(
+                    work,
+                    new ParallelOptions { MaxDegreeOfParallelism = maxParallel, CancellationToken = ct },
+                    async (item, innerCt) => await RunOneAsync(item, innerCt));
+            }
+
+            cards.AddRange(results);
 
             await PersistScoreCardsAsync(id, cards, ct);
             SuiteAggregate aggregate = Aggregator.Aggregate(cards);
@@ -201,6 +235,10 @@ public sealed class RefinementController(
         BudgetGovernor metaGovernor = new(spec.MetaTokenBudget);
         int samples = Math.Max(1, spec.SamplesPerScenario);
 
+        // Scenario-seeding plugins (IScenarioWorld) mutate a shared store per run, so seeded suites must
+        // stay sequential; everything else parallelizes up to the spec's cap.
+        int maxParallel = seedScenario is null ? Math.Max(1, spec.MaxParallelRuns) : 1;
+
         // (a) Open a meta-LLM usage scope for the whole campaign; the judge/pairwise/proposer accumulate into
         // it via MetaLlmUsageBroker. We sample the scope's running total per round and charge the DELTA to
         // metaGovernor so the dedicated meta budget is enforced alongside the agent-token governor.
@@ -221,11 +259,11 @@ public sealed class RefinementController(
             string currentDefinition = agentDefinition;
 
             (List<ScoreCard> baselineTrainCards, Dictionary<string, string> baselineTrainOutputs) =
-                await ScoreSetAsync(train, spec.AgentName, currentDefinition, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager, PersistSpendAsync);
+                await ScoreSetAsync(train, spec.AgentName, currentDefinition, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager, PersistSpendAsync, maxParallel);
 
             List<ScoreCard> baselineHeldOutCards = heldOutMirrorsTrain
                 ? baselineTrainCards
-                : (await ScoreSetAsync(heldOut, spec.AgentName, currentDefinition, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager, PersistSpendAsync)).Cards;
+                : (await ScoreSetAsync(heldOut, spec.AgentName, currentDefinition, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager, PersistSpendAsync, maxParallel)).Cards;
 
             await PersistScoreCardsAsync(id, baselineTrainCards, ct);
             if (!heldOutMirrorsTrain)
@@ -331,33 +369,78 @@ public sealed class RefinementController(
                     // exactly the baseline's isolated tool set.
                     AgentProfile candidateProfile = ParseCandidateProfile(proposal.RevisedContent, tempName);
 
-                    // Cards are filed under the REAL agent + this variant id (not the transient candidate
-                    // profile name), so calibration can slice by variant via CalibrationAnalyzer(agent, version).
-                    (List<ScoreCard> candTrainCards, Dictionary<string, string> candTrainOutputs) =
-                        await ScoreSetAsync(train, candidateProfile, spec.AgentName, variantId, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager, PersistSpendAsync);
+                    // (b·2a) SCREEN — cheap 1-sample train pre-pass. Clear losers are rejected here for ~1/5
+                    // of a full evaluation's cost; anything not clearly worse proceeds. Screen cards are NOT
+                    // persisted (single-sample noise would pollute per-variant calibration).
+                    if (spec.ScreenCandidates && samples > 1)
+                    {
+                        (List<ScoreCard> screenCards, _) =
+                            await ScoreSetAsync(train, candidateProfile, spec.AgentName, variantId, proposal.RevisedContent, checkers, spec.Mode, 1, governor, ct, seedScenario, toolManager, PersistSpendAsync, maxParallel);
+                        SuiteAggregate screenAgg = Aggregator.Aggregate(screenCards);
+                        ChargeMetaDelta(metaGovernor, ref metaSpentLastSnapshot); // screen judge cost
 
+                        GateDecision screenDecision = GatePolicy.DecideScreen(baselineTrain, screenAgg);
+                        if (!screenDecision.Accept)
+                        {
+                            roundVariants.Add(await RecordCandidateAsync(id, variantId, round, spec.AgentName, proposal,
+                                screenAgg, candHeldOut: null, accepted: false, reason: screenDecision.Reason, governor.Spent, ct));
+                            progress?.Report(new RefineryProgress($"round {round}: candidate ({proposal.KnobType}) rejected at screen — {screenDecision.Reason}", screenCards));
+                            continue;
+                        }
+                    }
+
+                    // (b·2b) Full train scoring. Cards are filed under the REAL agent + this variant id (not
+                    // the transient candidate profile name), so calibration can slice by variant.
+                    (List<ScoreCard> candTrainCards, Dictionary<string, string> candTrainOutputs) =
+                        await ScoreSetAsync(train, candidateProfile, spec.AgentName, variantId, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager, PersistSpendAsync, maxParallel);
+                    await PersistScoreCardsAsync(id, candTrainCards, ct);
+                    SuiteAggregate candTrain = Aggregator.Aggregate(candTrainCards);
+                    ChargeMetaDelta(metaGovernor, ref metaSpentLastSnapshot); // train judge cost
+
+                    // (b·2c) FAIL FAST, cheapest evidence first: train-side gate needs nothing further.
+                    GateDecision trainDecision = GatePolicy.DecideTrain(baselineTrain, candTrain);
+                    if (!trainDecision.Accept)
+                    {
+                        roundVariants.Add(await RecordCandidateAsync(id, variantId, round, spec.AgentName, proposal,
+                            candTrain, candHeldOut: null, accepted: false, reason: trainDecision.Reason, governor.Spent, ct));
+                        progress?.Report(new RefineryProgress($"round {round}: candidate ({proposal.KnobType}) rejected — {trainDecision.Reason}", candTrainCards));
+                        continue;
+                    }
+
+                    // (b·2d) Pairwise gate next (≤8 LLM calls) — still cheaper than scoring the held-out set.
+                    int pairwiseNet = await PairwiseNetAsync(train, baselineTrainOutputs, candTrainOutputs, ct);
+                    ChargeMetaDelta(metaGovernor, ref metaSpentLastSnapshot); // pairwise meta cost
+
+                    GateDecision pairwiseDecision = GatePolicy.DecidePairwise(pairwiseNet);
+                    if (!pairwiseDecision.Accept)
+                    {
+                        roundVariants.Add(await RecordCandidateAsync(id, variantId, round, spec.AgentName, proposal,
+                            candTrain, candHeldOut: null, accepted: false, reason: pairwiseDecision.Reason, governor.Spent, ct));
+                        progress?.Report(new RefineryProgress($"round {round}: candidate ({proposal.KnobType}) rejected — {pairwiseDecision.Reason}", candTrainCards));
+                        continue;
+                    }
+
+                    // (b·2e) Held-out — the most expensive evidence, gathered only for survivors.
                     List<ScoreCard> candHeldOutCards = heldOutMirrorsTrain
                         ? candTrainCards
-                        : (await ScoreSetAsync(heldOut, candidateProfile, spec.AgentName, variantId, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager, PersistSpendAsync)).Cards;
-
-                    // Capture this variant's cards (stamped agent + variantId) for per-variant calibration.
-                    await PersistScoreCardsAsync(id, candTrainCards, ct);
+                        : (await ScoreSetAsync(heldOut, candidateProfile, spec.AgentName, variantId, proposal.RevisedContent, checkers, spec.Mode, samples, governor, ct, seedScenario, toolManager, PersistSpendAsync, maxParallel)).Cards;
                     if (!heldOutMirrorsTrain)
                         await PersistScoreCardsAsync(id, candHeldOutCards, ct);
-
-                    SuiteAggregate candTrain = Aggregator.Aggregate(candTrainCards);
                     SuiteAggregate candHeldOut = Aggregator.Aggregate(candHeldOutCards);
+                    ChargeMetaDelta(metaGovernor, ref metaSpentLastSnapshot); // held-out judge cost
 
-                    int pairwiseNet = await PairwiseNetAsync(train, baselineTrainOutputs, candTrainOutputs, ct);
-                    ChargeMetaDelta(metaGovernor, ref metaSpentLastSnapshot); // judge + pairwise meta cost
-
-                    GateDecision decision = GatePolicy.Decide(baselineTrain, candTrain, baselineHeldOut, candHeldOut, pairwiseNet);
+                    GateDecision heldOutDecision = GatePolicy.DecideHeldOut(baselineHeldOut, candHeldOut);
+                    string decisionReason = heldOutDecision.Accept
+                        ? $"Accepted: train p10 {candTrain.QualityP10:F4} > {baselineTrain.QualityP10:F4}, " +
+                          $"held-out p10 {candHeldOut.QualityP10:F4} >= {baselineHeldOut.QualityP10:F4}, " +
+                          $"invariants non-regressed, pairwise net {pairwiseNet} > 0."
+                        : heldOutDecision.Reason;
 
                     VariantRecord record = await RecordCandidateAsync(id, variantId, round, spec.AgentName, proposal,
-                        candTrain, candHeldOut, decision.Accept, decision.Reason, governor.Spent, ct);
+                        candTrain, candHeldOut, heldOutDecision.Accept, decisionReason, governor.Spent, ct);
                     roundVariants.Add(record);
 
-                    if (decision.Accept)
+                    if (heldOutDecision.Accept)
                     {
                         BeamWinner contender = new(record.Id, proposal, candTrain, candHeldOut, candTrainCards, candTrainOutputs, pairwiseNet);
                         if (best is null || IsBetter(contender, best))
@@ -365,7 +448,7 @@ public sealed class RefinementController(
                     }
                     else
                     {
-                        progress?.Report(new RefineryProgress($"round {round}: candidate ({proposal.KnobType}) rejected — {decision.Reason}", candTrainCards));
+                        progress?.Report(new RefineryProgress($"round {round}: candidate ({proposal.KnobType}) rejected — {heldOutDecision.Reason}", candTrainCards));
                     }
                 }
 
@@ -695,8 +778,9 @@ public sealed class RefinementController(
         CancellationToken ct,
         Func<Scenario, CancellationToken, Task>? seedScenario,
         IToolManager? toolManager = null,
-        Func<Task>? persistSpend = null)
-        => ScoreSetCoreAsync(scenarios, agentName, agentProfile: null, agentDefinition, checkers, mode, samples, governor, ct, seedScenario, toolManager, persistSpend: persistSpend);
+        Func<Task>? persistSpend = null,
+        int maxParallel = 1)
+        => ScoreSetCoreAsync(scenarios, agentName, agentProfile: null, agentDefinition, checkers, mode, samples, governor, ct, seedScenario, toolManager, persistSpend: persistSpend, maxParallel: maxParallel);
 
     /// <summary>
     /// Candidate overload of <see cref="ScoreSetAsync(IReadOnlyList{Scenario}, string, string, IReadOnlyList{IInvariantChecker}, string, int, BudgetGovernor, CancellationToken, Func{Scenario, CancellationToken, Task}?, IToolManager?)"/>:
@@ -718,8 +802,9 @@ public sealed class RefinementController(
         CancellationToken ct,
         Func<Scenario, CancellationToken, Task>? seedScenario,
         IToolManager? toolManager = null,
-        Func<Task>? persistSpend = null)
-        => ScoreSetCoreAsync(scenarios, agentProfile.Name ?? "", agentProfile, agentDefinition, checkers, mode, samples, governor, ct, seedScenario, toolManager, realAgentName, variantId, persistSpend);
+        Func<Task>? persistSpend = null,
+        int maxParallel = 1)
+        => ScoreSetCoreAsync(scenarios, agentProfile.Name ?? "", agentProfile, agentDefinition, checkers, mode, samples, governor, ct, seedScenario, toolManager, realAgentName, variantId, persistSpend, maxParallel);
 
     /// <summary>
     /// Shared body for both <c>ScoreSetAsync</c> overloads (name-based and candidate-profile). When
@@ -740,26 +825,66 @@ public sealed class RefinementController(
         IToolManager? toolManager,
         string? cardAgentName = null,
         string? cardAgentVersion = null,
-        Func<Task>? persistSpend = null)
+        Func<Task>? persistSpend = null,
+        int maxParallel = 1)
     {
-        List<ScoreCard> cards = [];
-        Dictionary<string, string> outputs = [];
-
+        // Flatten the (scenario × sample) grid up front so results reassemble in a DETERMINISTIC order
+        // regardless of completion order — cards and the per-scenario representative output are identical
+        // whether the set ran sequentially or in parallel.
+        List<(Scenario Scenario, int Sample, int Index)> work = [];
+        int nextIndex = 0;
         foreach (Scenario scenario in scenarios)
-        {
             for (int sample = 0; sample < samples; sample++)
+                work.Add((scenario, sample, nextIndex++));
+
+        var results = new (ScoreCard Card, string Output)[work.Count];
+
+        // persistSpend mutates and saves the campaign record — serialize those calls across runners.
+        using SemaphoreSlim persistLock = new(1, 1);
+
+        async Task RunOneAsync((Scenario Scenario, int Sample, int Index) item, CancellationToken innerCt)
+        {
+            (ScoreCard card, string output) = await RunAndScoreAsync(
+                item.Scenario, agentName, agentProfile, agentDefinition, checkers, mode, item.Sample,
+                innerCt, seedScenario, toolManager, cardAgentName, cardAgentVersion);
+            results[item.Index] = (card, output);
+            governor.Record(card.Efficiency is { } e ? e.InputTokens + e.OutputTokens : 0);
+
+            // Publish the live spend meters after every run (see PersistSpendAsync in RunCampaignAsync).
+            if (persistSpend is not null)
+            {
+                await persistLock.WaitAsync(innerCt);
+                try { await persistSpend(); }
+                finally { persistLock.Release(); }
+            }
+        }
+
+        if (maxParallel <= 1)
+        {
+            foreach ((Scenario Scenario, int Sample, int Index) item in work)
             {
                 ct.ThrowIfCancellationRequested();
-                (ScoreCard card, string output) =
-                    await RunAndScoreAsync(scenario, agentName, agentProfile, agentDefinition, checkers, mode, sample, ct, seedScenario, toolManager, cardAgentName, cardAgentVersion);
-                cards.Add(card);
-                outputs[scenario.Id] = output; // last sample wins — a representative output for pairwise
-                governor.Record(card.Efficiency is { } e ? e.InputTokens + e.OutputTokens : 0);
-
-                // Publish the live spend meters after every run (see PersistSpendAsync in RunCampaignAsync).
-                if (persistSpend is not null)
-                    await persistSpend();
+                await RunOneAsync(item, ct);
             }
+        }
+        else
+        {
+            // Each parallel body runs in its own async flow, so the per-run trace capture
+            // (RefineryCaptureBroker, AsyncLocal) and the campaign meta-usage scope both isolate/aggregate
+            // correctly; BudgetGovernor.Record is Interlocked.
+            await Parallel.ForEachAsync(
+                work,
+                new ParallelOptions { MaxDegreeOfParallelism = maxParallel, CancellationToken = ct },
+                async (item, innerCt) => await RunOneAsync(item, innerCt));
+        }
+
+        List<ScoreCard> cards = new(work.Count);
+        Dictionary<string, string> outputs = [];
+        foreach ((Scenario Scenario, int Sample, int Index) item in work)
+        {
+            (ScoreCard card, string output) = results[item.Index];
+            cards.Add(card);
+            outputs[item.Scenario.Id] = output; // last sample wins — a representative output for pairwise
         }
 
         return (cards, outputs);

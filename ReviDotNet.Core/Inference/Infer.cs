@@ -89,7 +89,7 @@ internal class Infer
 						minP: (float?)SelectParam(model.MinP, prompt.MinP),
 						bestOf: (int?)SelectParam(model.BestOf, prompt.BestOf),
 						maxTokenType: model.MaxTokenType,
-						maxTokens: (int?)SelectParam(model.MaxTokens, prompt.MaxTokens),
+						maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.MaxTokens, prompt.MaxTokens), Util.EstTokenCountFromCharCount(totalLength), model, prompt.Name ?? ""),
 						frequencyPenalty: (float?)SelectParam(model.FrequencyPenalty, prompt.FrequencyPenalty),
 						presencePenalty: (float?)SelectParam(model.PresencePenalty, prompt.PresencePenalty),
 						repetitionPenalty: (float?)SelectParam(model.RepetitionPenalty, prompt.RepetitionPenalty),
@@ -122,7 +122,7 @@ internal class Infer
 						minP: (float?)SelectParam(model.MinP, prompt.MinP),
 						bestOf: (int?)SelectParam(model.BestOf, prompt.BestOf),
 						maxTokenType: model.MaxTokenType,
-						maxTokens: (int?)SelectParam(model.MaxTokens, prompt.MaxTokens),
+						maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.MaxTokens, prompt.MaxTokens), Util.EstTokenCountFromCharCount(totalLength), model, prompt.Name ?? ""),
 						frequencyPenalty: (float?)SelectParam(model.FrequencyPenalty, prompt.FrequencyPenalty),
 						presencePenalty: (float?)SelectParam(model.PresencePenalty, prompt.PresencePenalty),
 						repetitionPenalty: (float?)SelectParam(model.RepetitionPenalty, prompt.RepetitionPenalty),
@@ -141,7 +141,15 @@ internal class Infer
 		{
 			Util.Log($"CallInference Exception: \"{e.Message}\"");
 		}
-		
+
+		// Loop-detection circuit breaker (post-hoc classification) — mirrors InferService.CallInference.
+		if (response is not null &&
+		    RepetitionDetector.TryDetect(response.Selected, model.LoopDetection, out string loopEvidence))
+		{
+			Util.Log($"RepetitionDetector: prompt '{prompt.Name}' on model '{model.Name}' produced a degenerate loop — {loopEvidence}");
+			response.FinishReason = "repetition";
+		}
+
 		// Logging and Observability
 		// Update to match new response object
 		string providerString = ""; //= JsonConvert.SerializeObject(providerInfo, Formatting.Indented);
@@ -397,7 +405,7 @@ internal class Infer
 						minP: (float?)SelectParam(model.MinP, prompt.MinP),
 						bestOf: (int?)SelectParam(model.BestOf, prompt.BestOf),
 						maxTokenType: model.MaxTokenType,
-						maxTokens: (int?)SelectParam(model.MaxTokens, prompt.MaxTokens),
+						maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.MaxTokens, prompt.MaxTokens), Util.EstTokenCountFromCharCount(totalLength), model, prompt.Name ?? ""),
 						frequencyPenalty: (float?)SelectParam(model.FrequencyPenalty, prompt.FrequencyPenalty),
 						presencePenalty: (float?)SelectParam(model.PresencePenalty, prompt.PresencePenalty),
 						repetitionPenalty: (float?)SelectParam(model.RepetitionPenalty, prompt.RepetitionPenalty),
@@ -428,7 +436,7 @@ internal class Infer
 						minP: (float?)SelectParam(model.MinP, prompt.MinP),
 						bestOf: (int?)SelectParam(model.BestOf, prompt.BestOf),
 						maxTokenType: model.MaxTokenType,
-						maxTokens: (int?)SelectParam(model.MaxTokens, prompt.MaxTokens),
+						maxTokens: TokenBudgetGuard.Clamp((int?)SelectParam(model.MaxTokens, prompt.MaxTokens), Util.EstTokenCountFromCharCount(totalLength), model, prompt.Name ?? ""),
 						frequencyPenalty: (float?)SelectParam(model.FrequencyPenalty, prompt.FrequencyPenalty),
 						presencePenalty: (float?)SelectParam(model.PresencePenalty, prompt.PresencePenalty),
 						repetitionPenalty: (float?)SelectParam(model.RepetitionPenalty, prompt.RepetitionPenalty),

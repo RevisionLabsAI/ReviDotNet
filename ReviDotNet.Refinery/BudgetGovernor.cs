@@ -19,9 +19,10 @@ namespace Revi.Refinery;
 /// </para>
 /// <para>
 /// This type is intentionally NOT a DI singleton — a fresh instance is created per campaign
-/// (<c>new BudgetGovernor(spec.TokenBudget)</c>) so its running total is scoped to that campaign. It is not
-/// thread-safe; the Forge run gate serializes whole campaigns, so a single governor is only ever touched by
-/// one campaign at a time.
+/// (<c>new BudgetGovernor(spec.TokenBudget)</c>) so its running total is scoped to that campaign.
+/// <see cref="Record"/>/<see cref="Spent"/> use <see cref="Interlocked"/> because scenario runs within one
+/// campaign may now execute in parallel (<c>CampaignSpec.MaxParallelRuns</c>); campaigns themselves are
+/// still serialized by the Forge run gate.
 /// </para>
 /// </summary>
 /// <param name="budget">The token budget in agent-execution tokens, or null for "unbounded".</param>
@@ -31,7 +32,7 @@ public sealed class BudgetGovernor(long? budget)
     private long _spent;
 
     /// <summary>Total agent-execution tokens recorded so far.</summary>
-    public long Spent => _spent;
+    public long Spent => Interlocked.Read(ref _spent);
 
     /// <summary>The configured token budget, or null when the campaign runs unbounded.</summary>
     public long? Budget => _budget;
@@ -40,7 +41,7 @@ public sealed class BudgetGovernor(long? budget)
     /// True once a budget is set and the recorded spend has met or exceeded it. Always false when no budget
     /// is configured (null) — an unbounded campaign never exhausts.
     /// </summary>
-    public bool Exhausted => _budget is { } b && _spent >= b;
+    public bool Exhausted => _budget is { } b && Spent >= b;
 
     /// <summary>
     /// Charge <paramref name="tokens"/> agent-execution tokens against the budget. Negative inputs are
@@ -49,6 +50,6 @@ public sealed class BudgetGovernor(long? budget)
     public void Record(long tokens)
     {
         if (tokens > 0)
-            _spent += tokens;
+            Interlocked.Add(ref _spent, tokens);
     }
 }

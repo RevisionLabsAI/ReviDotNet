@@ -49,6 +49,26 @@ public class ModelProfile
     public MaxTokenType? MaxTokenType { get; set; }
 
     /// <summary>
+    /// The model's real maximum OUTPUT tokens per completion — a hardware capability declaration, distinct
+    /// from both <see cref="TokenLimit"/> (the context window, which guards INPUT size) and the
+    /// <c>[[override-settings]] max-tokens</c> forced override. When set, any requested max-tokens larger
+    /// than this is clamped down (with a log line) instead of being rejected by the provider.
+    /// </summary>
+    [RConfigProperty("settings_max-output-tokens")]
+    public int? MaxOutputTokens { get; set; }
+
+    /// <summary>
+    /// Named loop-detection algorithm for this model's completions, or null/unset for OFF (the default).
+    /// Currently supported: <c>repeat-N</c> (e.g. <c>repeat-512</c>) — flags a completion as a degenerate
+    /// repetition loop when its trailing text consists of ≥4 consecutive exact repeats of the same unit
+    /// spanning ≥ N characters. Tripping sets <see cref="CompletionResult.FinishReason"/> to
+    /// <c>"repetition"</c> (non-streaming) or stops consuming the stream (streaming). Intended for small /
+    /// locally-hosted models that can loop until the output ceiling; leave unset for frontier cloud models.
+    /// </summary>
+    [RConfigProperty("settings_loop-detection")]
+    public string? LoopDetection { get; set; }
+
+    /// <summary>
     /// Indicates whether this model supports legacy prompt completion (non-chat) endpoints.
     /// When set, this value overrides any provider-level defaults for prompt completion support.
     /// </summary>

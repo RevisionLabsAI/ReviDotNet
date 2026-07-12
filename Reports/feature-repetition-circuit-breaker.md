@@ -1,6 +1,10 @@
 # Feature proposal: repetition circuit-breaker for model output
 
-**Status:** PROPOSAL ONLY — not implemented · **Date:** 2026-07-13 · **Requested by:** Bryan
+**Status:** P1 IMPLEMENTED (2026-07-13) — `RepetitionDetector` (`repeat-N` suffix-period algorithm),
+model config `[[settings]] loop-detection = repeat-512`, post-hoc `FinishReason = "repetition"`
+classification in `InferService`/`Infer`/`AgentRunner`, mid-stream cancellation in
+`CompletionStream`; default OFF everywhere; 18 unit tests incl. false-positive corpus. P2 (retry
+escalation) and P3 (Refinery invariant, Forge UI) remain open. · **Date:** 2026-07-13 · **Requested by:** Bryan
 
 ## Problem
 

@@ -52,6 +52,22 @@ public sealed record CampaignSpec
 
     /// <summary>When false, only measure a baseline (no proposal/refinement).</summary>
     public bool AutoPropose { get; init; } = true;
+
+    /// <summary>
+    /// Maximum scenario runs executed concurrently within a scoring set (each run = one agent execution +
+    /// one judge call, so wall-clock scales almost linearly with this up to provider rate limits).
+    /// Forced to 1 when the plugin uses a scenario-seeding hook (<c>IScenarioWorld</c>) — seeded runs
+    /// mutate a shared store and must stay sequential. 1 = the original fully-sequential behavior.
+    /// </summary>
+    public int MaxParallelRuns { get; init; } = 4;
+
+    /// <summary>
+    /// When true (the default), each beam candidate is first screened with a cheap 1-sample train pass;
+    /// only candidates that are not CLEARLY worse than baseline proceed to the full
+    /// <see cref="SamplesPerScenario"/>-sample train + held-out evaluation. Screening is skipped when
+    /// <see cref="SamplesPerScenario"/> is 1 (the full pass is already minimal).
+    /// </summary>
+    public bool ScreenCandidates { get; init; } = true;
 }
 
 /// <summary>Aggregate scores for a set of runs (one agent variant over a suite).</summary>

@@ -832,7 +832,8 @@ public class AgentRunner
 
         // Apply state-level inline settings overrides on top of model defaults.
         var s = _currentState.InlineSettings;
-        return await model.Provider.InferenceClient.GenerateAsync(
+        int estInputTokens = Util.EstTokenCountFromCharCount(messages.Sum(m => m.Role.Length + m.Content.Length));
+        CompletionResult? result = await model.Provider.InferenceClient.GenerateAsync(
             messages: messages,
             model: model.ModelString,
             temperature: s?.Temperature ?? ParseFloat(model.Temperature),
@@ -841,7 +842,7 @@ public class AgentRunner
             minP: s?.MinP ?? ParseFloat(model.MinP),
             bestOf: s?.BestOf ?? null,
             maxTokenType: model.MaxTokenType,
-            maxTokens: s?.MaxTokens ?? ParseInt(model.MaxTokens),
+            maxTokens: TokenBudgetGuard.Clamp(s?.MaxTokens ?? ParseInt(model.MaxTokens), estInputTokens, model, _profile.Name ?? "(agent)"),
             frequencyPenalty: s?.FrequencyPenalty ?? ParseFloat(model.FrequencyPenalty),
             presencePenalty: s?.PresencePenalty ?? ParseFloat(model.PresencePenalty),
             repetitionPenalty: s?.RepetitionPenalty ?? ParseFloat(model.RepetitionPenalty),
@@ -851,6 +852,18 @@ public class AgentRunner
             useSearchGrounding: s?.UseSearchGrounding ?? null,
             cancellationToken: _token,
             inactivityTimeoutSeconds: _currentState.Guardrails.TimeoutSeconds);
+
+        // Loop-detection circuit breaker (post-hoc): flag a degenerate repetition loop with a truthful
+        // finish reason so the step handling and the trace (BuildCompletionMeta stamps finishReason into
+        // every llm-response event) can see it.
+        if (result is not null &&
+            RepetitionDetector.TryDetect(result.Selected, model.LoopDetection, out string loopEvidence))
+        {
+            Util.Log($"RepetitionDetector: agent '{_profile.Name}' step on model '{model.Name}' produced a degenerate loop — {loopEvidence}");
+            result.FinishReason = "repetition";
+        }
+
+        return result;
     }
 
 
