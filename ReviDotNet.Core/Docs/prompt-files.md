@@ -152,6 +152,27 @@ The output section typically contains either **Plain Text**, **YAML**, or **JSON
 *   **YAML (Preferred)**: Strongly preferred for structured data in examples. YAML is more token‑efficient than JSON and easier for humans to write and maintain within a `.pmt` file. ReviDotNet will still request/validate JSON at runtime when `request-json = true`, so examples can remain YAML.
 *   **JSON (Use only when necessary)**: Reserve for cases where an exact JSON shape/byte structure must be demonstrated or enforced in the example itself.
 
+**How YAML examples reach the model.** When `request-json = true`, `Util.JsonifyExample` runs at
+prompt-load time: an example output that is already valid JSON passes through **verbatim**, and an
+example that parses as YAML is **converted to indented JSON** before the model ever sees it. So YAML
+in the file does not save runtime tokens — its win is authoring ergonomics. An example that parses as
+*neither* is passed through raw with a load-time warning (`JsonifyExample: Could not get valid Json or
+Yaml`), so a malformed example silently demonstrates a malformed output — check the log.
+
+**When to author examples as JSON instead.** The YAML→JSON conversion deserializes with untyped
+YamlDotNet, which renders **every scalar as a string**: `score: 7` becomes `"score": "7"` and
+`passed: false` becomes `"passed": "false"`. Newtonsoft coerces those back on deserialization, so
+parsing usually survives — but the few-shot then *demonstrates the wrong types* to the model. For
+contracts that are machine-parsed and parse-critical (an evaluator verdict, anything a pipeline
+deserializes with no human in the loop), author the example output as **strict JSON** so the model
+imitates the exact shape and scalar types. The Refinery `Evaluator.*` prompts do this deliberately —
+see the comment in `AgentRunJudge.pmt`.
+
+**Escaping inside JSON string values.** When a JSON contract's strings may quote other text (e.g. a
+judge quoting an agent's answer), instruct the model to escape embedded double quotes (`\"`) — a
+single raw `"` inside a string value invalidates the whole document. Add the rule to the instruction
+*and* avoid demonstrating unescaped quotes in the example.
+
 **YAML Example:**
 ```ini
 [[settings]]
@@ -178,6 +199,21 @@ request-json = true
   "names": ["AlphaLaw", "JusticeShield", "IntegrityLegal"]
 }
 ```
+
+#### Output-token budgets (`max-tokens`)
+
+Declare an explicit `[[settings]] max-tokens` on any prompt whose output is machine-parsed: a
+truncated JSON document loses the entire result, and provider fallbacks are deliberately modest
+(the Anthropic client falls back to 4096 when nothing is configured). Size the ceiling to the
+artifact with generous headroom — `max_tokens` is a stop ceiling, not a billed amount, so a roomy
+value costs nothing unless the model actually generates that much.
+
+> **Model overrides WIN over prompt values.** On the standard inference path (`InferService`), a
+> model `.rcfg` `[[override-settings]] max-tokens` **replaces** the prompt's value for every prompt
+> that runs on that model — it is a forced override, not a cap. Set model-level `max-tokens` only
+> when you really want to force one budget onto everything the model runs; otherwise leave it unset
+> and let each prompt declare its own. (Agent state inline settings are the opposite: a
+> `[[_state.X.settings]] max-tokens` beats the model value.)
 
 ### Output Structure and Guidance
 

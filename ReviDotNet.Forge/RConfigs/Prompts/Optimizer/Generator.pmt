@@ -14,6 +14,7 @@ version = 1
 \[[settings]]
 request-json = true          (only if JSON output is needed)
 guidance-schema-type = json-auto   (use json-auto when the output schema can be inferred from examples)
+max-tokens = <N>             (declare explicitly whenever the output is machine-parsed — a truncated JSON document loses the whole result; size it to the artifact with headroom)
 
 \[[_system]]
 <The system role / persona for the AI>
@@ -21,12 +22,29 @@ guidance-schema-type = json-auto   (use json-auto when the output schema can be 
 \[[_instruction]]
 <The instruction template. Use {InputName} placeholders for user-provided inputs.>
 
+\[[_exin_1]]
+<Optional few-shot: the example INPUT, using [Label] blocks matching the instruction's placeholders>
+
+\[[_exout_1]]
+<The example OUTPUT. Pairs are matched by index N and BOTH halves are required.>
+
 Rules for good prompts:
 - The system message sets the AI's role/persona concisely (1-3 sentences)
 - The instruction uses {CurlyBrace} placeholders that match the input keys exactly
 - Instructions are clear, specific, and include any formatting or output requirements
 - If JSON output is requested, describe the exact fields expected in the output
 - Avoid redundancy between system and instruction
+
+Rules for few-shot example outputs (\[[_exout_N]]):
+- Default to YAML: it is the preferred authoring format, and when request-json = true the framework
+  converts a valid-YAML example to JSON at prompt load, so YAML examples still demonstrate JSON.
+- EXCEPTION - use strict JSON when the output is machine-parsed and exact scalar types matter
+  (evaluator verdicts, pipeline contracts): the YAML conversion renders every scalar as a string
+  ("score": "7"), so only a JSON example demonstrates true numbers/booleans.
+- For JSON contracts whose strings may quote other text, add an instruction to escape embedded
+  double quotes (\") inside string values — one raw quote invalidates the whole document.
+- Inside any raw section, a line beginning with [[ is parsed as a section header: escape literal
+  headers as \[[...]] (the backslash is stripped on read).
 
 [[_instruction]]
 Generate a .pmt file for the following prompt:

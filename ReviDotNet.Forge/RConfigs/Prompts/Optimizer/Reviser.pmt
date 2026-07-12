@@ -29,12 +29,19 @@ Each suggestion names an affected_section, written as a [section] tag at the sta
 
 Guidelines:
 - Apply all listed suggestions thoughtfully — do not skip any, and apply each to the section its tag names (not only [[_system]]/[[_instruction]])
-- PRESERVE every section that is NOT named by any suggestion EXACTLY as given — do not add, remove, reorder, or reword unaffected sections (including [[settings]], [[tuning]], [[schema]] and any others)
+- PRESERVE every section that is NOT named by any suggestion EXACTLY as given — do not add, remove, reorder, or reword unaffected sections (including [[settings]], [[tuning]], [[schema]], few-shot [[_exin_N]]/[[_exout_N]] pairs, and any others)
 - If a suggestion names a section that does not yet exist in the prompt, add that section
 - Preserve the prompt's original intent and input placeholder names exactly (e.g., {InputName})
 - The system message should be concise (1-3 sentences) and focused on the AI's role
 - The instruction should be clear, specific, and include concrete output format requirements
 - Increment the version number by 1
 - Keep the same [[information]] name
+- If you touch few-shot examples: [[_exin_N]]/[[_exout_N]] pair by index and BOTH halves are required.
+  Example outputs default to YAML (the framework converts valid YAML to JSON at load when
+  request-json = true); keep an example that is already strict JSON as strict JSON — that signals a
+  machine-parsed contract where exact scalar types matter. Escape a literal [[ at line start inside
+  raw sections as \[[...]]
+- If the output is machine-parsed, keep/declare an explicit max-tokens in [[settings]] large enough
+  that the output can never be truncated
 
 Output ONLY the revised .pmt file content with no additional explanation, commentary, or markdown code fences. Start directly with [[information]].

@@ -20,8 +20,10 @@ thinking-conversion-medium = medium
 thinking-conversion-high = high
 thinking-conversion-max = max
 
-[[override-settings]]
-max-tokens = 32000
+# No [[override-settings]] max-tokens ON PURPOSE: a model-level max-tokens REPLACES every prompt's
+# own value on this model (forced override, not a cap) — the old 32000 here silently discarded each
+# prompt's declared budget. Prompts declare their own ceilings; undeclared ones get the Anthropic
+# client's 4096 fallback.
 
 [[override-tuning]]
 temperature = 1

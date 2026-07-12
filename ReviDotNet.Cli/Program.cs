@@ -186,6 +186,7 @@ static async Task<int> HandleRefineRunAsync(string[] args, RefineryClient client
     string? suite        = GetFlag(args, "--suite");
     string? samplesStr   = GetFlag(args, "--samples");
     string? budgetStr    = GetFlag(args, "--budget");
+    string? metaBudgetStr = GetFlag(args, "--meta-budget");
     string? maxRoundsStr = GetFlag(args, "--max-rounds");
     string? mode         = GetFlag(args, "--mode") ?? "live";
     bool baselineOnly    = HasFlag(args, "--baseline-only");
@@ -196,6 +197,7 @@ static async Task<int> HandleRefineRunAsync(string[] args, RefineryClient client
 
     int samples   = samplesStr  is not null && int.TryParse(samplesStr,  out int s) ? s : 3;
     long? budget  = budgetStr   is not null && long.TryParse(budgetStr,  out long b) ? b : null;
+    long? metaBudget = metaBudgetStr is not null && long.TryParse(metaBudgetStr, out long mb) ? mb : null;
     int maxRounds = maxRoundsStr is not null && int.TryParse(maxRoundsStr, out int m) ? m : 10;
 
     var spec = new CampaignSpec
@@ -205,6 +207,7 @@ static async Task<int> HandleRefineRunAsync(string[] args, RefineryClient client
         SuiteName          = suite,
         SamplesPerScenario = samples,
         TokenBudget        = budget,
+        MetaTokenBudget    = metaBudget,
         MaxRounds          = maxRounds,
         Mode               = mode,
         AutoPropose        = !baselineOnly,
@@ -720,7 +723,8 @@ static void PrintHelp()
               baseline quality p10 and invariant pass-rate deltas.
               Options:
                 --samples N       Samples per scenario (default 3)
-                --budget N        Token budget (long, default: no limit)
+                --budget N        Agent token budget (long, default: no limit)
+                --meta-budget N   Meta-LLM token budget for judge/gate/proposer (long, default: no limit)
                 --max-rounds N    Maximum improvement rounds (default 10)
                 --mode            "live" or "replay" (default live)
                 --baseline-only   Measure baseline only; skip proposal loop

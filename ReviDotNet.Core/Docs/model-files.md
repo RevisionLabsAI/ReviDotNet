@@ -35,7 +35,7 @@ Core operational parameters for the model.
 | `tier` | enum | `C` | The performance tier of the model. Order is `C` < `B` < `A` (A is highest). Selection (`ModelManager.Find`) returns the **lowest-tier enabled model whose tier ≥ the requested minimum** — so a prompt's `min-tier = B` can match a B or A model, preferring B. Tier parsing is **case-insensitive** (`a`/`A` both work); an empty/unrecognized value is treated as `C` (no minimum). |
 | `token-limit` | integer | `0` | The maximum context window size (in tokens). |
 | `stop-sequences` | string | `null` | Optional stop sequences to terminate generation. |
-| `max-token-type` | enum | `null` | Which OpenAI-style max-tokens field to emit. Allowed values: `MaxTokens` (sends `max_tokens`) or `MaxCompletionTokens` (sends `max_completion_tokens`). When unset, **neither** field is sent. An invalid value throws and the whole model file is skipped — use the exact enum names. |
+| `max-token-type` | enum | `null` | Which OpenAI-style max-tokens field to emit. Allowed values: `MaxTokens` (sends `max_tokens`) or `MaxCompletionTokens` (sends `max_completion_tokens`). When unset, a configured max-tokens value is emitted under the standard `max_tokens` key (before 2026-07 an unset type silently **dropped** the value — the bug that truncated a whole Refinery campaign at Anthropic's fallback). Set it explicitly only for models that need the alternate key (e.g. OpenAI reasoning models). An invalid value throws and the whole model file is skipped — use the exact enum names. |
 | `supports-prompt-completion` | boolean | `null` | Whether this specific model supports legacy prompt completion (non-chat) endpoints. Overrides provider-level defaults when set. |
 | `supports-response-completion` | boolean | `null` | Whether this specific model supports the Responses API completion endpoint. Overrides provider-level defaults when set. |
 | `cost-per-million-input-tokens` | decimal | `null` | USD cost per 1,000,000 prompt/input tokens. Used by `AgentRunner` to enforce `cost-budget` guardrails. When unset, this model contributes 0 to cost tracking (suitable for free or locally-hosted models). |
@@ -102,7 +102,7 @@ Allows this model to override default settings normally found in `.pmt` files.
 | `retry-prompt` | string | Override for custom retry instruction. |
 | `few-shot-examples` | integer | Override for number of examples to include. |
 | `best-of` | string | Override for "best of" count. |
-| `max-tokens` | string | Override for maximum tokens to generate. |
+| `max-tokens` | string | Override for maximum tokens to generate. **This REPLACES the prompt's own `max-tokens` for every prompt run on this model** (model overrides win on the `InferService` path) — it is a forced value, not a cap. Leave it unset so each prompt's declared budget applies (unset falls back to the provider default, e.g. 4096 on the Anthropic client); set it only to deliberately force one budget model-wide. Agent `[[_state.X.settings]]` inline values are the exception: they beat the model value. |
 | `timeout` | string | Override for request timeout. |
 | `preferred-models` | list | Override for preferred models list. |
 | `blocked-models` | list | Override for blocked models list. |

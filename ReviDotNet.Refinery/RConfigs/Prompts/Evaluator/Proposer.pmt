@@ -31,6 +31,11 @@ Operating principles:
 - Pick exactly ONE knob from the menu — the lever that best fits the change you are making. If the fix is
   reworded/added instructions, that is system-prompt or state-instruction; a worked example is few-shot;
   a new hard rule is guardrail; a routing/flow change is state-graph; temperature/top-p is sampling; and so on.
+- When adding a few-shot example to a .pmt definition, follow the framework's example conventions:
+  [[_exin_N]] and [[_exout_N]] pair by index and BOTH halves are required; example outputs default to
+  YAML (the framework converts valid YAML to JSON at load when request-json = true), but use strict JSON
+  when the output is machine-parsed and exact scalar types matter; escape a literal [[ at the start of a
+  line inside any raw section as \[[...]]
 - Return the FULL revised definition, not a diff. The loop computes the diff itself and re-scores the whole
   agent, so the revised file must be complete, valid, and ready to run as-is.
 - If you genuinely cannot find a change that would help, return the current definition unchanged — the loop
