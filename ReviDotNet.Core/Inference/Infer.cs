@@ -1472,21 +1472,23 @@ internal class Infer
 		return prompt.UseSearchGrounding;
 	}
 
-	private static object? SelectParam(string? modelString, object? promptObj)
+	/// <summary>
+	/// Resolves an inference parameter: a model-profile override string wins when set
+	/// ("disabled" turns the parameter off entirely); otherwise the prompt's value applies. A prompt
+	/// that leaves the parameter unset while the model supplies an override is a normal case — the
+	/// override is parsed to the parameter's type. (The previous object-typed implementation
+	/// switched on the prompt value's runtime type, so a null prompt value threw an NRE via
+	/// <c>promptObj.GetType()</c>, and bool parameters always threw.)
+	/// </summary>
+	private static T? SelectParam<T>(string? modelString, T? promptValue) where T : struct
 	{
 		if (modelString is null)
-			return promptObj;
-		
-		if (modelString is "disabled")
+			return promptValue;
+
+		if (string.Equals(modelString, "disabled", StringComparison.OrdinalIgnoreCase))
 			return null;
 
-		switch (promptObj)
-		{
-			case string: return modelString;
-			case int: return int.Parse(modelString);
-			case float: return float.Parse(modelString);
-			default: throw new Exception($"Unexpected type: {promptObj.GetType()}");
-		}
+		return (T)Convert.ChangeType(modelString, typeof(T), System.Globalization.CultureInfo.InvariantCulture);
 	}
 	
 	private static string[]? ToArray(string? input)

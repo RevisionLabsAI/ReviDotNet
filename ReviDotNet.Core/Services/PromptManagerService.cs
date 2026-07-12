@@ -37,7 +37,7 @@ public sealed class PromptManagerService : IPromptManager
             {
                 try
                 {
-                    LoadPromptFromFile(file, path);
+                    LoadPromptFromFile(file);
                 }
                 catch (Exception ex)
                 {
@@ -71,7 +71,7 @@ public sealed class PromptManagerService : IPromptManager
         {
             try
             {
-                LoadPromptFromFile(file, path);
+                LoadPromptFromFile(file);
             }
             catch (Exception ex)
             {
@@ -95,15 +95,19 @@ public sealed class PromptManagerService : IPromptManager
     /// <inheritdoc/>
     public void LoadFromFile(string filePath)
     {
-        string basePath = Path.GetDirectoryName(filePath)! + Path.DirectorySeparatorChar;
-        LoadPromptFromFile(filePath, basePath);
+        LoadPromptFromFile(filePath);
     }
 
-    private void LoadPromptFromFile(string file, string basePath)
+    /// <summary>
+    /// Loads one .pmt file and registers it under its declared <c>[[information]] name</c> verbatim.
+    /// Subfolders are organizational only: prefixing the name with a lowercased folder path (the old
+    /// behavior, e.g. <c>evaluator/Evaluator.AgentRunJudge</c>) made every subfoldered prompt
+    /// unreachable, because all lookups use the declared name (see <see cref="Get"/>).
+    /// </summary>
+    private void LoadPromptFromFile(string file)
     {
         Dictionary<string, string> dict = RConfigParser.Read(file);
-        string folder = Util.ExtractSubDirectories(basePath, file).ToLower();
-        Prompt? prompt = Prompt.ToObject(dict, folder);
+        Prompt? prompt = Prompt.ToObject(dict);
 
         if (prompt?.Name is null)
             return;
@@ -129,8 +133,8 @@ public sealed class PromptManagerService : IPromptManager
 
                     using StreamReader reader = new(stream);
                     Dictionary<string, string> dict = RConfigParser.ReadEmbedded(reader.ReadToEnd());
-                    string folder = Util.ExtractEmbeddedDirectories(".Prompts.", resourceName).ToLower();
-                    Prompt? prompt = Prompt.ToObject(dict, folder);
+                    // Register under the declared name verbatim (no folder prefix) — see LoadPromptFromFile.
+                    Prompt? prompt = Prompt.ToObject(dict);
 
                     if (prompt?.Name is null)
                         continue;

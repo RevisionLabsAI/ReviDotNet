@@ -59,7 +59,7 @@ namespace Revi
                 {
                     try
                     {
-                        LoadPromptFromFile(file, path);
+                        LoadPromptFromFile(file);
                     }
                     catch (Exception ex)
                     {
@@ -86,13 +86,17 @@ namespace Revi
         /// Loads a prompt from a file and processes it by converting the file data into a prompt object,
         /// and then attempts to add it to the prompt collection.
         /// </summary>
+        /// <remarks>
+        /// The prompt is registered under its declared <c>[[information]] name</c> verbatim. Subfolders
+        /// are organizational only: prefixing the name with a lowercased folder path (the old behavior,
+        /// e.g. <c>evaluator/Evaluator.AgentRunJudge</c>) made every subfoldered prompt unreachable,
+        /// because all lookups use the declared name (see <see cref="Get"/>).
+        /// </remarks>
         /// <param name="file">The path of the file containing the prompt data to load.</param>
-        /// <param name="basePath">The base directory path where the prompt file resides.</param>
-        private static void LoadPromptFromFile(string file, string basePath)
+        private static void LoadPromptFromFile(string file)
         {
             Dictionary<string, string> promptDictionary = RConfigParser.Read(file);
-            string folder = Util.ExtractSubDirectories(basePath, file).ToLower();
-            Prompt? prompt = Prompt.ToObject(promptDictionary, folder);
+            Prompt? prompt = Prompt.ToObject(promptDictionary);
 
             if (prompt?.Name is null)
                 return;
@@ -134,8 +138,8 @@ namespace Revi
 
                         using var reader = new StreamReader(stream);
                         var promptDictionary = RConfigParser.ReadEmbedded(reader.ReadToEnd());
-                        string folder = Util.ExtractEmbeddedDirectories(".Prompts.", resourceName).ToLower();
-                        Prompt? prompt = Prompt.ToObject(promptDictionary, folder);
+                        // Register under the declared name verbatim (no folder prefix) — see LoadPromptFromFile.
+                        Prompt? prompt = Prompt.ToObject(promptDictionary);
 
                         if (prompt?.Name is null)
                             continue;
@@ -219,8 +223,7 @@ namespace Revi
         /// </summary>
         public static void LoadFromFile(string filePath)
         {
-            string basePath = Path.GetDirectoryName(filePath)! + Path.DirectorySeparatorChar;
-            LoadPromptFromFile(filePath, basePath);
+            LoadPromptFromFile(filePath);
         }
 
         /// <summary>
