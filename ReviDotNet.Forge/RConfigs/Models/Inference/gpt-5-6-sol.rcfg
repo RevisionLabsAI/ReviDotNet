@@ -1,0 +1,39 @@
+[[general]]
+name = gpt-5.6-sol
+enabled = true
+model-string = gpt-5.6-sol
+provider-name = openai
+
+[[settings]]
+tier = A
+token-limit = 1000000
+cost-per-million-input-tokens = 5.0
+cost-per-million-output-tokens = 30.0
+# Reasoning models require max_completion_tokens (not max_tokens) on Chat Completions.
+max-token-type = MaxCompletionTokens
+# Frontier tier of the GPT-5.6 family — default to high reasoning; a prompt's `thinking` overrides it.
+thinking = high
+# GPT-5.6 reasoning_effort accepts none/low/medium/high/xhigh/max; `minimal` floors to none.
+thinking-conversion-minimal = none
+thinking-conversion-low = low
+thinking-conversion-medium = medium
+thinking-conversion-high = high
+thinking-conversion-max = max
+
+[[override-settings]]
+# Forced max-tokens kept ON PURPOSE for reasoning models (the exception to the leave-unset rule):
+# reasoning tokens count against the output budget, so a prompt-declared small budget would strangle
+# reasoning before the answer. 16000 leaves room for both (model max output is 128k).
+max-tokens = 16000
+
+[[override-tuning]]
+temperature = 1
+frequency-penalty = disabled
+presence-penalty = disabled
+repetition-penalty = disabled
+
+[[chat-completion]]
+system-message = true
+prompt-in-system = false
+system-in-user = true
+prompt-in-user = true

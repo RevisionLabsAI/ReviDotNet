@@ -1,0 +1,37 @@
+[[general]]
+name = gpt-5.6-terra
+enabled = true
+model-string = gpt-5.6-terra
+provider-name = openai
+
+[[settings]]
+tier = A
+token-limit = 1000000
+cost-per-million-input-tokens = 2.5
+cost-per-million-output-tokens = 15.0
+# Reasoning models require max_completion_tokens (not max_tokens) on Chat Completions.
+max-token-type = MaxCompletionTokens
+# Mid tier of the GPT-5.6 family (GPT-5.5-class at roughly half the cost) — default medium reasoning.
+thinking = medium
+# GPT-5.6 reasoning_effort accepts none/low/medium/high/xhigh/max; `minimal` floors to none.
+thinking-conversion-minimal = none
+thinking-conversion-low = low
+thinking-conversion-medium = medium
+thinking-conversion-high = high
+thinking-conversion-max = max
+
+[[override-settings]]
+# Forced max-tokens kept ON PURPOSE for reasoning models — see gpt-5-6-sol.rcfg.
+max-tokens = 16000
+
+[[override-tuning]]
+temperature = 1
+frequency-penalty = disabled
+presence-penalty = disabled
+repetition-penalty = disabled
+
+[[chat-completion]]
+system-message = true
+prompt-in-system = false
+system-in-user = true
+prompt-in-user = true
