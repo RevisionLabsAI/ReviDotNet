@@ -17,7 +17,11 @@ public sealed class ForgeMongoConnectionService : IForgeMongoConnectionService
         string connectionString = configuration["Observer:MongoDb:ConnectionString"]!;
         string databaseName = configuration["Observer:MongoDb:DatabaseName"] ?? "ReviForge";
 
-        var client = new MongoClient(connectionString);
+        // Fail fast when Mongo is down: the default 30s server-selection timeout turns every Observer
+        // query and log-sink insert into a half-minute hang; 3s surfaces the outage without the stall.
+        var settings = MongoClientSettings.FromConnectionString(connectionString);
+        settings.ServerSelectionTimeout = TimeSpan.FromSeconds(3);
+        var client = new MongoClient(settings);
         _database = client.GetDatabase(databaseName);
     }
 

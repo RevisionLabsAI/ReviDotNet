@@ -128,4 +128,65 @@ public class GatePolicyTests
         d.Accept.Should().BeFalse();
         d.Reason.Should().Contain("Pairwise net not positive");
     }
+
+    // ── Invariant-improvement claim (added after live campaign 1cdc9ea7, where three candidates fixed the
+    //    only failing invariant with quality held and the gate rejected every one of them) ──
+
+    [Fact]
+    public void Decide_AcceptsInvariantImprovementWithQualityHeld_EvenWhenPairwiseTies()
+    {
+        // The exact live shape: baseline train inv 89%, candidate fixes it to 100%, p10 ties, pairwise -1.
+        SuiteAggregate baselineTrain = Agg(0.889, 8.0);
+        SuiteAggregate candTrain = Agg(1.0, 8.0);
+        SuiteAggregate baselineHeldOut = Agg(1.0, 8.0);
+        SuiteAggregate candHeldOut = Agg(1.0, 8.0);
+
+        GateDecision d = GatePolicy.Decide(baselineTrain, candTrain, baselineHeldOut, candHeldOut, pairwiseNet: -1);
+
+        d.Accept.Should().BeTrue("a hard-gate fix with quality held must not be vetoed by a style-preference vote");
+        d.Reason.Should().Contain("invariant pass rate");
+    }
+
+    [Fact]
+    public void Decide_RejectsInvariantImprovementWhenQualityRegressed()
+    {
+        SuiteAggregate baselineTrain = Agg(0.889, 8.0);
+        SuiteAggregate candTrain = Agg(1.0, 7.5); // fixed the invariant by paying quality — not acceptable
+        SuiteAggregate baselineHeldOut = Agg(1.0, 8.0);
+        SuiteAggregate candHeldOut = Agg(1.0, 8.0);
+
+        GateDecision d = GatePolicy.Decide(baselineTrain, candTrain, baselineHeldOut, candHeldOut, pairwiseNet: 2);
+
+        d.Accept.Should().BeFalse();
+        d.Reason.Should().Contain("quality p10 regressed");
+    }
+
+    [Fact]
+    public void Decide_InvariantClaimStillSubjectToHeldOutGate()
+    {
+        SuiteAggregate baselineTrain = Agg(0.889, 8.0);
+        SuiteAggregate candTrain = Agg(1.0, 8.0);
+        SuiteAggregate baselineHeldOut = Agg(1.0, 8.0);
+        SuiteAggregate candHeldOut = Agg(0.9, 8.0); // the "fix" broke a held-out invariant — overfit
+
+        GateDecision d = GatePolicy.Decide(baselineTrain, candTrain, baselineHeldOut, candHeldOut, pairwiseNet: 0);
+
+        d.Accept.Should().BeFalse();
+        d.Reason.Should().Contain("Invariant regression on held-out");
+    }
+
+    [Fact]
+    public void Decide_QualityClaimStillRequiresPositivePairwise()
+    {
+        // No invariant improvement (both 1.0): the quality claim keeps its pairwise veto.
+        SuiteAggregate baselineTrain = Agg(1.0, 6.0);
+        SuiteAggregate candTrain = Agg(1.0, 7.0);
+        SuiteAggregate baselineHeldOut = Agg(1.0, 6.0);
+        SuiteAggregate candHeldOut = Agg(1.0, 6.0);
+
+        GatePolicy.DecidePairwise(-1, invariantImproved: false).Accept.Should().BeFalse();
+        GatePolicy.DecidePairwise(-1, invariantImproved: true).Accept.Should().BeTrue();
+        GatePolicy.Decide(baselineTrain, candTrain, baselineHeldOut, candHeldOut, pairwiseNet: -1)
+            .Accept.Should().BeFalse();
+    }
 }

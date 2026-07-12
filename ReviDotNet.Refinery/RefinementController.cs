@@ -411,7 +411,8 @@ public sealed class RefinementController(
                     int pairwiseNet = await PairwiseNetAsync(train, baselineTrainOutputs, candTrainOutputs, ct);
                     ChargeMetaDelta(metaGovernor, ref metaSpentLastSnapshot); // pairwise meta cost
 
-                    GateDecision pairwiseDecision = GatePolicy.DecidePairwise(pairwiseNet);
+                    GateDecision pairwiseDecision = GatePolicy.DecidePairwise(
+                        pairwiseNet, GatePolicy.InvariantImproved(baselineTrain, candTrain));
                     if (!pairwiseDecision.Accept)
                     {
                         roundVariants.Add(await RecordCandidateAsync(id, variantId, round, spec.AgentName, proposal,
@@ -431,9 +432,7 @@ public sealed class RefinementController(
 
                     GateDecision heldOutDecision = GatePolicy.DecideHeldOut(baselineHeldOut, candHeldOut);
                     string decisionReason = heldOutDecision.Accept
-                        ? $"Accepted: train p10 {candTrain.QualityP10:F4} > {baselineTrain.QualityP10:F4}, " +
-                          $"held-out p10 {candHeldOut.QualityP10:F4} >= {baselineHeldOut.QualityP10:F4}, " +
-                          $"invariants non-regressed, pairwise net {pairwiseNet} > 0."
+                        ? GatePolicy.DescribeAccept(baselineTrain, candTrain, baselineHeldOut, candHeldOut, pairwiseNet)
                         : heldOutDecision.Reason;
 
                     VariantRecord record = await RecordCandidateAsync(id, variantId, round, spec.AgentName, proposal,

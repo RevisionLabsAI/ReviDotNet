@@ -44,15 +44,18 @@ bool useAuthentication = builder.Configuration.GetValue<bool>("Forge:UseAuthenti
 // Rolling file log (logs/forge-yyyyMMdd.log under the content root, or Forge:FileLog:Directory) so a
 // crash or silent process death leaves evidence that outlives the console buffer. Disable with
 // Forge:FileLog:Enabled=false. A once-a-minute MemoryStatsLogger line makes memory growth diagnosable
-// after the fact.
-if (builder.Configuration.GetValue("Forge:FileLog:Enabled", defaultValue: true))
+// after the fact, and CrashLog arms synchronous unhandled-exception handlers (forge-crash.log) that fire
+// even when the async log never gets to flush.
+bool fileLogEnabled = builder.Configuration.GetValue("Forge:FileLog:Enabled", defaultValue: true);
+string forgeLogDir = builder.Configuration["Forge:FileLog:Directory"] is { Length: > 0 } configuredLogDir
+    ? (Path.IsPathRooted(configuredLogDir) ? configuredLogDir : Path.Combine(builder.Environment.ContentRootPath, configuredLogDir))
+    : Path.Combine(builder.Environment.ContentRootPath, "logs");
+if (fileLogEnabled)
 {
-    string logDir = builder.Configuration["Forge:FileLog:Directory"] is { Length: > 0 } configured
-        ? (Path.IsPathRooted(configured) ? configured : Path.Combine(builder.Environment.ContentRootPath, configured))
-        : Path.Combine(builder.Environment.ContentRootPath, "logs");
-    builder.Logging.AddProvider(new FileLoggerProvider(logDir));
+    builder.Logging.AddProvider(new FileLoggerProvider(forgeLogDir));
     builder.Services.AddHostedService<MemoryStatsLogger>();
-    Console.WriteLine($"[Forge] File log: {logDir}");
+    CrashLog.Arm(forgeLogDir);
+    Console.WriteLine($"[Forge] File log: {forgeLogDir}");
 }
 
 // Blazor / MudBlazor
@@ -127,23 +130,31 @@ if (useAuthentication)
 // Registered before publishers so the BroadcastingRlogEventPublisher can resolve it.
 builder.Services.AddSingleton<IWorkshopEventBus, WorkshopEventBus>();
 
-// Revi logging — choose Mongo-backed or null inner publisher based on config,
-// then wrap with BroadcastingRlogEventPublisher so Workshop UI gets live events.
-if (!string.IsNullOrWhiteSpace(builder.Configuration["Observer:MongoDb:ConnectionString"]))
-{
+// Revi logging — compose the durable sinks (Mongo when configured, plus the crash-durable file sink
+// unless disabled), then wrap with BroadcastingRlogEventPublisher so the Workshop UI gets live events.
+// The file sink (revilog-yyyyMMdd.jsonl, same directory as the host file log) appends continuously with
+// a flush per batch, so the structured ReviLog stream survives a crash even when Mongo is down.
+bool observerMongoConfigured = !string.IsNullOrWhiteSpace(builder.Configuration["Observer:MongoDb:ConnectionString"]);
+bool revilogFileEnabled = builder.Configuration.GetValue("Observer:FileLog:Enabled", defaultValue: fileLogEnabled);
+if (observerMongoConfigured)
     builder.Services.AddSingleton<MongoRlogEventPublisher>();
-    builder.Services.AddSingleton<IRlogEventPublisher>(sp =>
-        new BroadcastingRlogEventPublisher(
-            sp.GetRequiredService<MongoRlogEventPublisher>(),
-            sp.GetRequiredService<IWorkshopEventBus>()));
-}
-else
+builder.Services.AddSingleton<IRlogEventPublisher>(sp =>
 {
-    builder.Services.AddSingleton<IRlogEventPublisher>(sp =>
-        new BroadcastingRlogEventPublisher(
-            new NullRlogEventPublisher(),
-            sp.GetRequiredService<IWorkshopEventBus>()));
-}
+    List<IRlogEventPublisher> sinks = [];
+    if (observerMongoConfigured)
+        sinks.Add(sp.GetRequiredService<MongoRlogEventPublisher>());
+    if (revilogFileEnabled)
+        sinks.Add(new FileRlogEventPublisher(forgeLogDir));
+
+    IRlogEventPublisher inner = sinks.Count switch
+    {
+        0 => new NullRlogEventPublisher(),
+        1 => sinks[0],
+        _ => new MultiRlogEventPublisher(sinks)
+    };
+    return new BroadcastingRlogEventPublisher(inner, sp.GetRequiredService<IWorkshopEventBus>());
+});
+Console.WriteLine($"[Forge] ReviLog sinks: mongo={(observerMongoConfigured ? "on" : "off")} file={(revilogFileEnabled ? "on" : "off")}");
 
 // Refinery durable store (config-gated). Register the durable ICampaignStore BEFORE AddRefinery() so its
 // guard ("only register InMemory if no ICampaignStore exists") skips the in-memory default and the durable
@@ -154,15 +165,43 @@ else
 //   "inmemory" — the pre-existing volatile behavior (campaigns are lost on restart).
 string campaignStoreMode = builder.Configuration["Forge:CampaignStore"] ?? "file";
 string? refineryMongoConn = builder.Configuration["Observer:MongoDb:ConnectionString"];
+
+// "mongo" only counts when the server actually answers a fast ping at startup; otherwise fall through to
+// the file store (with a loud line) so campaigns stay durable while the database is down — a dead Mongo
+// must never silently demote campaign history to process memory.
 if (string.Equals(campaignStoreMode, "mongo", StringComparison.OrdinalIgnoreCase)
     && !string.IsNullOrWhiteSpace(refineryMongoConn))
 {
-    const string refineryDbName = "refinery";
-    builder.Services.AddSingleton<ICampaignStore>(_ =>
-        new MongoCampaignStore(refineryMongoConn!, refineryDbName));
-    Console.WriteLine($"[Refinery] Campaign store: Mongo (db='{refineryDbName}').");
+    bool mongoReachable;
+    try
+    {
+        var pingSettings = MongoDB.Driver.MongoClientSettings.FromConnectionString(refineryMongoConn);
+        pingSettings.ServerSelectionTimeout = TimeSpan.FromSeconds(2);
+        new MongoDB.Driver.MongoClient(pingSettings).GetDatabase("admin")
+            .RunCommand<MongoDB.Bson.BsonDocument>(new MongoDB.Bson.BsonDocument("ping", 1));
+        mongoReachable = true;
+    }
+    catch
+    {
+        mongoReachable = false;
+        Console.WriteLine("[Refinery] Campaign store: Mongo configured but UNREACHABLE — falling back to the file store.");
+    }
+
+    if (mongoReachable)
+    {
+        const string refineryDbName = "refinery";
+        builder.Services.AddSingleton<ICampaignStore>(_ =>
+            new MongoCampaignStore(refineryMongoConn!, refineryDbName));
+        Console.WriteLine($"[Refinery] Campaign store: Mongo (db='{refineryDbName}').");
+        campaignStoreMode = "registered";
+    }
+    else
+    {
+        campaignStoreMode = "file";
+    }
 }
-else if (string.Equals(campaignStoreMode, "file", StringComparison.OrdinalIgnoreCase))
+
+if (string.Equals(campaignStoreMode, "file", StringComparison.OrdinalIgnoreCase))
 {
     string storeDir = builder.Configuration["Forge:CampaignStoreDir"] is { Length: > 0 } configuredDir
         ? (Path.IsPathRooted(configuredDir) ? configuredDir : Path.Combine(builder.Environment.ContentRootPath, configuredDir))
@@ -170,7 +209,7 @@ else if (string.Equals(campaignStoreMode, "file", StringComparison.OrdinalIgnore
     builder.Services.AddSingleton<ICampaignStore>(_ => new FileCampaignStore(storeDir));
     Console.WriteLine($"[Refinery] Campaign store: file ({storeDir}).");
 }
-else
+else if (!string.Equals(campaignStoreMode, "registered", StringComparison.OrdinalIgnoreCase))
 {
     Console.WriteLine("[Refinery] Campaign store: in-memory (campaigns are lost on restart).");
 }

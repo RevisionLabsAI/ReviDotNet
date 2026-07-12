@@ -23,17 +23,20 @@ public static class GatePolicy
     public const double MARGIN = 0.0;
 
     /// <summary>
-    /// Decides whether to accept a candidate variant. Accepts iff ALL of: (1) invariant non-regression on
-    /// both train and held-out (and no previously-passing invariant id drops to failing), (2) train quality
-    /// improves on the p10 lower bound, (3) held-out quality p10 is not regressed, and (4) pairwise net is
-    /// strictly positive on train. Otherwise rejects naming the first failed condition.
+    /// Decides whether to accept a candidate variant. A candidate must claim ONE of two improvements on
+    /// train — (a) quality: strict p10 improvement, or (b) invariants: strict pass-rate improvement with
+    /// quality p10 not regressed — and must additionally satisfy invariant non-regression on both splits
+    /// (no previously-passing invariant id drops), held-out quality p10 non-regression, and (for
+    /// quality-claim candidates only) a strictly positive pairwise net on train. For invariant-claim
+    /// candidates the pairwise result is advisory: a hard-gate fix with unchanged quality routinely ties or
+    /// narrowly loses a preference vote, and vetoing on that starves the campaign of exactly the fixes it
+    /// was launched for. Otherwise rejects naming the first failed condition.
     /// <para>
     /// Composed from the three staged checks below (<see cref="DecideTrain"/> →
     /// <see cref="DecidePairwise"/> → <see cref="DecideHeldOut"/>) so the campaign loop can FAIL FAST:
     /// train-side checks need only the (already-scored) train cards, the pairwise gate costs ≤8 LLM calls,
     /// and the held-out set (the most expensive evidence to gather) is scored last and only for candidates
-    /// that survived everything cheaper. The composition preserves the historical accept semantics exactly;
-    /// only the rejection ORDER differs (pairwise is now checked before held-out).
+    /// that survived everything cheaper.
     /// </para>
     /// </summary>
     public static GateDecision Decide(
@@ -46,22 +49,44 @@ public static class GatePolicy
         GateDecision train = DecideTrain(baselineTrain, candTrain);
         if (!train.Accept) return train;
 
-        GateDecision pairwise = DecidePairwise(pairwiseNet);
+        GateDecision pairwise = DecidePairwise(pairwiseNet, InvariantImproved(baselineTrain, candTrain));
         if (!pairwise.Accept) return pairwise;
 
         GateDecision heldOut = DecideHeldOut(baselineHeldOut, candHeldOut);
         if (!heldOut.Accept) return heldOut;
 
         return new GateDecision(true,
-            $"Accepted: train p10 {candTrain.QualityP10:F4} > {baselineTrain.QualityP10:F4}, " +
-            $"held-out p10 {candHeldOut.QualityP10:F4} >= {baselineHeldOut.QualityP10:F4}, " +
-            $"invariants non-regressed, pairwise net {pairwiseNet} > 0.");
+            DescribeAccept(baselineTrain, candTrain, baselineHeldOut, candHeldOut, pairwiseNet));
+    }
+
+    /// <summary>True when the candidate strictly improves the train invariant pass-rate over baseline.</summary>
+    public static bool InvariantImproved(SuiteAggregate baselineTrain, SuiteAggregate candTrain) =>
+        candTrain.InvariantPassRate > baselineTrain.InvariantPassRate + EPS;
+
+    /// <summary>
+    /// The shared accept-reason text (single-sourced for <see cref="Decide"/> and the campaign loop),
+    /// naming which claim carried the accept.
+    /// </summary>
+    public static string DescribeAccept(
+        SuiteAggregate baselineTrain,
+        SuiteAggregate candTrain,
+        SuiteAggregate baselineHeldOut,
+        SuiteAggregate candHeldOut,
+        int pairwiseNet)
+    {
+        string claim = candTrain.QualityP10 > baselineTrain.QualityP10 + MARGIN
+            ? $"train p10 {candTrain.QualityP10:F4} > {baselineTrain.QualityP10:F4}"
+            : $"train invariant pass rate {candTrain.InvariantPassRate:F4} > {baselineTrain.InvariantPassRate:F4} (p10 held at {candTrain.QualityP10:F4})";
+        return $"Accepted: {claim}, " +
+               $"held-out p10 {candHeldOut.QualityP10:F4} >= {baselineHeldOut.QualityP10:F4}, " +
+               $"invariants non-regressed, pairwise net {pairwiseNet}.";
     }
 
     /// <summary>
-    /// Stage 1 — train-side checks only: invariant non-regression on train (aggregate + per-id) and strict
-    /// train quality p10 improvement. Requires no held-out scoring and no pairwise calls, so a candidate
-    /// failing here costs nothing further.
+    /// Stage 1 — train-side checks only: invariant non-regression on train (aggregate + per-id), then one
+    /// of the two improvement claims — strict quality p10 improvement, OR strict invariant pass-rate
+    /// improvement with quality p10 not regressed. Requires no held-out scoring and no pairwise calls, so a
+    /// candidate failing here costs nothing further.
     /// </summary>
     public static GateDecision DecideTrain(SuiteAggregate baselineTrain, SuiteAggregate candTrain)
     {
@@ -74,18 +99,36 @@ public static class GatePolicy
             return new GateDecision(false,
                 $"Invariant regression on train: invariant '{droppedTrain}' dropped from passing.");
 
-        if (!(candTrain.QualityP10 > baselineTrain.QualityP10 + MARGIN))
-            return new GateDecision(false,
-                $"Train quality p10 not improved: {candTrain.QualityP10:F4} <= baseline {baselineTrain.QualityP10:F4} + margin {MARGIN:F4}.");
+        if (candTrain.QualityP10 > baselineTrain.QualityP10 + MARGIN)
+            return new GateDecision(true, "train checks passed (quality p10 improved)");
 
-        return new GateDecision(true, "train checks passed");
+        if (InvariantImproved(baselineTrain, candTrain))
+        {
+            return candTrain.QualityP10 >= baselineTrain.QualityP10 - EPS
+                ? new GateDecision(true, "train checks passed (invariant pass rate improved, quality p10 held)")
+                : new GateDecision(false,
+                    $"Invariant pass rate improved but train quality p10 regressed: {candTrain.QualityP10:F4} < baseline {baselineTrain.QualityP10:F4}.");
+        }
+
+        return new GateDecision(false,
+            $"Train quality p10 not improved: {candTrain.QualityP10:F4} <= baseline {baselineTrain.QualityP10:F4} + margin {MARGIN:F4} (and invariant pass rate not improved).");
     }
 
-    /// <summary>Stage 2 — the pairwise gate must be strictly net-positive on train (≤8 LLM calls).</summary>
-    public static GateDecision DecidePairwise(int pairwiseNet) =>
-        pairwiseNet <= 0
+    /// <summary>
+    /// Stage 2 — the pairwise gate (≤8 LLM calls). For quality-claim candidates the net must be strictly
+    /// positive: their whole claim is "the judge thinks these outputs are better", so a preference vote that
+    /// disagrees is a veto. For invariant-claim candidates (<paramref name="invariantImproved"/> true) the
+    /// vote is advisory only: the claim is a hard-gate fix with quality held, which a style-preference vote
+    /// has no standing to veto.
+    /// </summary>
+    public static GateDecision DecidePairwise(int pairwiseNet, bool invariantImproved = false)
+    {
+        if (invariantImproved)
+            return new GateDecision(true, $"pairwise advisory (net {pairwiseNet}) — invariant improvement carries the claim");
+        return pairwiseNet <= 0
             ? new GateDecision(false, $"Pairwise net not positive on train: net {pairwiseNet} <= 0.")
             : new GateDecision(true, "pairwise net positive");
+    }
 
     /// <summary>
     /// Stage 3 — held-out checks: invariant non-regression (aggregate + per-id) and quality p10
