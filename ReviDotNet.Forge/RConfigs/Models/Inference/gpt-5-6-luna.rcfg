@@ -23,8 +23,10 @@ thinking-conversion-high = high
 thinking-conversion-max = max
 
 [[override-settings]]
-# Forced max-tokens kept ON PURPOSE for reasoning models — see gpt-5-6-sol.rcfg.
-max-tokens = 16000
+# Forced max-tokens kept ON PURPOSE for reasoning models (reasoning tokens share the output budget,
+# so prompt-declared small budgets would strangle reasoning). 128000 = the model's actual maximum
+# output - a stop ceiling, not a billed amount, so matching the hardware limit costs nothing.
+max-tokens = 128000
 
 [[override-tuning]]
 temperature = 1

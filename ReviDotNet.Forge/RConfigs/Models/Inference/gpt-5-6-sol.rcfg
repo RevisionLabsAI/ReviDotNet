@@ -21,10 +21,10 @@ thinking-conversion-high = high
 thinking-conversion-max = max
 
 [[override-settings]]
-# Forced max-tokens kept ON PURPOSE for reasoning models (the exception to the leave-unset rule):
-# reasoning tokens count against the output budget, so a prompt-declared small budget would strangle
-# reasoning before the answer. 16000 leaves room for both (model max output is 128k).
-max-tokens = 16000
+# Forced max-tokens kept ON PURPOSE for reasoning models (reasoning tokens share the output budget,
+# so prompt-declared small budgets would strangle reasoning). 128000 = the model's actual maximum
+# output - a stop ceiling, not a billed amount, so matching the hardware limit costs nothing.
+max-tokens = 128000
 
 [[override-tuning]]
 temperature = 1
