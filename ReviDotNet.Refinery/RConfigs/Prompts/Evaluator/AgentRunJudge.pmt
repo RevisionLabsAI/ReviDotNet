@@ -98,6 +98,8 @@ Return a JSON object with exactly these fields, in this order:
 - "weaknesses": array of strings — concrete failure patterns with evidence; [] if none
 - "confidence": integer 1-5 — your confidence in this evaluation
 
+Every string must be a valid JSON string: when quoting the agent's output inside a rationale or
+weakness, escape embedded double quotes (\") or paraphrase with single quotes.
 Output ONLY the JSON object.
 
 [[_exin_1]]

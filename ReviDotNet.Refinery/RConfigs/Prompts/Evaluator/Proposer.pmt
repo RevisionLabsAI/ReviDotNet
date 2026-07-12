@@ -69,6 +69,10 @@ Return a JSON object with exactly these fields:
 - "revised_definition": string — the complete revised .agent file, ready to run as-is
 - "expected_impact": string — what you expect to improve (e.g. "high — directly targets the F-2 failure")
 
+Every string must be a valid JSON string: escape embedded double quotes (\") and newlines (\n) —
+revised_definition in particular is a multi-line file carried inside one JSON string.
+Output ONLY the JSON object.
+
 [[_exin_1]]
 [Agent Name]
 filer

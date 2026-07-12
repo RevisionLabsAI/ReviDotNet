@@ -328,8 +328,18 @@ public sealed class InferService(
         {
             if (string.IsNullOrEmpty(extractedJson))
             {
-                Util.Log($"WARNING: Missing JSON from InferService.ToObject output: \n{e.Message}\n");
-                return (default, result);
+                // No parseable JSON region at all. With no output text either, remediation has nothing
+                // to work with — bail. But when the model DID produce text, hand the raw output to the
+                // json-fixer instead of dropping it: near-JSON that defeats extraction (e.g. a string
+                // value containing unescaped double quotes) is usually one edit from valid.
+                if (string.IsNullOrWhiteSpace(result?.Selected))
+                {
+                    Util.Log($"WARNING: Missing JSON from InferService.ToObject output: \n{e.Message}\n");
+                    return (default, result);
+                }
+
+                Util.Log($"WARNING: No parseable JSON region in InferService.ToObject output; sending raw output to json-fixer.\n{e.Message}\n");
+                extractedJson = result.Selected;
             }
 
             Util.Log($"WARNING: Caught faulty JSON output:\n'''{extractedJson}\n'''");

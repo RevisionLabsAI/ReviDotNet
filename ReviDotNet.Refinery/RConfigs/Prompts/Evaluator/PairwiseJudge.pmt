@@ -56,6 +56,9 @@ Return a JSON object with exactly these fields:
 - "a_summary": string — one-line characterization of A
 - "b_summary": string — one-line characterization of B
 
+Every string must be a valid JSON string: when quoting an output, escape embedded double quotes (\")
+or paraphrase with single quotes. Output ONLY the JSON object.
+
 [[_exin_1]]
 [Scenario]
 Chatbot answer to a user asking about a topic only partially covered by the provided knowledge-base context.
