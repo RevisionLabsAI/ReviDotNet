@@ -713,11 +713,15 @@ internal class Infer
 			}
 		}
 
-		// Validate object and return it if it's valid
+		// Validate object and return it if it's valid. Schema validation is the backstop for
+		// providers without on-wire enforcement (json-object mode, guidance-disabled models);
+		// it shares ValidateObject's require-valid-output gate and feeds the same retry path.
 		var castObject = (T?) Convert.ChangeType(newObject, typeof(T));
-		if (ValidateObject<T>(castObject, prompt))
+		bool schemaConformant = prompt.RequireValidOutput is false
+			|| JsonOutputValidation.ConformsToType(extractedJson, outputType, prompt.Name ?? promptName);
+		if (ValidateObject<T>(castObject, prompt) && schemaConformant)
 			return castObject;
-		
+
 		Util.Log($"Infer.ToObject() object was invalid for prompt '{prompt.Name}'");
 		
 		// Otherwise, check if we're going to retry
@@ -1445,20 +1449,6 @@ internal class Infer
 	// ======================
 	
 	#region Supporting Functions
-	/*
-	// TODO: Make schema validation work
-	public static bool ValidateToSchema(string output, string? schema)
-	{
-		if (string.IsNullOrEmpty(schema))
-			return true;
-
-		// if schema exists, safely check that the output serializes into it
-		// output is a json object, schema is a json schema
-		// Check whether the json object matches the json schema
-		
-		return RlonValidation.CompareSchema(output, schema);
-	}*/
-	
 	private static string? ComputeThinking(Prompt prompt, ModelProfile model)
 	{
 		// The thinking amount is task-specific, so a prompt-level setting overrides the model default;
@@ -1685,10 +1675,14 @@ internal class Infer
 			return;
 		}
 
+		// A model rcfg's [[override-settings]] guidance-schema-type wins over the prompt's strategy —
+		// e.g. disable strict guidance on a model whose host can't enforce it (Groq's llama models).
+		GuidanceSchemaType? effectiveSchema = model.GuidanceSchemaType ?? prompt.GuidanceSchema;
+
 		try
 		{
 			//Util.Log($"GuidanceSchema: {prompt.GuidanceSchema}");
-			switch (prompt.GuidanceSchema)
+			switch (effectiveSchema)
 			{
 				case GuidanceSchemaType.Disabled:
 					guidanceType = GuidanceType.Disabled;
@@ -1739,7 +1733,7 @@ internal class Infer
 			Util.Log($"Guidance Exception: {e.Message}");
 		}
 
-		GuidanceCapability.WarnIfIneffective(prompt, model, guidanceType, guidanceString);
+		GuidanceCapability.WarnIfIneffective(prompt, model, guidanceType, guidanceString, effectiveSchema);
 	}
 	#endregion
 }

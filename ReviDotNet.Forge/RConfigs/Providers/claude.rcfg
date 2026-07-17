@@ -9,7 +9,9 @@ supports-prompt-completion = true
 supports-response-completion = true
 
 [[guidance]]
-supports-guidance = false
+# Anthropic structured outputs (output_config.format json_schema) are supported on
+# Haiku 4.5 / Opus 4.5-generation and later models.
+supports-guidance = true
 default-guidance-type = Disabled
 
 [[limiting]]

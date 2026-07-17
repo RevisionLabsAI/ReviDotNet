@@ -14,10 +14,9 @@ namespace Revi;
 /// <remarks>
 /// Capability matrix (also documented in provider-files.md):
 /// <list type="bullet">
-/// <item>OpenAI / Perplexity / Gemini — JSON schema only</item>
+/// <item>OpenAI / Perplexity / Gemini / Claude — JSON schema only</item>
 /// <item>vLLM — JSON and Regex</item>
 /// <item>LLamaAPI — JSON and Grammar (GBNF)</item>
-/// <item>Claude — none (chat-only; <c>supports-guidance</c> is forced false)</item>
 /// </list>
 /// </remarks>
 public static class GuidanceCapability
@@ -33,10 +32,9 @@ public static class GuidanceCapability
 
         return protocol switch
         {
-            Protocol.OpenAI or Protocol.Perplexity or Protocol.Gemini => type == GuidanceType.Json,
+            Protocol.OpenAI or Protocol.Perplexity or Protocol.Gemini or Protocol.Claude => type == GuidanceType.Json,
             Protocol.vLLM => type is GuidanceType.Json or GuidanceType.Regex,
             Protocol.LLamaAPI => type is GuidanceType.Json or GuidanceType.Grammar,
-            Protocol.Claude => false,
             _ => false,
         };
     }
@@ -52,15 +50,21 @@ public static class GuidanceCapability
     /// <param name="model">The selected model (supplies the provider/protocol).</param>
     /// <param name="resolvedType">The decode mode GetGuidance resolved (null if none).</param>
     /// <param name="resolvedString">The schema string GetGuidance resolved (null/empty if none).</param>
+    /// <param name="effectiveSchema">
+    /// The strategy that was actually applied after model-level overrides (a model rcfg's
+    /// <c>guidance-schema-type</c> wins over the prompt's). Defaults to the prompt's strategy so a
+    /// deliberate model-level disable does not warn as if guidance was silently dropped.
+    /// </param>
     public static void WarnIfIneffective(
         Prompt prompt,
         ModelProfile model,
         GuidanceType? resolvedType,
-        string? resolvedString)
+        string? resolvedString,
+        GuidanceSchemaType? effectiveSchema = null)
     {
         // Only when the author EXPLICITLY asked for guidance. Disabled is the intentional off-switch;
         // null means no guidance was requested at all.
-        GuidanceSchemaType? schema = prompt.GuidanceSchema;
+        GuidanceSchemaType? schema = effectiveSchema ?? prompt.GuidanceSchema;
         if (schema is null or GuidanceSchemaType.Disabled)
             return;
 

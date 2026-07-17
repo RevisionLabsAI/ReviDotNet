@@ -36,7 +36,8 @@ public class TBatch2FixesTests
     [InlineData(Protocol.LLamaAPI, GuidanceType.Json, true)]
     [InlineData(Protocol.LLamaAPI, GuidanceType.Grammar, true)]
     [InlineData(Protocol.LLamaAPI, GuidanceType.Regex, false)]
-    [InlineData(Protocol.Claude, GuidanceType.Json, false)]
+    [InlineData(Protocol.Claude, GuidanceType.Json, true)]
+    [InlineData(Protocol.Claude, GuidanceType.Regex, false)]
     public void GuidanceCapability_Supports_MatchesPayloadTransformer(Protocol protocol, GuidanceType type, bool expected)
     {
         GuidanceCapability.Supports(protocol, type).Should().Be(expected);

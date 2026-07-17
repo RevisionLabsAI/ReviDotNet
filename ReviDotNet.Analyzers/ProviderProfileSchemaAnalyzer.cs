@@ -23,7 +23,7 @@ namespace ReviDotNet.Analyzers
     /// Checks:
     /// - [[general]] name non-empty; protocol in supported list; api-url non-empty.
     /// - enabled/supports-prompt-completion boolean when present.
-    /// - [[guidance]]: supports-guidance boolean; default-guidance-type in allowed list.
+    /// - [[guidance]]: supports-guidance boolean; default-guidance-type and json-schema-mode in allowed lists.
     /// - [[limiting]]: integer non-negative values for timeout/delay/retry and simultaneous-requests.
     /// </summary>
     [DiagnosticAnalyzer(LanguageNames.CSharp)]
@@ -153,6 +153,19 @@ namespace ReviDotNet.Analyzers
                     {
                         ReportError(context, file, gtype.Line, gtype.Raw.Trim(), "guidance.default-guidance-type",
                             suffix: " (allowed: disabled, default, defer, regex-manual, regex-auto, regex, json-manual, json-auto, json, gnbf-manual, gnbf-auto, gbnf)");
+                    }
+                }
+
+                if (TryGet(doc, "guidance", "json-schema-mode", out RcfgValue jsm))
+                {
+                    string raw = jsm.Raw.Trim().ToLowerInvariant();
+                    // Mirrors the JsonSchemaMode enum; RConfigParser strips hyphens/underscores, so
+                    // accept both the kebab and compact spellings.
+                    string[] allowed = { "json-schema", "jsonschema", "json-object", "jsonobject" };
+                    if (!allowed.Contains(raw))
+                    {
+                        ReportError(context, file, jsm.Line, jsm.Raw.Trim(), "guidance.json-schema-mode",
+                            suffix: " (allowed: json-schema, json-object)");
                     }
                 }
 

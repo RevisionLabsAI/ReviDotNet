@@ -88,6 +88,21 @@ public class InferClientConfig
     public string? DefaultGuidanceString { get; set; }
 
     /// <summary>
+    /// How JSON guidance is expressed on the wire for OpenAI-protocol providers: strict
+    /// <c>json_schema</c> (default) or the <c>json_object</c> downgrade for hosts that reject the
+    /// schema form (e.g. Z.ai/GLM). Ignored by other protocols.
+    /// </summary>
+    public JsonSchemaMode JsonSchemaMode { get; set; } = JsonSchemaMode.JsonSchema;
+
+    /// <summary>
+    /// The version segment prepended to OpenAI-style endpoint paths ("v1" → "v1/chat/completions").
+    /// Empty string means no segment ("chat/completions"), for hosts whose base URL already carries
+    /// the full version path (e.g. Z.ai's https://api.z.ai/api/paas/v4/). Normalized (no slashes) by
+    /// the <see cref="InferClient"/> constructor. Not used by the Gemini/Claude protocols.
+    /// </summary>
+    public string ApiVersionPath { get; set; } = "v1";
+
+    /// <summary>
     /// Inactivity timeout for non-responsive providers (seconds).
     /// </summary>
     public int InactivityTimeoutSeconds { get; set; } = 60;

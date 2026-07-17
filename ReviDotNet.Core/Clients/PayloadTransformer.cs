@@ -50,110 +50,6 @@ public class PayloadTransformer
         }
     }
 
-    // Gemini's responseSchema is an OpenAPI-subset proto, not full JSON Schema. This sanitizer makes a
-    // JSON-Schema document acceptable to it:
-    //   * strips JSON-Schema-only keywords Gemini rejects ($schema, $id, additionalProperties);
-    //   * collapses an array-valued "type" (e.g. ["string","null"]) to a single type + nullable flag;
-    //   * keeps enums on string types only.
-    private static void SanitizeSchemaForGemini(Dictionary<string, object> schema)
-    {
-        void FixNode(Dictionary<string, object> node)
-        {
-            // Gemini rejects these JSON-Schema-only keywords ("Unknown name ... Cannot find field").
-            node.Remove("$schema");
-            node.Remove("$id");
-            node.Remove("additionalProperties");
-
-            // Gemini's "type" is a single enum value, not a list. Collapse a JSON-Schema nullable union
-            // such as ["string","null"] to its primary type plus nullable=true (Gemini's null encoding).
-            if (node.TryGetValue("type", out var rawType) && rawType is IList<object> typeList)
-            {
-                bool nullable = typeList.Any(x => string.Equals(x?.ToString(), "null", StringComparison.OrdinalIgnoreCase));
-                string? primary = typeList
-                    .Select(x => x?.ToString())
-                    .FirstOrDefault(s => !string.IsNullOrEmpty(s) && !string.Equals(s, "null", StringComparison.OrdinalIgnoreCase));
-
-                node["type"] = primary ?? "string";
-                if (nullable)
-                    node["nullable"] = true;
-            }
-
-            string type = node.TryGetValue("type", out var t) ? t?.ToString() ?? string.Empty : string.Empty;
-
-            // Handle enums on non-string types by converting to string enum
-            if (node.TryGetValue("enum", out var enumObj) && enumObj is IList<object> enumList)
-            {
-                if (!string.Equals(type, "string", StringComparison.OrdinalIgnoreCase))
-                {
-                    node["type"] = "string";
-                    node["enum"] = enumList.Select(v => v?.ToString() ?? string.Empty).ToList();
-                }
-            }
-
-            // Arrays: move enum from array node to items, and ensure items is string with enum when needed
-            if (string.Equals(type, "array", StringComparison.OrdinalIgnoreCase))
-            {
-                Dictionary<string, object> itemsNode;
-                if (node.TryGetValue("items", out var itemsObj) && itemsObj is Dictionary<string, object> dict)
-                {
-                    itemsNode = dict;
-                }
-                else
-                {
-                    itemsNode = new Dictionary<string, object>();
-                    node["items"] = itemsNode;
-                }
-
-                // Recurse into items first
-                FixNode(itemsNode);
-
-                if (node.TryGetValue("enum", out var arrEnumObj) && arrEnumObj is IList<object> arrEnum)
-                {
-                    itemsNode["type"] = "string";
-                    itemsNode["enum"] = arrEnum.Select(v => v?.ToString() ?? string.Empty).ToList();
-                    node.Remove("enum");
-                }
-            }
-
-            // Objects: recurse into properties
-            if (string.Equals(type, "object", StringComparison.OrdinalIgnoreCase))
-            {
-                if (node.TryGetValue("properties", out var propsObj) && propsObj is Dictionary<string, object> props)
-                {
-                    foreach (var key in props.Keys.ToList())
-                    {
-                        if (props[key] is Dictionary<string, object> child)
-                        {
-                            FixNode(child);
-                        }
-                    }
-                }
-            }
-
-            // Combinators: oneOf, anyOf, allOf
-            foreach (var keyword in new[] { "oneOf", "anyOf", "allOf" })
-            {
-                if (node.TryGetValue(keyword, out var combo) && combo is IList<object> list)
-                {
-                    foreach (var item in list)
-                    {
-                        if (item is Dictionary<string, object> child)
-                        {
-                            FixNode(child);
-                        }
-                    }
-                }
-            }
-
-            // Nested items (arrays of arrays)
-            if (node.TryGetValue("items", out var nested) && nested is Dictionary<string, object> nestedDict)
-            {
-                FixNode(nestedDict);
-            }
-        }
-
-        FixNode(schema);
-    }
     private readonly InferClientConfig _config;
 
     public PayloadTransformer(InferClientConfig config)
@@ -196,7 +92,7 @@ public class PayloadTransformer
         if (payload.TryGetValue("presence_penalty", out var presPenalty))
             generationConfig["presencePenalty"] = presPenalty;
 
-        // Handle Gemini JSON Schema (responseSchema)
+        // Handle Gemini JSON Schema (responseJsonSchema)
         if (payload.TryGetValue("guided_json", out var jsonSchema))
         {
             try
@@ -205,9 +101,11 @@ public class PayloadTransformer
                 var schemaObject = ConvertJTokenToPlain(schemaToken) as Dictionary<string, object>;
                 if (schemaObject != null)
                 {
-                    // Sanitize schema for Gemini: enums must be on string types only
-                    SanitizeSchemaForGemini(schemaObject);
-                    generationConfig["responseSchema"] = schemaObject;
+                    // responseJsonSchema (Gemini 2.5+/3.x) accepts standard JSON Schema, replacing
+                    // the legacy OpenAPI-subset responseSchema that needed heavy sanitization.
+                    // Only $schema is stripped — Gemini has no use for the meta-schema URI.
+                    schemaObject.Remove("$schema");
+                    generationConfig["responseJsonSchema"] = schemaObject;
                     generationConfig["responseMimeType"] = "application/json";
                 }
             }
@@ -363,6 +261,31 @@ public class PayloadTransformer
             }
         }
 
+        // Structured outputs: output_config.format with a standard JSON schema (strict-style —
+        // additionalProperties:false is injected the same way as for OpenAI). Merged into the
+        // output_config the thinking branch may already have created for the effort level.
+        if (payload.TryGetValue("guided_json", out var claudeSchema))
+        {
+            try
+            {
+                object processedSchema = Util.AddAdditionalPropertiesToSchema(claudeSchema.ToString() ?? string.Empty);
+                Dictionary<string, object> outputConfig =
+                    outPayload.TryGetValue("output_config", out var existing) && existing is Dictionary<string, object> dict
+                        ? dict
+                        : new Dictionary<string, object>();
+                outputConfig["format"] = new Dictionary<string, object>
+                {
+                    { "type", "json_schema" },
+                    { "schema", processedSchema }
+                };
+                outPayload["output_config"] = outputConfig;
+            }
+            catch (Newtonsoft.Json.JsonException)
+            {
+                Util.Log($"Warning: Invalid JSON schema provided for Claude: {claudeSchema}");
+            }
+        }
+
         // Stream flag
         if (payload.TryGetValue("stream", out var streamObj))
             outPayload["stream"] = streamObj;
@@ -508,29 +431,7 @@ public class PayloadTransformer
                     return;
                 }
 
-                try
-                {
-                    // Parse the JSON schema string to ensure it's valid JSON
-                    var processedSchema = Util.AddAdditionalPropertiesToSchema(chosenString);
-
-                    
-                    // OpenAI uses response_format with json_schema type
-                    parameters.Add("response_format", new
-                    {
-                        type = "json_schema",
-                        json_schema = new
-                        {
-                            name = "response_schema",
-                            strict = true,
-                            schema = processedSchema
-                        }
-                    });
-                }
-                catch (Newtonsoft.Json.JsonException ex)
-                {
-                    Util.Log($"Warning: Invalid JSON schema provided for OpenAI: {chosenString}. Error: {ex.Message}");
-                }
-                
+                AddOpenAiJsonGuidance(parameters, chosenString);
                 break;
             }
 
@@ -546,24 +447,37 @@ public class PayloadTransformer
                     return;
                 }
 
+                // vLLM removed the legacy guided_json/guided_regex/guided_decoding_backend request
+                // fields in v0.12.0. Current forms (vLLM ≥ ~v0.10): the OpenAI-compatible
+                // response_format json_schema for JSON, and the native structured_outputs extra-body
+                // dict for regex. The decoding backend is server-side config now, not per-request.
                 switch (chosenType)
                 {
                     case GuidanceType.Json:
-                        parameters.Add("guided_json", chosenString);
-                        //parameters.Add("guided_decoding_backend", "outlines");
-                        parameters.Add("guided_decoding_backend", "outlines");
+                        AddOpenAiJsonGuidance(parameters, chosenString);
                         break;
                     case GuidanceType.Regex:
-                        parameters.Add("guided_regex", chosenString);
-                        parameters.Add("guided_decoding_backend", "lm-format-enforcer");
-                        //parameters.Add("guided_decoding_backend", "outlines");
+                        parameters.Add("structured_outputs", new Dictionary<string, object>
+                        {
+                            { "regex", chosenString }
+                        });
                         break;
-                    /*case GuidanceType.Choice:
-                        guidance.Add("guided_choice", _defaultGuidance);
-                        guidance.Add("guided_decoding_backend", "lm-format-enforcer");
-                        break;*/
                 }
 
+                break;
+            }
+
+            case Protocol.Claude:
+            {
+                // Claude structured outputs: the schema is stashed under "guided_json" here and
+                // emitted as output_config.format by TransformToClaudePayload (which owns the
+                // Anthropic payload shape, including merging with the effort/thinking output_config).
+                if (!_config.SupportsGuidance || string.IsNullOrEmpty(chosenString) || chosenType != GuidanceType.Json)
+                {
+                    return;
+                }
+
+                parameters.Add("guided_json", chosenString);
                 break;
             }
 
@@ -610,6 +524,116 @@ public class PayloadTransformer
                 parameters.Add("guided_json", chosenString);
                 break;
             }
+        }
+    }
+
+    /// <summary>
+    /// Emits OpenAI-style JSON guidance into the payload: strict
+    /// <c>response_format: json_schema</c> by default, or the <c>json_object</c> downgrade (with the
+    /// schema delivered as prompt text) when the provider is configured with
+    /// <see cref="JsonSchemaMode.JsonObject"/>. Shared by the OpenAI/Perplexity and vLLM branches —
+    /// modern vLLM accepts the same OpenAI-compatible shape.
+    /// </summary>
+    /// <param name="parameters">The payload dictionary to add the response format to.</param>
+    /// <param name="schema">The JSON schema string.</param>
+    private void AddOpenAiJsonGuidance(Dictionary<string, object> parameters, string schema)
+    {
+        // Some OpenAI-compatible hosts (e.g. Z.ai's GLM API) only accept
+        // response_format {type:"json_object"} and reject the strict json_schema form.
+        // json-schema-mode = json-object downgrades to that: valid JSON is still enforced
+        // on the wire, and the schema travels as an extra system message so the model
+        // knows the expected shape (conformance is then on the model, not the decoder).
+        if (_config.JsonSchemaMode == JsonSchemaMode.JsonObject)
+        {
+            parameters.Add("response_format", new { type = "json_object" });
+            AppendSchemaInstruction(parameters, schema);
+            return;
+        }
+
+        try
+        {
+            // Parse the JSON schema string to ensure it's valid JSON
+            object processedSchema = Util.AddAdditionalPropertiesToSchema(schema);
+
+            // OpenAI uses response_format with json_schema type
+            parameters.Add("response_format", new
+            {
+                type = "json_schema",
+                json_schema = new
+                {
+                    name = "response_schema",
+                    strict = true,
+                    schema = processedSchema
+                }
+            });
+        }
+        catch (Newtonsoft.Json.JsonException ex)
+        {
+            Util.Log($"Warning: Invalid JSON schema provided for OpenAI: {schema}. Error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Rewrites a Chat-Completions-style <c>response_format</c> into the OpenAI Responses API
+    /// shape. The Responses API does not accept <c>response_format</c> at all — structured output
+    /// lives under <c>text.format</c> with the schema fields flattened
+    /// (<c>{type, name, schema, strict}</c> directly under <c>format</c>, no nested
+    /// <c>json_schema</c> object). No-op when the payload carries no response_format.
+    /// </summary>
+    /// <param name="parameters">The /v1/responses payload dictionary to rewrite in place.</param>
+    public static void ConvertResponseFormatForResponsesApi(Dictionary<string, object> parameters)
+    {
+        if (!parameters.TryGetValue("response_format", out object? responseFormat))
+            return;
+
+        parameters.Remove("response_format");
+
+        // Round-trip through JSON so the anonymous-object shapes above become inspectable.
+        Newtonsoft.Json.Linq.JObject rf = Newtonsoft.Json.Linq.JObject.FromObject(responseFormat);
+        string? type = rf["type"]?.ToString();
+
+        Dictionary<string, object> format;
+        if (type == "json_schema" && rf["json_schema"] is Newtonsoft.Json.Linq.JObject js)
+        {
+            format = new Dictionary<string, object>
+            {
+                { "type", "json_schema" },
+                { "name", js["name"]?.ToString() ?? "response_schema" },
+                { "strict", js["strict"]?.ToObject<bool>() ?? true },
+                { "schema", ConvertJTokenToPlain(js["schema"] ?? new Newtonsoft.Json.Linq.JObject())! }
+            };
+        }
+        else
+        {
+            format = new Dictionary<string, object> { { "type", type ?? "json_object" } };
+        }
+
+        parameters["text"] = new Dictionary<string, object> { { "format", format } };
+    }
+
+    /// <summary>
+    /// Delivers the JSON schema as prompt text for the <see cref="JsonSchemaMode.JsonObject"/>
+    /// downgrade path, where <c>response_format: json_object</c> enforces valid JSON but carries no
+    /// schema. Appends a system message to a copy of the message list (the caller's conversation
+    /// history must not accumulate schema instructions), or appends to the raw prompt string for
+    /// prompt-completion payloads.
+    /// </summary>
+    /// <param name="parameters">The payload dictionary containing "messages" or "prompt".</param>
+    /// <param name="schema">The JSON schema string describing the expected output shape.</param>
+    private static void AppendSchemaInstruction(Dictionary<string, object> parameters, string schema)
+    {
+        string instruction =
+            "Respond with a single JSON object that conforms to the following JSON Schema. " +
+            "Output only the JSON — no Markdown fences, no commentary.\n" + schema;
+
+        if (parameters.TryGetValue("messages", out object? messagesObj) && messagesObj is List<Message> messages)
+        {
+            List<Message> augmented = [.. messages, new Message("system", instruction)];
+            parameters["messages"] = augmented;
+        }
+        else if (parameters.TryGetValue("prompt", out object? promptObj) && promptObj is string prompt)
+        {
+            parameters["prompt"] = prompt + "\n\n" + instruction;
         }
     }
 }

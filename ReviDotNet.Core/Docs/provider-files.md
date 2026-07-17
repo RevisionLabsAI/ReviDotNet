@@ -18,11 +18,12 @@ Basic identification and connection info for the provider.
 | `protocol` | enum | The communication protocol to use. Recognized values: `OpenAI`, `vLLM`, `Gemini`, `Perplexity`, `LLamaAPI`, `Claude`. **Custom dialect** providers — `OpenAI`, `vLLM`, `Gemini`, `Claude` — each have their own request/response shaping. `LLamaAPI` and `Perplexity` have **no dedicated client** and fall through to the **OpenAI** dialect. (The enum comments that mark `LLamaAPI`/`Claude` "Not implemented" are stale — Claude is implemented.) |
 | `api-url` | string | The base URL for the API (e.g., `https://api.openai.com/v1/`). |
 | `api-key` | string | The API key. Use `environment` to load from an environment variable. |
+| `api-version-path` | string | **OpenAI protocol only.** Version segment prepended to endpoint paths. Unset → the standard `v1` (base URL + `v1/chat/completions`). Set to `none` for hosts whose `api-url` already carries the full version path and have no `v1` segment — e.g. Z.ai: `api-url = https://api.z.ai/api/paas/v4/` + `api-version-path = none` → `…/api/paas/v4/chat/completions`. |
 | `default-model` | string | The fallback model name to use if none is specified. |
 | `supports-prompt-completion`| boolean | Whether the provider supports the legacy Completion API (vs Chat API). **Overridden per protocol** — see note below. |
 | `supports-response-completion`| boolean | Whether the provider supports the newer Responses API completion endpoint. |
 
-> **Protocol-forced capabilities.** Some capability flags are forced by `protocol` at load and **ignore the file value**: protocol `OpenAI` forces `supports-prompt-completion = false`; protocol `Claude` forces `supports-prompt-completion = true` **and** `supports-guidance = false`. So you can't enable legacy completions on an OpenAI provider, or guidance on a Claude provider, via the file. (A model-level `supports-prompt-completion` can still override the effective per-model value during selection — see model-files.md.)
+> **Protocol-forced capabilities.** Some capability flags are forced by `protocol` at load and **ignore the file value**: protocol `OpenAI` forces `supports-prompt-completion = false`; protocol `Claude` forces `supports-prompt-completion = true`. So you can't enable legacy completions on an OpenAI provider via the file. (`supports-guidance` is no longer forced off for Claude — Anthropic structured outputs are supported; see the capability matrix below. A model-level `supports-prompt-completion` can still override the effective per-model value during selection — see model-files.md.)
 
 #### Environment Variables for API Keys
 If `api-key = environment` is set, ReviDotNet looks for an environment variable named:
@@ -35,19 +36,20 @@ Settings for constrained output/guidance.
 | :--- | :--- | :--- |
 | `supports-guidance` | boolean | Whether the provider supports structured output guidance (e.g., JSON Schema, GBNF). |
 | `default-guidance-type`| enum | Default schema strategy used when a prompt defers via `[[settings]] guidance-schema-type = defer`. One of `disabled`, `json-auto`, `json-manual`, `regex-auto`, `regex-manual`, `gnbf-auto`, `gnbf-manual`. *Auto* generates a schema from the requested output type; *manual* uses the `[[_default-guidance-string]]` raw section below. |
+| `json-schema-mode` | enum | **OpenAI protocol only.** How JSON guidance is sent on the wire: `json-schema` (default — strict `response_format: {type: "json_schema", strict: true, …}`) or `json-object` for hosts that reject the schema form and only accept `response_format: {type: "json_object"}` (e.g. Z.ai/GLM). In `json-object` mode valid JSON is still enforced by the API, and the schema is appended as an extra system message so the model knows the expected shape — but schema *conformance* is best-effort, so callers should validate the parsed result. Ignored by non-OpenAI protocols. |
 
 #### Guidance capability matrix (which protocol enforces which decode mode)
 
 Even with `supports-guidance = true`, each provider **protocol** only enforces certain decode modes on the wire. A strategy whose decode mode isn't supported is **silently dropped** (no constraint applied) — but ReviDotNet now logs a runtime warning when a prompt *explicitly* requests a strategy the provider can't enforce (it stays silent for prompts that don't request guidance). Pick a strategy your target protocol can actually enforce:
 
-| Protocol | JSON (`json-*`) | Regex (`regex-*`) | Grammar/GBNF (`gnbf-*`) |
-| :--- | :---: | :---: | :---: |
-| OpenAI | ✅ | ❌ | ❌ |
-| Perplexity | ✅ | ❌ | ❌ |
-| Gemini | ✅ | ❌ | ❌ |
-| vLLM | ✅ | ✅ | ❌ |
-| LLamaAPI | ✅ | ❌ | ✅ |
-| Claude | ❌ (chat-only — `supports-guidance` forced false) | ❌ | ❌ |
+| Protocol | JSON (`json-*`) | Regex (`regex-*`) | Grammar/GBNF (`gnbf-*`) | Wire form |
+| :--- | :---: | :---: | :---: | :--- |
+| OpenAI | ✅ | ❌ | ❌ | strict `response_format: json_schema` (or `json_object` via `json-schema-mode`) |
+| Perplexity | ✅ | ❌ | ❌ | strict `response_format: json_schema` |
+| Gemini | ✅ | ❌ | ❌ | `generationConfig.responseJsonSchema` (standard JSON Schema; Gemini 2.5+/3.x) |
+| vLLM | ✅ | ✅ | ❌ | JSON: `response_format: json_schema`; Regex: `structured_outputs: {regex}` — targets vLLM ≥ ~v0.10 (the legacy `guided_json`/`guided_decoding_backend` fields were removed in v0.12) |
+| LLamaAPI | ✅ | ❌ | ✅ | `json_schema` / `grammar` |
+| Claude | ✅ | ❌ | ❌ | `output_config.format: json_schema` — requires Haiku 4.5 / Opus 4.5-generation or later models; set `supports-guidance = false` for providers running older Claude models |
 
 > The GBNF/`gnbf-*` strategies are not yet wired to a schema source and currently apply no constraint on any protocol; a prompt that selects one is warned at runtime.
 

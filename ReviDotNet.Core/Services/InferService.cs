@@ -388,8 +388,13 @@ public sealed class InferService(
             }
         }
 
+        // Schema validation is the backstop for providers without on-wire enforcement (json-object
+        // mode, guidance-disabled models); it shares ValidateObject's require-valid-output gate and
+        // feeds the same retry path.
         T? castObject = (T?)Convert.ChangeType(newObject, typeof(T));
-        if (ValidateObject<T>(castObject, prompt))
+        bool schemaConformant = prompt.RequireValidOutput is false
+            || JsonOutputValidation.ConformsToType(extractedJson, outputType, prompt.Name ?? promptName);
+        if (ValidateObject<T>(castObject, prompt) && schemaConformant)
             return (castObject, result);
 
         Util.Log($"InferService.ToObject() object was invalid for prompt '{prompt.Name}'");
@@ -1149,9 +1154,13 @@ public sealed class InferService(
             return;
         }
 
+        // A model rcfg's [[override-settings]] guidance-schema-type wins over the prompt's strategy —
+        // e.g. disable strict guidance on a model whose host can't enforce it (Groq's llama models).
+        GuidanceSchemaType? effectiveSchema = model.GuidanceSchemaType ?? prompt.GuidanceSchema;
+
         try
         {
-            switch (prompt.GuidanceSchema)
+            switch (effectiveSchema)
             {
                 case GuidanceSchemaType.Disabled:
                     guidanceType = GuidanceType.Disabled;
@@ -1198,7 +1207,7 @@ public sealed class InferService(
             Util.Log($"Guidance Exception: {e.Message}");
         }
 
-        GuidanceCapability.WarnIfIneffective(prompt, model, guidanceType, guidanceString);
+        GuidanceCapability.WarnIfIneffective(prompt, model, guidanceType, guidanceString, effectiveSchema);
     }
 
     private static int? GetEffectiveInactivityTimeoutSeconds(Prompt prompt, ModelProfile model)

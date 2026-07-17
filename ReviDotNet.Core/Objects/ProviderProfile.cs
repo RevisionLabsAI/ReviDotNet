@@ -34,9 +34,17 @@ public class ProviderProfile
     // API Settings
     [RConfigProperty("general_api-url")]
     public string? APIURL { get; set; }
-    
+
     [RConfigProperty("general_api-key")]
     public string? APIKey { get; set; }
+
+    /// <summary>
+    /// Version segment for OpenAI-style endpoints. Unset means the standard "v1"
+    /// ("v1/chat/completions"); "none" removes the segment for hosts whose api-url already carries
+    /// the full version path (e.g. Z.ai's https://api.z.ai/api/paas/v4/ → "chat/completions").
+    /// </summary>
+    [RConfigProperty("general_api-version-path")]
+    public string? APIVersionPath { get; set; }
     
     // Model settings
     [RConfigProperty("general_default-model")]
@@ -71,6 +79,15 @@ public class ProviderProfile
     
     [RConfigProperty(("_default-guidance-string"))]
     public string? DefaultGuidanceString { get; set; }
+
+    /// <summary>
+    /// How JSON guidance is sent for OpenAI-protocol providers: <c>json-schema</c> (default; strict
+    /// <c>response_format: json_schema</c>) or <c>json-object</c> for hosts that only accept
+    /// <c>response_format: json_object</c> (e.g. Z.ai/GLM) — the schema then travels as an extra
+    /// system message. Ignored by non-OpenAI protocols.
+    /// </summary>
+    [RConfigProperty(("guidance_json-schema-mode"))]
+    public JsonSchemaMode? JsonSchemaMode { get; set; }
 
     // Rate Limiting
     [RConfigProperty("limiting_timeout-seconds")]
@@ -134,7 +151,10 @@ public class ProviderProfile
                 break;
             
             case global::Revi.Protocol.Claude:
-                SupportsGuidance = false;
+                // Guidance is no longer forced off: Anthropic's structured outputs
+                // (output_config.format json_schema) are emitted by TransformToClaudePayload.
+                // The file's supports-guidance value now applies — set it false for providers
+                // whose models predate structured-output support (pre-Haiku-4.5/Opus-4.5).
                 SupportsCompletion = true;
                 break;
             
@@ -169,7 +189,9 @@ public class ProviderProfile
             supportsGuidance: SupportsGuidance ?? false,
             // Reduce the schema strategy to the low-level decode mode for the client-level fallback.
             defaultGuidanceType: GuidanceResolver.ReduceToGuidanceType(DefaultGuidanceType),
-            defaultGuidanceString: DefaultGuidanceString ?? "");
+            defaultGuidanceString: DefaultGuidanceString ?? "",
+            jsonSchemaMode: JsonSchemaMode ?? global::Revi.JsonSchemaMode.JsonSchema,
+            apiVersionPath: APIVersionPath);
         
         // Initialize EmbedClient for embeddings
         EmbeddingClient = new EmbedClient(

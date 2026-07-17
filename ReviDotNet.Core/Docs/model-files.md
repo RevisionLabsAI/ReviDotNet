@@ -98,7 +98,7 @@ Allows this model to override default settings normally found in `.pmt` files.
 | `filter` | string | Override for prompt filter. |
 | `chain-of-thought` | string | Override for chain-of-thought behavior. |
 | `request-json` | string | Override for JSON request setting. |
-| `guidance-schema-type`| enum | Override for output guidance type. |
+| `guidance-schema-type`| enum | Overrides the **prompt's** guidance strategy for this model. Most useful as `disabled` when the provider supports guidance but this specific model can't enforce it (e.g. Groq's strict `json_schema` mode only supports the gpt-oss models — its llama models set `guidance-schema-type = disabled` here). |
 | `require-valid-output`| boolean| Override for output validation requirement. |
 | `retry-attempts` | integer | Override for retry count. |
 | `retry-prompt` | string | Override for custom retry instruction. |

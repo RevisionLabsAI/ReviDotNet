@@ -65,8 +65,17 @@ public class InferClient : IDisposable
         bool supportsGuidance = false,
         GuidanceType? defaultGuidanceType = GuidanceType.Disabled,
         string? defaultGuidanceString = null,
+        JsonSchemaMode jsonSchemaMode = JsonSchemaMode.JsonSchema,
+        string? apiVersionPath = null,
         HttpClient? httpClientOverride = null)
     {
+        // Normalize the OpenAI-style endpoint version segment: null/unset keeps the standard "v1";
+        // "none" (or an explicit empty value) removes the segment entirely for hosts whose base URL
+        // already carries the full version path (e.g. Z.ai's /api/paas/v4/).
+        string normalizedVersionPath = (apiVersionPath ?? "v1").Trim().Trim('/');
+        if (normalizedVersionPath.Equals("none", StringComparison.OrdinalIgnoreCase))
+            normalizedVersionPath = string.Empty;
+
         // Create configuration
         _config = new InferClientConfig
         {
@@ -84,7 +93,9 @@ public class InferClient : IDisposable
             SupportsResponseCompletion = supportsResponseCompletion,
             SupportsGuidance = supportsGuidance,
             DefaultGuidanceType = defaultGuidanceType,
-            DefaultGuidanceString = defaultGuidanceString
+            DefaultGuidanceString = defaultGuidanceString,
+            JsonSchemaMode = jsonSchemaMode,
+            ApiVersionPath = normalizedVersionPath
         };
         
         // Create shared resources
@@ -150,14 +161,24 @@ public class InferClient : IDisposable
             _httpClient);
         
         _streamingProcessor = new StreamingProcessor(
-            _config, 
-            _clientSemaphore, 
+            _config,
+            _clientSemaphore,
             _rateLimiter,
             _payloadTransformer,
             _httpClient);
-        
+
     }
     #endregion
+
+    /// <summary>
+    /// Builds an OpenAI-style endpoint path with the configured version segment ("v1/chat/completions"
+    /// by default, or just "chat/completions" when the provider's base URL already carries the version,
+    /// e.g. Z.ai's /api/paas/v4/).
+    /// </summary>
+    /// <param name="path">The endpoint path without a version segment (e.g. "chat/completions").</param>
+    /// <returns>The endpoint path to resolve against the client's base address.</returns>
+    private string OpenAiEndpoint(string path) =>
+        string.IsNullOrEmpty(_config.ApiVersionPath) ? path : _config.ApiVersionPath + "/" + path;
     
     
     // ==========
@@ -259,7 +280,7 @@ public class InferClient : IDisposable
         else if (_config.Protocol == Protocol.Claude)
             endpoint = "v1/messages";
         else
-            endpoint = "v1/completions";
+            endpoint = OpenAiEndpoint("completions");
 
         CompletionResult result;
         string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
@@ -396,7 +417,7 @@ public class InferClient : IDisposable
         }
         else
         {
-            endpoint = "v1/chat/completions";
+            endpoint = OpenAiEndpoint("chat/completions");
         }
 
         CompletionResult result;
@@ -520,7 +541,11 @@ public class InferClient : IDisposable
             useSearchGrounding,
             thinking);
 
-        string endpoint = "v1/responses";
+        // The Responses API rejects the Chat-Completions response_format parameter — structured
+        // output lives under text.format there. Rewrite before sending.
+        PayloadTransformer.ConvertResponseFormatForResponsesApi(parameters);
+
+        string endpoint = OpenAiEndpoint("responses");
 
         CompletionResult result;
         string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
@@ -651,7 +676,7 @@ public class InferClient : IDisposable
         else if (_config.Protocol == Protocol.Claude)
             endpoint = "v1/messages";
         else
-            endpoint = "v1/completions";
+            endpoint = OpenAiEndpoint("completions");
 
         string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
         
@@ -770,7 +795,7 @@ public class InferClient : IDisposable
         if (_config.Protocol == Protocol.Gemini)
             endpoint = $"v1beta/models/{model}:streamGenerateContent?alt=sse";
         else
-            endpoint = "v1/chat/completions";
+            endpoint = OpenAiEndpoint("chat/completions");
 
         string payloadDebug = $"'''\n{JsonConvert.SerializeObject(parameters, Formatting.Indented)}\n'''";
         
