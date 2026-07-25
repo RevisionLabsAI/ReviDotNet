@@ -129,7 +129,7 @@ internal class InferenceHttpClient : IDisposable
                 if (!response.IsSuccessStatusCode)
                 {
                     string responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                    if (attempt >= _config.RetryAttemptLimit)
+                    if (!IsRetryableStatus(response.StatusCode) || attempt >= _config.RetryAttemptLimit)
                     {
                         string msg = $"[{attempt + 1}] API request failed: {response.ReasonPhrase} ({(int)response.StatusCode}) from '{uri}'. Body: '{responseContent}'";
                         Util.Log(msg);
@@ -180,6 +180,19 @@ internal class InferenceHttpClient : IDisposable
             }
         }
     }
+
+    /// <summary>
+    /// Determines whether a non-success HTTP status is worth retrying. Timeouts, rate limits, and
+    /// server errors are transient; other 4xx responses (400/401/403/404/422, ...) are deterministic —
+    /// the identical request will fail identically, so retrying only burns the backoff budget
+    /// (with a 5-attempt limit and 5s initial delay, ~155s per call for a permanent 400).
+    /// </summary>
+    /// <param name="statusCode">The response status code.</param>
+    /// <returns><c>true</c> when the request should be retried with backoff.</returns>
+    private static bool IsRetryableStatus(System.Net.HttpStatusCode statusCode) =>
+        statusCode == System.Net.HttpStatusCode.RequestTimeout ||
+        statusCode == System.Net.HttpStatusCode.TooManyRequests ||
+        (int)statusCode >= 500;
 
     /// <summary>
     /// Processes the HTTP response and extracts the required information.

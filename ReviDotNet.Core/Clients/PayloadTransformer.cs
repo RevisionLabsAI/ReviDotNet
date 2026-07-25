@@ -184,8 +184,11 @@ public class PayloadTransformer
 
             if (enable)
             {
-                // Use Gemini REST schema (camelCase): { "tools": [ { "googleSearchRetrieval": {} } ] }
-                geminiPayload["tools"] = new[] { new { googleSearchRetrieval = new { } } };
+                // Use Gemini REST schema (camelCase): { "tools": [ { "googleSearch": {} } ] }.
+                // NOTE: "googleSearchRetrieval" is the legacy Gemini 1.5 tool — Gemini 2.x models
+                // reject it with 400 INVALID_ARGUMENT ("google_search_retrieval is not supported.
+                // Please use google_search tool instead.").
+                geminiPayload["tools"] = new[] { new { googleSearch = new { } } };
             }
         }
         
