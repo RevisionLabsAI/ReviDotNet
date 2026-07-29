@@ -29,13 +29,13 @@ public sealed class PluginBuilder
         string dir = Path.GetDirectoryName(csprojPath) ?? Directory.GetCurrentDirectory();
         bool haveTfm = !string.IsNullOrWhiteSpace(targetFramework);
 
-        List<string> buildArgs = ["build", csprojPath, "-c", configuration, "--nologo", "-clp:ErrorsOnly"];
+        List<string> buildArgs = ["build", csprojPath, "-c", configuration, "--nologo", "-clp:ErrorsOnly", "-nodeReuse:false"];
         if (haveTfm) buildArgs.Add($"-p:TargetFramework={targetFramework}");
         (int code, string outp, string err) = await RunAsync(buildArgs.ToArray(), dir, ct);
         if (code != 0)
             return BuildResult.Fail($"dotnet build failed (exit {code}):\n{Tail(outp + "\n" + err)}");
 
-        List<string> propArgs = ["msbuild", csprojPath, "-getProperty:TargetPath", "-nologo"];
+        List<string> propArgs = ["msbuild", csprojPath, "-getProperty:TargetPath", "-nologo", "-nodeReuse:false"];
         if (haveTfm) propArgs.Add($"-p:TargetFramework={targetFramework}");
         (int pc, string pout, string perr) = await RunAsync(propArgs.ToArray(), dir, ct);
         if (pc != 0)
