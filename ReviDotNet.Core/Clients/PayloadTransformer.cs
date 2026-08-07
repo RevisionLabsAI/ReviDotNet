@@ -135,6 +135,28 @@ public class PayloadTransformer
         if (generationConfig.Any())
             geminiPayload["generationConfig"] = generationConfig;
 
+        // Harm-block thresholds. A TOP-LEVEL field, deliberately not inside generationConfig — Gemini
+        // rejects it there — and one entry per harm category, because the API takes no "all categories"
+        // shorthand and silently keeps its default for any category the caller omits.
+        //
+        // HARM_CATEGORY_CIVIC_INTEGRITY is knowingly excluded: it is not accepted across all Gemini
+        // models and sending it earns a 400 from the ones that don't, which would break every call on
+        // those models rather than just relaxing a filter.
+        if (payload.TryGetValue("gemini_safety_threshold", out var safetyThresholdObj))
+        {
+            string threshold = safetyThresholdObj?.ToString()?.Trim().ToUpperInvariant() ?? string.Empty;
+            if (!string.IsNullOrEmpty(threshold))
+            {
+                geminiPayload["safetySettings"] = new[]
+                {
+                    "HARM_CATEGORY_HARASSMENT",
+                    "HARM_CATEGORY_HATE_SPEECH",
+                    "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    "HARM_CATEGORY_DANGEROUS_CONTENT"
+                }.Select(category => new { category, threshold }).ToArray();
+            }
+        }
+
         // Handle single prompt (Gemini has no top-level "prompt" field; use contents.parts[].text)
         if (payload.TryGetValue("prompt", out var promptValue) && promptValue is string prompt)
         {
@@ -371,7 +393,8 @@ public class PayloadTransformer
         GuidanceType? guidanceType,
         string? guidanceString,
         bool? useSearchGrounding,
-        string? thinking = null)
+        string? thinking = null,
+        string? geminiSafetyThreshold = null)
     {
         if (temperature.HasValue) parameters.Add("temperature", temperature.Value);
         if (topK.HasValue) parameters.Add("top_k", topK.Value);
@@ -515,7 +538,14 @@ public class PayloadTransformer
                 {
                     parameters.Add("use_search_grounding", useSearchGrounding);
                 }
-                
+
+                // Harm-block threshold, applied to every harm category in TransformToGeminiPayload.
+                // Only travels when explicitly configured, so an unset prompt keeps Gemini's defaults.
+                if (!string.IsNullOrWhiteSpace(geminiSafetyThreshold))
+                {
+                    parameters.Add("gemini_safety_threshold", geminiSafetyThreshold);
+                }
+
                 // Gemini JSON Schema Guidance
                 if (!_config.SupportsGuidance || string.IsNullOrEmpty(chosenString) || chosenType != GuidanceType.Json)
                 {

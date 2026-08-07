@@ -109,6 +109,7 @@ Allows this model to override default settings normally found in `.pmt` files.
 | `preferred-models` | list | Override for preferred models list. |
 | `blocked-models` | list | Override for blocked models list. |
 | `use-search-grounding`| string | Override for search grounding (e.g., for Gemini). |
+| `gemini-safety-threshold` | string | Override for the Gemini harm-block threshold (`BLOCK_NONE`/`BLOCK_ONLY_HIGH`/`BLOCK_MEDIUM_AND_ABOVE`/`BLOCK_LOW_AND_ABOVE`/`OFF`). See `prompt-files.md`. |
 | `min-tier` | enum | Override for minimum required tier. |
 | `completion-type` | enum | Override for the completion interface type. |
 

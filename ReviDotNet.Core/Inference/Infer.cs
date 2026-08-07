@@ -97,6 +97,7 @@ internal class Infer
 						guidanceType: guidanceType,
 						guidanceString: guidanceString,
 						useSearchGrounding: (bool?)SelectParam(model.UseSearchGrounding, prompt.UseSearchGrounding),
+						geminiSafetyThreshold: model.GeminiSafetyThreshold ?? prompt.GeminiSafetyThreshold,
 						thinking: ComputeThinking(prompt, model),
 						cancellationToken: token,
                         inactivityTimeoutSeconds: inactivityTimeoutSeconds);
@@ -130,6 +131,7 @@ internal class Infer
 						guidanceType: guidanceType,
 						guidanceString: guidanceString,
 						useSearchGrounding: (bool?)SelectParam(model.UseSearchGrounding, prompt.UseSearchGrounding),
+						geminiSafetyThreshold: model.GeminiSafetyThreshold ?? prompt.GeminiSafetyThreshold,
 						thinking: ComputeThinking(prompt, model),
 						cancellationToken: token,
                         inactivityTimeoutSeconds: inactivityTimeoutSeconds);
@@ -413,6 +415,7 @@ internal class Infer
 						guidanceType: guidanceType,
 						guidanceString: guidanceString,
 						useSearchGrounding: (bool?)SelectParam(model.UseSearchGrounding, prompt.UseSearchGrounding),
+						geminiSafetyThreshold: model.GeminiSafetyThreshold ?? prompt.GeminiSafetyThreshold,
 						thinking: ComputeThinking(prompt, model),
 						cancellationToken: token,
                         inactivityTimeoutSeconds: inactivityTimeoutSeconds);
@@ -444,6 +447,7 @@ internal class Infer
 						guidanceType: guidanceType,
 						guidanceString: guidanceString,
 						useSearchGrounding: (bool?)SelectParam(model.UseSearchGrounding, prompt.UseSearchGrounding),
+						geminiSafetyThreshold: model.GeminiSafetyThreshold ?? prompt.GeminiSafetyThreshold,
 						thinking: ComputeThinking(prompt, model),
 						cancellationToken: token,
                         inactivityTimeoutSeconds: inactivityTimeoutSeconds);

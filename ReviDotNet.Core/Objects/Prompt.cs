@@ -73,6 +73,27 @@ public class Prompt
     public bool? UseSearchGrounding { get; set; }
 
     /// <summary>
+    /// Gemini-only. The harm-block threshold applied to every harm category for this prompt's calls —
+    /// one of <c>BLOCK_NONE</c>, <c>BLOCK_ONLY_HIGH</c>, <c>BLOCK_MEDIUM_AND_ABOVE</c>,
+    /// <c>BLOCK_LOW_AND_ABOVE</c>, or <c>OFF</c>. Unset leaves Gemini's own defaults in place, which is
+    /// the right behaviour for ordinary prompts.
+    /// </summary>
+    /// <remarks>
+    /// Exists because Gemini's defaults are actively wrong for one specific job: classifying content
+    /// for safety. Asked to categorise a description of harmful activity, Gemini suppresses its own
+    /// answer — returning <c>null</c> category/confidence/rationale, or omitting the fields entirely —
+    /// and a caller that maps an unparseable verdict to "allowed" then does the opposite of what it
+    /// intended, most reliably on the very worst input. Moderation is the use case Google exposes
+    /// <c>safetySettings</c> for; this is how a prompt asks for it.
+    /// <para>
+    /// Ignored by every non-Gemini protocol, so setting it is safe on a prompt that may route
+    /// elsewhere.
+    /// </para>
+    /// </remarks>
+    [JsonProperty("gemini-safety-threshold"), RConfigProperty("settings_gemini-safety-threshold")]
+    public string? GeminiSafetyThreshold { get; set; }
+
+    /// <summary>
     /// Per-request thinking / reasoning amount, as a common word (<c>low</c>/<c>medium</c>/<c>high</c>, or
     /// <c>off</c> to disable). Overrides the model's default <c>thinking</c> when set; the model's
     /// <c>thinking-conversion-*</c> table still translates it to the provider-specific value. Lets a

@@ -241,6 +241,7 @@ public class InferClient : IDisposable
         GuidanceType? guidanceType = GuidanceType.Disabled,
         string? guidanceString = null,
         bool? useSearchGrounding = null,
+        string? geminiSafetyThreshold = null,
         string? thinking = null,
         CancellationToken cancellationToken = default,
         int? inactivityTimeoutSeconds = null)
@@ -271,7 +272,8 @@ public class InferClient : IDisposable
             guidanceType,
             guidanceString,
             useSearchGrounding,
-            thinking);
+            thinking,
+            geminiSafetyThreshold);
         
         // Use appropriate endpoint based on protocol
         string endpoint;
@@ -378,6 +380,7 @@ public class InferClient : IDisposable
         GuidanceType? guidanceType = GuidanceType.Disabled,
         string? guidanceString = null,
         bool? useSearchGrounding = null,
+        string? geminiSafetyThreshold = null,
         string? thinking = null,
         CancellationToken cancellationToken = default,
         int? inactivityTimeoutSeconds = null)
@@ -406,7 +409,8 @@ public class InferClient : IDisposable
             guidanceType,
             guidanceString,
             useSearchGrounding,
-            thinking);
+            thinking,
+            geminiSafetyThreshold);
 
         string endpoint;
         if (_config.Protocol == Protocol.Gemini)
@@ -507,6 +511,7 @@ public class InferClient : IDisposable
         GuidanceType? guidanceType = GuidanceType.Disabled,
         string? guidanceString = null,
         bool? useSearchGrounding = null,
+        string? geminiSafetyThreshold = null,
         string? thinking = null,
         CancellationToken cancellationToken = default,
         int? inactivityTimeoutSeconds = null)
@@ -539,7 +544,8 @@ public class InferClient : IDisposable
             guidanceType,
             guidanceString,
             useSearchGrounding,
-            thinking);
+            thinking,
+            geminiSafetyThreshold);
 
         // The Responses API rejects the Chat-Completions response_format parameter — structured
         // output lives under text.format there. Rewrite before sending.
@@ -630,6 +636,7 @@ public class InferClient : IDisposable
         GuidanceType? guidanceType = GuidanceType.Disabled,
         string? guidanceString = null,
         bool? useSearchGrounding = null,
+        string? geminiSafetyThreshold = null,
         string? thinking = null,
         CancellationToken cancellationToken = default,
         int? inactivityTimeoutSeconds = null)
@@ -667,7 +674,8 @@ public class InferClient : IDisposable
             guidanceType,
             guidanceString,
             useSearchGrounding,
-            thinking);
+            thinking,
+            geminiSafetyThreshold);
         
         // Use appropriate endpoint based on protocol
         string endpoint;
@@ -761,6 +769,7 @@ public class InferClient : IDisposable
         GuidanceType? guidanceType = GuidanceType.Disabled,
         string? guidanceString = null,
         bool? useSearchGrounding = null,
+        string? geminiSafetyThreshold = null,
         string? thinking = null,
         CancellationToken cancellationToken = default,
         int? inactivityTimeoutSeconds = null)
@@ -789,7 +798,8 @@ public class InferClient : IDisposable
             guidanceType,
             guidanceString,
             useSearchGrounding,
-            thinking);
+            thinking,
+            geminiSafetyThreshold);
 
         string endpoint;
         if (_config.Protocol == Protocol.Gemini)

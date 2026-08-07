@@ -250,6 +250,12 @@ public class ModelProfile
     // Model-level override for Gemini Search Grounding: "true" / "false" / "disabled"
     [RConfigProperty("override-settings_use-search-grounding")]
     public string? UseSearchGrounding { get; set; }
+
+    // Model-level override for the Gemini harm-block threshold applied to every harm category:
+    // BLOCK_NONE / BLOCK_ONLY_HIGH / BLOCK_MEDIUM_AND_ABOVE / BLOCK_LOW_AND_ABOVE / OFF. Unset leaves
+    // Gemini's defaults alone. See Prompt.GeminiSafetyThreshold for why this is needed at all.
+    [RConfigProperty("override-settings_gemini-safety-threshold")]
+    public string? GeminiSafetyThreshold { get; set; }
     
     [RConfigProperty("override-settings_min-tier")]
     public ModelTier? MinTier { get; set; }
