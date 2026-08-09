@@ -9,9 +9,11 @@ Agent Client Protocol (ACP) or by driving the vendor CLIs directly, and covers
 what the vendors' terms permit.
 
 **This is engineering research, not legal advice.** Get counsel to read the
-actual contracts before shipping a product feature. The Anthropic policy text
-quoted below was read directly from Anthropic's own documentation; the dated
-enforcement timeline comes from secondary reporting and should be re-verified.
+actual contracts before shipping a product feature. Everything quoted below
+comes from Anthropic's and OpenAI's own documentation and on-record statements,
+except where marked. `anthropic.com/legal/*` remained unreachable from the
+research sandbox, so the Consumer and Commercial Terms themselves were not read
+first-hand.
 
 ---
 
@@ -62,6 +64,37 @@ Three consequences:
    question, and there is a partner track (the Agent SDK page carries partner
    branding guidelines).
 
+### What actually makes something a "third-party tool"
+
+This is the distinction that decides most real designs, and it is **not** about
+whether there is a GUI, a web front-end, or automation involved. It is about
+**which process makes the model request**:
+
+| | Who calls the API | Status |
+| :--- | :--- | :--- |
+| OpenCode, Pi, OpenClaw (pre-block) | The tool's own code, carrying the user's OAuth token to `api.anthropic.com` | Third-party tool. Blocked from plan limits since Apr 4, 2026. |
+| T3 Code, Conductor, any CLI wrapper | The official `claude` binary, which authenticates itself | Not a third-party tool. Never blocked. |
+
+Anthropic's spokesperson [to *The
+Register*](https://www.theregister.com/2026/04/06/anthropic_closes_door_on_subscription/),
+April 2026:
+
+> Starting April 4, third-party tools will draw from extra usage instead of
+> subscription limits. Using Claude subscriptions with third-party tools isn't
+> permitted under our Terms of Service, and they put an outsized strain on our
+> systems. […] **Claude subscriptions continue to apply to Claude.ai, Claude
+> Code, and Cowork.**
+
+Note that enforcement is *billing-based*, not a hard block — offending traffic is
+redirected to paid extra usage at API rates. Note also the stated motive:
+capacity, not principle. Boris Cherny, head of Claude Code: "Our systems are
+highly optimized for one kind of workload." OpenClaw — explicitly designed to
+"operate autonomously 24/7" — is the shape that triggered it. **Usage pattern is
+the real risk axis, not the presence of a front-end.**
+
+If your code shells out to the official binary and never touches a token, the
+requests *are* Claude Code usage and the subscription covers them.
+
 ### Branding constraint
 
 If ReviDotNet ever surfaces this in a UI, per the Agent SDK page: "Claude
@@ -79,7 +112,30 @@ Not theoretical, and the trajectory matters more than the current state:
 | Feb–Mar 2026 | Server-side blocks rolled out quietly against non-official clients. |
 | Apr 4, 2026 | Full enforcement, beginning with OpenClaw and expanding to other harnesses. Blocked calls return `Third-party apps now draw from extra usage, not plan limits.` |
 | May 13, 2026 | Announced: Agent SDK, `claude -p`, GitHub Actions and third-party tools move off plan limits onto a separate monthly credit (Pro $20 / Max 5x $100 / Max 20x $200), effective June 15. |
-| Jun 15, 2026 | **Cancelled before taking effect.** Programmatic usage keeps drawing from Pro/Max/Team/Enterprise limits as before. Anthropic said it is reworking the plan and will give advance notice. |
+| Jun 15, 2026 | **Paused before taking effect.** |
+
+Verbatim, from the banner now at the top of [Use the Claude Agent SDK with your
+Claude plan](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan)
+(article dated June 16, 2026):
+
+> **Update June 15:** We're pausing the changes to Claude Agent SDK usage
+> described below. For now, nothing has changed: Claude Agent SDK, `claude -p`,
+> and third-party app usage still draw from your subscription's usage limits.
+> The previously announced monthly credit […] isn't available. We're working to
+> update the plan to better support how users build with Claude subscriptions.
+> When we have an update, we'll share it before anything takes effect.
+
+The same article states the boundary Anthropic draws around subscription-backed
+programmatic use:
+
+> **Production automation at scale.** The Agent SDK monthly credit is sized for
+> individual experimentation and automation. Teams running shared production
+> automation should use Claude Platform with an API key for predictable
+> pay-as-you-go billing.
+
+"Individual experimentation and automation" versus "shared production
+automation" is the line that matters, and it is drawn at *shared*, not at
+*automated*.
 
 The June reversal is why `claude -p` on a subscription still works today. Treat
 it as a reprieve with notice attached, not a guarantee. Anything whose unit
@@ -96,38 +152,71 @@ Split the question, because the answer differs:
 
 | Scenario | Verdict |
 | :--- | :--- |
-| You personally run `claude`, `claude -p`, or the Agent SDK on your own machine, on your own Max plan, doing research against the Great Debate repo | **Yes.** Ordinary individual use of a first-party surface. This is the product working as intended. |
-| Great Debate the *product* runs research for its users, powered by any Pro/Max subscription (yours or theirs) | **No.** That is a product routing requests through plan credentials. API key + Commercial Terms. |
-| Great Debate runs unattended server-side research pipelines on your OAuth token | **Effectively no.** Even single-tenant, this stops being "ordinary, individual usage" once it is a hosted service, and it is exactly the shape enforcement targets. |
+| You personally run `claude`, `claude -p`, or the Agent SDK on your own machine, on your own Max plan | **Yes.** Ordinary individual use of a first-party surface. |
+| A **single-user front-end you built for yourself** that shells out to the official `claude` binary, which authenticates with your own login | **Yes.** The requests originate from Claude Code, so the subscription covers them. This is the T3 Code model. |
+| The same front-end, but your code carries the OAuth token and calls `api.anthropic.com` itself | **No.** That is the blocked third-party-tool pattern regardless of how many people use it. |
+| Great Debate opened to other users, with their work powered by any Pro/Max subscription | **No.** "On behalf of their users" activates. API key + Commercial Terms. |
 
-The line is **not** whether the repo is private or whether you are the only
-human involved. It is whether the traffic is an individual using a first-party
-Anthropic surface, versus a service. The private-repo detail is irrelevant to
-the terms question.
+The distinctions that matter are **who makes the request** and **how many
+people use the front-end**. Whether the repo is private, whether there's a web
+UI, and whether the run is attended are not, on their own, the deciding facts.
 
-Practically: developing Great Debate with Claude Code — including using
-subagents to do research while you build — is fine. Shipping Great Debate with
-Claude Code inside it is an API-key feature.
+So the design you described — a web front-end, used only by you, that exists to
+make the CLI harness more usable for your task — sits inside the sanctioned
+envelope, provided the official binary makes every model call. Anthropic's own
+framing for it is "individual experimentation and automation."
+
+**The output being for other people is a non-issue for the auth question.**
+Nothing in the terms, the Usage Policy, or the [agentic usage
+guidance](https://support.claude.com/en/articles/12005017-using-agents-according-to-our-usage-policy)
+restricts publishing or distributing what Claude produces for you. Outputs are
+yours to use.
+
+One content-side flag, given the project's subject matter: that agentic
+guidance does prohibit using agents to "automate influence operations or
+coordinated inauthentic behavior," and to "manipulate online polls, voting
+systems, or traffic metrics." Research briefs and debate preparation are
+nowhere near that line. Mass-generating persuasion content posted under
+personas that conceal its origin would be. Keep AI involvement disclosed where
+it matters and this stays a non-issue — but it is a *content* constraint, wholly
+separate from the auth question, and it applies identically whether you use a
+subscription or an API key.
 
 ### Q2 — Same question for ChatGPT / Codex and others
 
-OpenAI has published **no equivalent explicit ban**, but that is not permission:
+For the **drive-the-CLI** design, Codex is on at least as good footing as Claude,
+arguably better, because OpenAI documents the scripted path directly:
 
-- Codex CLI is Apache-2.0. A maintainer confirmed on
+- [Non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode) is
+  an official, documented feature: "Non-interactive mode lets you run Codex from
+  scripts (for example, continuous integration (CI) jobs) without opening the
+  interactive TUI. You invoke it with `codex exec`." It supports
+  `codex exec --json` JSON Lines output with typed items for agent messages,
+  reasoning, command executions, file changes, MCP tool calls and web searches —
+  a good match for ReviLogger's trace tree.
+- [Authentication](https://developers.openai.com/codex/auth) lists both methods
+  for Codex CLI without restricting either to interactive use: "Sign in with
+  ChatGPT for subscription access" and "Sign in with an API key for usage-based
+  access."
+- Codex CLI is Apache-2.0; a maintainer confirmed on
   [openai/codex#8338](https://github.com/openai/codex/discussions/8338) that you
   may "fork the repo and make modifications to suit your own needs."
-- OpenAI's Terms of Use prohibit using "any automated or programmatic method to
-  extract data or output from the Services." Written for scraping, never
-  publicly reconciled with third-party CLI harnesses.
-- OpenAI's own guidance points at API keys for programmatic CLI workflows, SDK
-  usage, CI/CD and automation.
-- Asked directly and repeatedly whether ChatGPT-plan auth may be used from
-  third-party or modified clients, OpenAI maintainers have **not answered**.
+- **No published prohibition** on third-party harnesses or on plan-authenticated
+  automation — nothing equivalent to Anthropic's legal page.
 
-So the OpenAI position is ambiguous where Anthropic's is explicit. Worth
-remembering that Anthropic's position was *also* ambiguous — with developer
-relations reportedly encouraging the pattern — right up until server-side blocks
-appeared. Gemini CLI, Cursor and Grok are in the same undefined state.
+The residual ambiguity is narrower than it first appears. OpenAI's Terms of Use
+bar "any automated or programmatic method to extract data or output from the
+Services," but that clause is aimed at scraping and cannot coherently forbid
+`codex exec`, which OpenAI itself ships and documents for CI. What has never
+been answered is whether you may *distribute* a tool that other people use with
+their own ChatGPT plans — asked repeatedly, unanswered. That is the same
+boundary Anthropic drew explicitly.
+
+Anthropic's position was also ambiguous — with developer relations reportedly
+encouraging the pattern — right up until server-side blocks appeared, and the
+driver was capacity rather than principle. Google enforced similarly against
+piggybacking on Gemini CLI's OAuth in February 2026. Assume every vendor's
+subscription lane can narrow on short notice.
 
 **Design conclusion:** never let subscription auth be load-bearing for any
 ReviDotNet feature, on any vendor. Treat it as a convenience lane that can be
@@ -177,12 +266,18 @@ April 2026, and enforcement can happen without notice.
 
 Two adjacent designs are viable:
 
-**BYO-CLI (the T3 Code model).** ReviDotNet runs locally and launches the
-`claude` binary the developer authenticated themselves. ReviDotNet never sees,
-stores, forwards, or provisions a token. Currently treated as compliant.
-Constraints: only works where the CLI runs on the user's own machine — the
-`revi` CLI, Forge on a dev box — never a hosted multi-tenant Forge. And it is a
-*tolerated pattern*, not a written guarantee.
+**BYO-CLI (the T3 Code model).** ReviDotNet launches the `claude` binary that
+the operator authenticated themselves, and the binary makes every model call.
+Currently treated as compliant, and it covers single-user hosted deployments,
+not just localhost: a headless box authenticating with a `claude setup-token`
+OAuth token is officially supported — it is exactly what the [Claude Code GitHub
+Action](https://code.claude.com/docs/en/github-actions) does, where
+`CLAUDE_CODE_OAUTH_TOKEN` is "an OAuth token that authenticates with your Claude
+subscription" and "runs use your Claude subscription instead of API billing."
+Anthropic notes the token "is tied to the subscription of the person who ran
+`claude setup-token`," which is precisely why this scales to one person and no
+further. Constraint: one operator, one subscription. A second user makes it a
+multi-tenant service. And it is a *tolerated pattern*, not a written guarantee.
 
 **API key / cloud provider.** For anything ReviDotNet ships as a product feature
 or runs server-side. Unambiguous, and it already fits the existing `.rcfg`
@@ -229,15 +324,20 @@ used in a hosted or unattended context, such as a Refinery campaign.
 
 ### Credential hygiene for Lane A
 
-Non-negotiable, and worth encoding as tests:
+The load-bearing rule is **the official binary makes every model request**.
+ReviDotNet may launch it, feed it a prompt, and parse its output; ReviDotNet may
+not talk to `api.anthropic.com` with a plan credential. Worth encoding as tests:
 
 - Never read `~/.claude/.credentials.json` or the macOS Keychain.
-- Never set `CLAUDE_CODE_OAUTH_TOKEN` on a child process on a user's behalf.
-- Never accept a pasted OAuth token in a `.rcfg` or `.tool` file.
-- Launch the vendor binary and let it resolve its own stored login.
+- Never send a plan OAuth token to a vendor API endpoint from ReviDotNet code.
+- Never accept another person's OAuth token — no pasted tokens in `.rcfg` or
+  `.tool` files, no per-user token storage, no token brokering.
+- Launch the vendor binary and let it resolve its own login.
 
-The moment ReviDotNet handles the token, it stops being a control surface and
-becomes a third-party developer routing plan credentials.
+The operator supplying their *own* `CLAUDE_CODE_OAUTH_TOKEN` through the
+environment for their own headless deployment is fine — that is the documented
+CI pattern. Holding *other people's* tokens is what turns a control surface into
+a third-party developer routing plan credentials.
 
 ### Lower-effort alternative to ACP
 
@@ -280,6 +380,12 @@ is the near-term target and time matters.
 
 ## Sources
 
+- [Use the Claude Agent SDK with your Claude plan](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan) — June 15 pause notice
+- [Using agents according to our Usage Policy](https://support.claude.com/en/articles/12005017-using-agents-according-to-our-usage-policy)
+- [Use Claude Code with your Pro or Max plan](https://support.claude.com/en/articles/11145838-use-claude-code-with-your-pro-or-max-plan)
+- [Claude Code GitHub Actions](https://code.claude.com/docs/en/github-actions) — subscription OAuth in unattended runs
+- [Codex — Non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode) and [Authentication](https://developers.openai.com/codex/auth)
+- [*The Register*, April 6 2026](https://www.theregister.com/2026/04/06/anthropic_closes_door_on_subscription/) — Anthropic statement on third-party tools
 - [Claude Code — Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance)
 - [Claude Agent SDK — Overview](https://code.claude.com/docs/en/agent-sdk/overview)
 - [Claude Agent SDK — Quickstart](https://code.claude.com/docs/en/agent-sdk/quickstart)
