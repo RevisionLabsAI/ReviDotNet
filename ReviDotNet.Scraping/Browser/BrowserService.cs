@@ -72,6 +72,31 @@ public class BrowserService : IBrowserService
     private int _roundRobinIndex = 0;
 
     /// <summary>
+    /// Maps the monotonically increasing rotation counter onto a valid index in <c>[0, count)</c>.
+    /// </summary>
+    /// <remarks>
+    /// The mask is load-bearing, not decoration. <see cref="_roundRobinIndex"/> is
+    /// <see cref="Interlocked.Increment(ref int)"/>ed on every rotation and never reset, so in a long-lived
+    /// scraping process it eventually passes <see cref="int.MaxValue"/> and wraps to
+    /// <see cref="int.MinValue"/>. C# <c>%</c> keeps the dividend's sign, so from that moment the raw
+    /// expression yields a NEGATIVE index and every proxy rotation throws
+    /// <see cref="ArgumentOutOfRangeException"/> — permanently, since the counter needs another ~2 billion
+    /// increments to climb back to zero. Clearing the sign bit is correct for every input including
+    /// <see cref="int.MinValue"/>, which <see cref="Math.Abs(int)"/> cannot represent.
+    ///
+    /// <para>
+    /// The same guard is applied wherever a rotation counter indexes a list; see
+    /// <c>DnsResolver.RotationIndex</c>, <c>WhoisService.GetNextProxy</c> and
+    /// <c>ProxiedHttpWebFetcher</c> in BetterNamer.Shared. <c>internal</c> (not private) so the arithmetic
+    /// can be unit-tested without launching a real browser.
+    /// </para>
+    /// </remarks>
+    /// <param name="counter">The raw rotation counter, which may be negative once it has wrapped.</param>
+    /// <param name="count">The number of proxy keys to rotate across. Must be greater than zero.</param>
+    /// <returns>An index guaranteed to be within <c>[0, count)</c>.</returns>
+    internal static int RotationIndex(int counter, int count) => (counter & int.MaxValue) % count;
+
+    /// <summary>
     /// Constructs the BrowserService from a populated <see cref="BrowserConfiguration"/> and the
     /// default Puppeteer launcher (downloads Chromium on first use).
     /// </summary>
@@ -178,7 +203,7 @@ public class BrowserService : IBrowserService
         int start = Interlocked.Increment(ref _roundRobinIndex);
         for (int i = 0; i < keys.Count; i++)
         {
-            string key = keys[(start + i) % keys.Count];
+            string key = keys[RotationIndex(start + i, keys.Count)];
             ProxyEntry? p = _proxyManager.GetProxy(key);
             if (p != null) yield return p;
         }
