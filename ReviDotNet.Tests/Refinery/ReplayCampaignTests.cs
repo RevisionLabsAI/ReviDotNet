@@ -7,6 +7,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -217,11 +218,35 @@ public class ReplayCampaignTests
     /// </summary>
     private sealed class RecordingAgentService(RefineryCaptureBroker broker) : IAgentService
     {
-        /// <summary>The scripted model overrides seen on the profile overload (one per replay run).</summary>
-        public List<ModelProfile?> ModelOverridesSeen { get; } = [];
+        /// <summary>
+        /// The scripted model overrides seen on the profile overload (one per replay run).
+        ///
+        /// <para>
+        /// Thread-safe because scenario runs execute CONCURRENTLY here. A campaign runs at
+        /// <c>CampaignSpec.MaxParallelRuns</c> (default 4) whenever no seed callback is supplied —
+        /// see <c>RefinementController</c>: <c>maxParallel = seedScenario is null ? … : 1</c> — and
+        /// these tests supply none. A plain <see cref="List{T}"/> loses an element when two threads
+        /// Add at once, which is exactly how this test failed about one run in four: it expected
+        /// <c>{"__replay/t1", "__replay/h1"}</c> and saw only the first.
+        /// </para>
+        ///
+        /// <para>
+        /// The product code was made safe for the same change — <c>BudgetGovernor</c> uses
+        /// <see cref="Interlocked"/> and says why — but the fakes here were not updated with it.
+        /// Unordered is fine: every assertion on this collection is order-independent.
+        /// </para>
+        /// </summary>
+        public ConcurrentBag<ModelProfile?> ModelOverridesSeen { get; } = [];
 
-        /// <summary>Count of runs that hit the legacy name-based path (must stay 0 in replay).</summary>
-        public int NameBasedRuns { get; private set; }
+        /// <summary>
+        /// Count of runs that hit the legacy name-based path (must stay 0 in replay). Incremented
+        /// with <see cref="Interlocked"/> for the reason above — <c>++</c> is not atomic, and a lost
+        /// increment here would hide a real regression rather than merely fail the count.
+        /// </summary>
+        public int NameBasedRuns => _nameBasedRuns;
+
+        /// <summary>Backing field for <see cref="NameBasedRuns"/>.</summary>
+        private int _nameBasedRuns;
 
         // Per-scenario scripted quality the fixture agreed on (mirrors ReplaySuite's QualityTurn values).
         private static int ScriptedQualityFor(string? modelName) => modelName switch
@@ -270,7 +295,7 @@ public class ReplayCampaignTests
         // Legacy name-based path — replay must NEVER reach this. Track it so the test can assert 0.
         public Task<AgentResult> Run(string agentName, Dictionary<string, object>? inputs = null, CancellationToken token = default)
         {
-            NameBasedRuns++;
+            Interlocked.Increment(ref _nameBasedRuns);
             return Task.FromResult(BuildResult(null));
         }
 
