@@ -7,6 +7,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -70,6 +71,12 @@ public class SeedingHookTests
     {
         const int samples = 3;
         RefineryCaptureBroker broker = new();
+
+        // Plain lists are safe HERE, and only here: supplying a seed callback pins the campaign to
+        // maxParallel = 1 (RefinementController: `seedScenario is null ? spec.MaxParallelRuns : 1`),
+        // so runs are serialized. That serialization is also what makes the strict seed-before-run
+        // ordering asserted below meaningful rather than a coincidence. The null-seed test in this
+        // file runs 4-way parallel and needs a thread-safe collection — see there.
         var seedCalls = new List<(string ScenarioId, int RunCountAtSeed)>();
         var runs = new List<string>();
 
@@ -107,8 +114,14 @@ public class SeedingHookTests
     public async Task MeasureBaseline_NullSeedCallback_RunsWithoutSeeding()
     {
         RefineryCaptureBroker broker = new();
-        var runs = new List<string>();
-        FakeAgentService agentService = new(broker, quality: 5, onRun: name => runs.Add(name));
+
+        // Thread-safe on purpose. With NO seed callback the campaign runs at
+        // CampaignSpec.MaxParallelRuns (default 4), so this recorder is written from several threads
+        // at once; a plain List loses an Add under that race, which is precisely how this test failed
+        // intermittently — expecting 4 runs and observing 3. ConcurrentQueue keeps insertion order,
+        // so nothing else about the assertions changes.
+        ConcurrentQueue<string> runs = new();
+        FakeAgentService agentService = new(broker, quality: 5, onRun: runs.Enqueue);
         RefinementController controller = Controller(agentService, broker);
 
         // Backward-compatible: omitting the callback (null) must not throw and still runs every sample.
