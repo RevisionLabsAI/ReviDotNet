@@ -1,0 +1,58 @@
+name: Build and test
+
+# Compiles the solution and runs the unit suite.
+#
+# Until this existed the only workflow here was publish-nuget.yml, so nothing ran these tests on a
+# push — in this repository OR in the ones that consume it. BetterNamer vendors ReviDotNet as a
+# submodule and its own CI deliberately only *compiles* these projects, on the stated assumption
+# that "they belong to their own repositories and are covered by the CI in those repositories".
+# That assumption was not true, and the cost was concrete: a Refinery test that failed roughly one
+# run in four went unnoticed from August 2026 until it happened to surface in a developer's full
+# solution run. This closes that gap and makes the assumption true.
+#
+# Runs on ubuntu-latest because consumers deploy to Linux containers, so a Linux run is the one that
+# matches production. A test that only passes on a developer's Windows box is a finding, not a false
+# alarm.
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    # When a PR's head branch lives in this repo the push event already built that exact SHA, so the
+    # pull_request run would be a duplicate. Fork PRs get no push event here, so they still need it.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          # 9.0.x installs the newest 9.0 SDK. Deliberately a band rather than a pinned build: this
+          # repo has no global.json, so nothing here needs an exact SDK, and pinning one only ages.
+          dotnet-version: '9.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore ReviDotNet.sln
+
+      - name: Build
+        run: dotnet build ReviDotNet.sln --configuration Release --no-restore
+
+      # Every scenario run in a Refinery campaign executes in parallel (CampaignSpec.MaxParallelRuns,
+      # default 4), so this suite exercises genuinely concurrent code. A single green run is weaker
+      # evidence here than usual — a race shows up as an intermittent failure, which is exactly what
+      # went unnoticed before this workflow existed. Treat one red run as real and re-run to measure
+      # the rate rather than dismissing it as noise.
+      - name: Test
+        run: dotnet test ReviDotNet.Tests/ReviDotNet.Tests.csproj --configuration Release --no-build --logger "console;verbosity=normal"
