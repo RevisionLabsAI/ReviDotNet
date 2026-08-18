@@ -525,9 +525,11 @@ public class ReviLogger : IReviLogger
         Identifier = identifier,
         Cycle = cycle,
         Tags = tags,
-        Object1 = object1 != null ? Util.RedactSecrets(JsonConvert.SerializeObject(object1, Formatting.Indented, new StringEnumConverter())) : null,
+        // Bounded, always: this runs on the calling thread, and an unbounded payload here has
+        // taken a consuming application down (2026-08-18). See SerializePayloadBounded.
+        Object1 = SerializePayloadBounded(object1),
         Object1Name = object1Name,
-        Object2 = object2 != null ? Util.RedactSecrets(JsonConvert.SerializeObject(object2, Formatting.Indented, new StringEnumConverter())) : null,
+        Object2 = SerializePayloadBounded(object2),
         Object2Name = object2Name,
         File = file,
         Member = NormalizeMember(member),
@@ -626,6 +628,68 @@ public class ReviLogger : IReviLogger
 			{
 				LimiterInitialized = true;
 			}
+		}
+	}
+
+	/// <summary>
+	/// The cap on a serialized object payload, in characters. Payloads above it are truncated with a
+	/// marker rather than shipped whole.
+	/// </summary>
+	private const int PayloadSerializationCapChars = 64 * 1024;
+
+	/// <summary>
+	/// Serializes a log-call object payload with hard bounds, so no payload can ever make logging
+	/// expensive enough to matter to the caller.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// This runs on the CALLING thread, at every call site that passes an object — which is exactly
+	/// why it must be bounded. On 2026-08-18 a debug line in a consuming application passed a live
+	/// multi-megabyte object graph here; serialization of that graph (under concurrent mutation by
+	/// other threads) pinned twenty threads at once, each holding an application-level concurrency
+	/// permit, and took the application's core pipeline down twice in one night. The logger being
+	/// "just logging" is precisely what made it invisible: nothing waited, nothing timed out, and
+	/// the wedge sat inside frames nobody suspects.
+	/// </para>
+	/// <para>
+	/// Three bounds, each covering a failure the others do not: <see cref="JsonSerializerSettings.MaxDepth"/>
+	/// stops deep-graph cost up front (enforced during WRITING since Json.NET 13);
+	/// <see cref="ReferenceLoopHandling.Ignore"/> stops cycles; the error handler swallows
+	/// per-member failures such as collections mutating mid-enumeration, which otherwise abort the
+	/// whole payload. The length cap bounds what is shipped and stored, and the catch turns any
+	/// remaining surprise into a one-line placeholder instead of a lost log call.
+	/// </para>
+	/// </remarks>
+	/// <param name="payload">The object a log call passed; may be null.</param>
+	/// <returns>Redacted JSON bounded by the cap, a placeholder on failure, or null for null.</returns>
+	internal static string? SerializePayloadBounded(object? payload)
+	{
+		if (payload == null)
+			return null;
+
+		try
+		{
+			Newtonsoft.Json.JsonSerializerSettings settings = new()
+			{
+				Formatting = Formatting.Indented,
+				Converters = { new StringEnumConverter() },
+				MaxDepth = 8,
+				ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore,
+				Error = static (_, args) => args.ErrorContext.Handled = true
+			};
+
+			string json = JsonConvert.SerializeObject(payload, settings);
+			if (json.Length > PayloadSerializationCapChars)
+			{
+				json = json[..PayloadSerializationCapChars] +
+					$"{Environment.NewLine}… [payload truncated: {json.Length:N0} chars exceeded the {PayloadSerializationCapChars:N0}-char logging cap]";
+			}
+
+			return Util.RedactSecrets(json);
+		}
+		catch (Exception ex)
+		{
+			return $"<payload serialization failed: {ex.GetType().Name}: {ex.Message}>";
 		}
 	}
 
@@ -1029,8 +1093,8 @@ public class ReviLogger : IReviLogger
 							Identifier = record.Identifier,
 							Cycle = record.Cycle,
 							Tags = tags,
-							Object1 = record.Object1 != null ? Util.RedactSecrets(JsonConvert.SerializeObject(record.Object1, Formatting.Indented, new StringEnumConverter())) : null,
-							Object2 = record.Object2 != null ? Util.RedactSecrets(JsonConvert.SerializeObject(record.Object2, Formatting.Indented, new StringEnumConverter())) : null,
+							Object1 = SerializePayloadBounded(record.Object1),
+							Object2 = SerializePayloadBounded(record.Object2),
 							File = record.File,
 							Member = record.Member,
 							Line = record.Line
