@@ -567,8 +567,8 @@ public class AgentRunner
             return 0m;
 
         int approxInputChars = 0;
-        if (!string.IsNullOrEmpty(_profile.SystemPrompt))
-            approxInputChars += _profile.SystemPrompt.Length;
+        foreach (string part in ResolveAgentSystemParts())
+            approxInputChars += part.Length;
         if (!string.IsNullOrEmpty(_currentState.Instruction))
             approxInputChars += _currentState.Instruction.Length;
         foreach (var m in _conversationHistory)
@@ -657,8 +657,45 @@ public class AgentRunner
     }
 
     /// <summary>
+    /// The agent-level system text, in the order it is composed: the prompt named by
+    /// <c>settings_system-prompt</c> (if any), then the inline <c>[[_system]]</c> block (if any).
+    /// <para>
+    /// Both are optional and an agent may use either, both or neither. A named prompt that does not
+    /// resolve is logged and skipped, matching how a state's unresolvable <c>prompt =</c> reference
+    /// behaves — an agent is not failed over a missing prompt.
+    /// </para>
+    /// </summary>
+    /// <returns>The system sections, possibly empty.</returns>
+    private List<string> ResolveAgentSystemParts()
+    {
+        var parts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(_profile.SystemPromptName))
+        {
+            Prompt? named = _prompts.Get(_profile.SystemPromptName);
+            if (named == null)
+            {
+                Util.Log($"AgentRunner '{_profile.Name}': system-prompt '{_profile.SystemPromptName}' " +
+                         "was not found in the prompt registry; continuing without it.");
+            }
+            else if (!string.IsNullOrWhiteSpace(named.System))
+            {
+                parts.Add(SubstituteInputs(named.System));
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(_profile.SystemPrompt))
+        {
+            parts.Add(_profile.SystemPrompt);
+        }
+
+        return parts;
+    }
+
+    /// <summary>
     /// Builds the full message list for the current step.
     /// System message is composed (in order) from:
+    ///   0. the <c>settings_system-prompt</c>-referenced .pmt file's system section (if set),
     ///   1. agent-level <c>[[_system]]</c> prompt,
     ///   2. the <c>state.X.prompt</c>-referenced .pmt file's system + instruction (if set, with
     ///      <c>{key}</c> placeholders substituted from the agent's initial inputs),
@@ -670,9 +707,7 @@ public class AgentRunner
     {
         var messages = new List<Message>();
 
-        var systemParts = new List<string>();
-        if (!string.IsNullOrWhiteSpace(_profile.SystemPrompt))
-            systemParts.Add(_profile.SystemPrompt);
+        var systemParts = new List<string>(ResolveAgentSystemParts());
 
         // Resolve the state's named prompt reference, if any.
         if (!string.IsNullOrWhiteSpace(_currentState.Prompt))
