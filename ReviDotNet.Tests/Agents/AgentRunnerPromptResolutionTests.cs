@@ -156,4 +156,137 @@ work
 
         result.ExitReason.Should().Be(AgentExitReason.Completed);
     }
+
+    // ── settings_system-prompt: an agent-level system prompt taken from a .pmt ──────────
+
+    /// <summary>
+    /// Builds an agent whose system prompt is named rather than inlined.
+    /// </summary>
+    /// <param name="promptName">The prompt to reference, or null to omit the setting.</param>
+    /// <param name="inlineSystem">An inline [[_system]] block, or null to omit it.</param>
+    /// <returns>The .agent text.</returns>
+    private static string AgentReferencingSystemPrompt(string? promptName, string? inlineSystem = null)
+    {
+        string settings = promptName is null ? "" : $@"
+[[settings]]
+system-prompt = {promptName}
+";
+        string system = inlineSystem is null ? "" : $@"
+[[_system]]
+{inlineSystem}
+";
+        return $@"
+[[information]]
+name = unused
+{settings}{system}
+[[loop]]
+entry = work
+
+[[state.work]]
+description = do the work
+
+[[_state.work.instruction]]
+Do the work. Emit DONE.
+
+[[_loop]]
+work
+  -> [end] [when: DONE]
+";
+    }
+
+    [Fact]
+    public async Task SystemPromptReference_SuppliesTheAgentSystemPrompt()
+    {
+        // The point of the setting: two things that must share a system prompt can reference one
+        // file instead of each keeping a copy that drifts.
+        string promptName = $"sys-prompt-{Guid.NewGuid():n}";
+        BuildPrompt(promptName, system: "You are a careful assistant.", instruction: null);
+
+        using var harness = new AgentTestHarness(
+            new[] { new FakeAgentTurn("DONE", new (string, string)[0], "ok") },
+            _ => AgentBuilder.FromText(AgentReferencingSystemPrompt(promptName))!);
+
+        AgentResult result = await Agent.Run(harness.AgentName);
+
+        result.ExitReason.Should().Be(AgentExitReason.Completed);
+        harness.Requests.Should().Contain(r => r.Contains("You are a careful assistant."),
+            "the referenced prompt's system section must reach the model");
+    }
+
+    [Fact]
+    public async Task SystemPromptReference_ComesBeforeAnInlineSystemBlock()
+    {
+        // Both may be present. The referenced prompt is the shared base; the inline block is this
+        // agent's addition to it, so it is appended rather than replacing it.
+        string promptName = $"sys-prompt-{Guid.NewGuid():n}";
+        BuildPrompt(promptName, system: "Shared base rules.", instruction: null);
+
+        using var harness = new AgentTestHarness(
+            new[] { new FakeAgentTurn("DONE", new (string, string)[0], "ok") },
+            _ => AgentBuilder.FromText(
+                AgentReferencingSystemPrompt(promptName, inlineSystem: "This agent also does X."))!);
+
+        AgentResult result = await Agent.Run(harness.AgentName);
+
+        result.ExitReason.Should().Be(AgentExitReason.Completed);
+
+        string request = harness.Requests.Should().ContainSingle().Subject;
+        request.Should().Contain("Shared base rules.");
+        request.Should().Contain("This agent also does X.");
+        request.IndexOf("Shared base rules.", StringComparison.Ordinal)
+            .Should().BeLessThan(request.IndexOf("This agent also does X.", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SystemPromptReference_SubstitutesTheAgentsInputs()
+    {
+        // Same placeholder handling a state's prompt reference gets.
+        string promptName = $"sys-prompt-{Guid.NewGuid():n}";
+        BuildPrompt(promptName, system: "You answer questions about {topic}.", instruction: null);
+
+        using var harness = new AgentTestHarness(
+            new[] { new FakeAgentTurn("DONE", new (string, string)[0], "ok") },
+            _ => AgentBuilder.FromText(AgentReferencingSystemPrompt(promptName))!);
+
+        AgentResult result = await Agent.Run(
+            harness.AgentName,
+            new Dictionary<string, object> { ["topic"] = "hydrology" });
+
+        result.ExitReason.Should().Be(AgentExitReason.Completed);
+        harness.Requests.Should().Contain(r => r.Contains("questions about hydrology"));
+    }
+
+    [Fact]
+    public async Task SystemPromptReference_ThatDoesNotResolve_DoesNotFailTheRun()
+    {
+        // Same treatment an unresolvable state prompt gets: logged and skipped. An agent is not
+        // failed because a prompt was renamed.
+        using var harness = new AgentTestHarness(
+            new[] { new FakeAgentTurn("DONE", new (string, string)[0], "ok") },
+            _ => AgentBuilder.FromText(
+                AgentReferencingSystemPrompt($"no-such-prompt-{Guid.NewGuid():n}"))!);
+
+        AgentResult result = await Agent.Run(harness.AgentName);
+
+        result.ExitReason.Should().Be(AgentExitReason.Completed);
+    }
+
+    [Fact]
+    public void SystemPromptReference_IsParsedFromTheSettingsSection()
+    {
+        AgentProfile? profile = AgentBuilder.FromText(AgentReferencingSystemPrompt("some-prompt"));
+
+        profile.Should().NotBeNull();
+        profile!.SystemPromptName.Should().Be("some-prompt");
+    }
+
+    [Fact]
+    public void AnAgentWithNoSystemPromptSetting_LeavesItNull()
+    {
+        AgentProfile? profile = AgentBuilder.FromText(AgentReferencingSystemPrompt(null, "Inline only."));
+
+        profile.Should().NotBeNull();
+        profile!.SystemPromptName.Should().BeNull();
+        profile.SystemPrompt.Should().Contain("Inline only.");
+    }
 }

@@ -19,6 +19,7 @@ namespace Revi;
 ///   information_version       → Version
 ///   information_description   → Description
 ///   _system                   → SystemPrompt (raw section)
+///   settings_system-prompt    → SystemPromptName (a .pmt to take the system prompt from)
 ///   loop_entry                → EntryState
 ///   state.search_description  → state "search", property description
 ///   state.search_tools        → state "search", property tools
@@ -43,6 +44,20 @@ public class AgentProfile
 
     [RConfigProperty("_system")]
     public string? SystemPrompt { get; set; }
+
+    /// <summary>
+    /// Optional name of a prompt (<c>.pmt</c>) whose <c>[[_system]]</c> section supplies this
+    /// agent's system prompt, so an agent that shares a system prompt with something else can
+    /// reference it instead of copying it.
+    /// <para>
+    /// Resolved per run through <c>IPromptManager</c>. A name that resolves to nothing is logged
+    /// and skipped rather than failing the run — the same treatment a state's unresolvable
+    /// <c>prompt =</c> reference gets. When an inline <see cref="SystemPrompt"/> block is present
+    /// as well, the referenced prompt comes first and the inline text is appended after it.
+    /// </para>
+    /// </summary>
+    [RConfigProperty("settings_system-prompt")]
+    public string? SystemPromptName { get; set; }
 
     [RConfigProperty("loop_entry")]
     public string? EntryState { get; set; }
