@@ -23,6 +23,15 @@ public class ModelProfile
     
     [RConfigProperty("general_enabled")]
     public bool Enabled { get; set; } 
+
+    /// <summary>
+    /// Whether this model may be chosen by tier-based fallback/automatic routing. Explicit callers may
+    /// still select an enabled model whose automatic selection is disabled, which is useful for evals,
+    /// staged rollouts, and admin-only model labs without exposing an unproven model to production traffic.
+    /// Defaults to true so existing model profiles retain their current behavior.
+    /// </summary>
+    [RConfigProperty("general_allow-automatic-selection")]
+    public bool AllowAutomaticSelection { get; set; } = true;
     
     
     // Model and Provider

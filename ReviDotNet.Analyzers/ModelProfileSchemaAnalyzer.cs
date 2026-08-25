@@ -116,6 +116,16 @@ namespace ReviDotNet.Analyzers
                     }
                 }
 
+                if (TryGet(doc, "general", "allow-automatic-selection", out RcfgValue automaticSelection))
+                {
+                    string raw = automaticSelection.Raw.Trim();
+                    if (!IsBool(raw))
+                    {
+                        ReportError(context, file, automaticSelection.Line, raw,
+                            "general.allow-automatic-selection", suffix: " (expected boolean)");
+                    }
+                }
+
                 if (TryGet(doc, "settings", "tier", out RcfgValue tier))
                 {
                     string raw = tier.Raw.Trim();

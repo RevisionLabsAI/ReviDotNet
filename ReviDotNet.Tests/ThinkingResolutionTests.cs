@@ -6,6 +6,7 @@
 
 using FluentAssertions;
 using Revi;
+using System.Reflection;
 using Xunit;
 
 namespace ReviDotNet.Tests;
@@ -94,5 +95,29 @@ public class ThinkingResolutionTests
         // A non-common-word value (e.g. an explicit budget or provider effort) is sent verbatim.
         model.ResolveThinking("8192").Should().Be("8192");
         model.ResolveThinking("xhigh").Should().Be("xhigh");
+    }
+
+    [Fact]
+    public void Instance_inference_service_resolves_model_default_and_prompt_override()
+    {
+        ModelProfile model = new()
+        {
+            Name = "gemini-3.7",
+            Thinking = "low",
+            ThinkingConversionMinimal = "low",
+            ThinkingConversionMax = "high"
+        };
+
+        ComputeForService(new Prompt(), model).Should().Be("low");
+        ComputeForService(new Prompt { Thinking = "minimal" }, model).Should().Be("low",
+            "Gemini 3.7 rejects minimal, so its profile maps the common floor to low");
+        ComputeForService(new Prompt { Thinking = "max" }, model).Should().Be("high");
+    }
+
+    private static string? ComputeForService(Prompt prompt, ModelProfile model)
+    {
+        MethodInfo method = typeof(InferService).GetMethod(
+            "ComputeThinking", BindingFlags.NonPublic | BindingFlags.Static)!;
+        return (string?)method.Invoke(null, [prompt, model]);
     }
 }

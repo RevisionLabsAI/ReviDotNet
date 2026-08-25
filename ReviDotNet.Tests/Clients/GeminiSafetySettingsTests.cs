@@ -158,4 +158,18 @@ public class GeminiSafetySettingsTests
         JsonConvert.DeserializeObject<List<Dictionary<string, string>>>(json)!
             .Should().OnlyContain(s => s["threshold"] == "BLOCK_NONE");
     }
+
+    [Fact]
+    public void Gemini_3_thinking_word_emits_thinking_level_not_legacy_budget()
+    {
+        Dictionary<string, object> gemini = Transform(new Dictionary<string, object>
+        {
+            ["thinking_mode"] = "low"
+        });
+
+        var generationConfig = (Dictionary<string, object>)gemini["generationConfig"];
+        var thinkingConfig = (Dictionary<string, object>)generationConfig["thinkingConfig"];
+        thinkingConfig["thinkingLevel"].Should().Be("low");
+        thinkingConfig.Should().NotContainKey("thinkingBudget");
+    }
 }

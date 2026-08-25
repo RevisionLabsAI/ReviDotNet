@@ -104,6 +104,7 @@ public sealed class ModelManagerService : IModelManager
 
     private static bool IsEligible(ModelProfile model, ModelTier minTier, bool needsPromptCompletion)
         => model.Enabled &&
+           model.AllowAutomaticSelection &&
            model.Tier >= minTier &&
            // Honor a model-level supports-prompt-completion override before the provider's.
            (!needsPromptCompletion || model.EffectiveSupportsPromptCompletion);

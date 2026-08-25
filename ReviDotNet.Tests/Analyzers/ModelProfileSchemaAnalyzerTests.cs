@@ -68,6 +68,7 @@ context-window = -1
                 ("RConfigs/Models/Inference/ok.rcfg", @"[[general]]
 name = anth_sonnet_35
 enabled = true
+allow-automatic-selection = false
 model-string = claude-3-5-sonnet-latest
 provider-name = claude
 
@@ -78,6 +79,28 @@ context-window = 100000
             };
 
             await AnalyzerTestHelper.RunAsync<ModelProfileSchemaAnalyzer>(code, files);
+        }
+
+        [Fact]
+        public async Task ReportsError_OnInvalidAutomaticSelectionFlag()
+        {
+            string code = "class C { void M() {} }";
+            (string path, string content)[] files =
+            {
+                ("RConfigs/Models/Inference/staged.rcfg", @"[[general]]
+name = staged
+enabled = true
+allow-automatic-selection = sometimes
+model-string = gemini-3.7-flash
+provider-name = gemini
+")
+            };
+
+            DiagnosticResult expected = DiagnosticResult.CompilerError(ModelProfileSchemaAnalyzer.DiagnosticId)
+                .WithSpan("RConfigs/Models/Inference/staged.rcfg", 4, 1, 4, 1)
+                .WithArguments("sometimes", "general.allow-automatic-selection", " (expected boolean)");
+
+            await AnalyzerTestHelper.RunAsync<ModelProfileSchemaAnalyzer>(code, files, expected);
         }
 
         // D37: a 'listed'/'both' input type with no single-item/multi-item template warns at build time.

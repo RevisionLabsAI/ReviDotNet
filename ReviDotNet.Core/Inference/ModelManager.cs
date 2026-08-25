@@ -140,7 +140,7 @@ internal static class ModelManager
         bool isTierSufficient = model.Tier >= minTier;
         // Honor a model-level supports-prompt-completion override before falling back to the provider's.
         bool isCompletionSupported = !needsPromptCompletion || model.EffectiveSupportsPromptCompletion;
-        return model.Enabled && isTierSufficient && isCompletionSupported;
+        return model.Enabled && model.AllowAutomaticSelection && isTierSufficient && isCompletionSupported;
     }
 
     /// <summary>

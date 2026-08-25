@@ -881,6 +881,7 @@ public sealed class InferService(
                         guidanceType: guidanceType,
                         guidanceString: guidanceString,
                         useSearchGrounding: (bool?)SelectParam(model.UseSearchGrounding, prompt.UseSearchGrounding),
+                        thinking: ComputeThinking(prompt, model),
                         cancellationToken: token,
                         inactivityTimeoutSeconds: inactivityTimeoutSeconds);
                     break;
@@ -910,6 +911,7 @@ public sealed class InferService(
                         guidanceType: guidanceType,
                         guidanceString: guidanceString,
                         useSearchGrounding: (bool?)SelectParam(model.UseSearchGrounding, prompt.UseSearchGrounding),
+                        thinking: ComputeThinking(prompt, model),
                         cancellationToken: token,
                         inactivityTimeoutSeconds: inactivityTimeoutSeconds);
                     break;
@@ -985,6 +987,7 @@ public sealed class InferService(
                         guidanceType: guidanceType,
                         guidanceString: guidanceString,
                         useSearchGrounding: (bool?)SelectParam(model.UseSearchGrounding, prompt.UseSearchGrounding),
+                        thinking: ComputeThinking(prompt, model),
                         cancellationToken: token,
                         inactivityTimeoutSeconds: inactivityTimeoutSeconds);
                     break;
@@ -1014,6 +1017,7 @@ public sealed class InferService(
                         guidanceType: guidanceType,
                         guidanceString: guidanceString,
                         useSearchGrounding: (bool?)SelectParam(model.UseSearchGrounding, prompt.UseSearchGrounding),
+                        thinking: ComputeThinking(prompt, model),
                         cancellationToken: token,
                         inactivityTimeoutSeconds: inactivityTimeoutSeconds);
                     break;
@@ -1240,6 +1244,15 @@ public sealed class InferService(
         }
         catch { }
         return null;
+    }
+
+    private static string? ComputeThinking(Prompt prompt, ModelProfile model)
+    {
+        // Thinking amount is task-specific: a prompt override wins, otherwise use the model's staged
+        // default. The model conversion table maps Revi's common vocabulary to the provider's value
+        // (Gemini 3 thinking levels, Gemini 2.5 budgets, Claude effort, and so on).
+        string? amount = !string.IsNullOrWhiteSpace(prompt.Thinking) ? prompt.Thinking : model.Thinking;
+        return model.ResolveThinking(amount);
     }
 
     /// <summary>
