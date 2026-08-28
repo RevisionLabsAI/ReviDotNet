@@ -46,6 +46,12 @@ public sealed class MessageImage
     public string MediaType { get; }
 
     /// <summary>Base64-encoded image bytes (no data-URI prefix).</summary>
+    /// <remarks>
+    /// Kept out of diagnostic serialization so user-supplied images are not copied into request
+    /// dump logs. Provider payload transformers read the property directly and insert it only into
+    /// the actual outbound request body.
+    /// </remarks>
+    [JsonIgnore]
     public string Base64 { get; }
 
     public MessageImage(string mediaType, string base64)
