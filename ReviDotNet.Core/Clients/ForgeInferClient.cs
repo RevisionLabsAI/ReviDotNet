@@ -29,9 +29,10 @@ public class ForgeInferClient : IDisposable
     public async Task<CompletionResult?> GenerateAsync(
         Prompt prompt,
         List<Input>? inputs,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? modelName = null)
     {
-        var request = BuildRequest(prompt, inputs, stream: false);
+        var request = BuildRequest(prompt, inputs, stream: false, modelName);
         try
         {
             using var response = await _http.PostAsJsonAsync("api/v1/infer", request, cancellationToken);
@@ -57,9 +58,10 @@ public class ForgeInferClient : IDisposable
     public async IAsyncEnumerable<string> GenerateStreamAsync(
         Prompt prompt,
         List<Input>? inputs,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        [EnumeratorCancellation] CancellationToken cancellationToken = default,
+        string? modelName = null)
     {
-        var request = BuildRequest(prompt, inputs, stream: true);
+        var request = BuildRequest(prompt, inputs, stream: true, modelName);
         HttpResponseMessage? response = null;
         try
         {
@@ -122,13 +124,18 @@ public class ForgeInferClient : IDisposable
         }
     }
 
-    private ForgeInferRequest BuildRequest(Prompt prompt, List<Input>? inputs, bool stream) =>
+    // internal (not private) so the request mapping — the client's only logic — is unit-testable.
+    internal ForgeInferRequest BuildRequest(Prompt prompt, List<Input>? inputs, bool stream, string? modelName = null) =>
         new ForgeInferRequest
         {
             ClientId = _config.ClientId,
             PromptName = prompt.Name,
             Inputs = inputs?.Select(i => new ForgeInput(i.Label, i.Text)).ToList(),
             MinTier = Enum.TryParse<ModelTier>(prompt.MinTier, ignoreCase: true, out var tier) ? tier : null,
+            // An explicit per-request model. Forge should honor it the way a direct route honors
+            // modelName (explicit selection, overriding tier/preference routing); an older Forge
+            // that predates the field ignores it and routes as before.
+            ModelName = modelName,
             PreferredModels = prompt.PreferredModels,
             BlockedModels = prompt.BlockedModels,
             CompletionType = Enum.TryParse<CompletionType>(prompt.CompletionType, out var ct) ? ct : null,
@@ -145,6 +152,7 @@ internal record ForgeInferRequest
     public required string ClientId { get; init; }
     public string? PromptName { get; init; }
     public List<ForgeInput>? Inputs { get; init; }
+    public string? ModelName { get; init; }
     public ModelTier? MinTier { get; init; }
     public List<string>? PreferredModels { get; init; }
     public List<string>? BlockedModels { get; init; }

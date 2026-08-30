@@ -256,9 +256,11 @@ internal class Infer
 		CancellationToken token = default,
 		bool directRoute = false)
 	{
-		// Route through Forge gateway if configured and not bypassed
+		// Route through Forge gateway if configured and not bypassed. The explicit modelName rides
+		// along so Forge can honor it the way a direct route would; without it an explicit model
+		// request silently degrades to Forge's own routing choice.
 		if (ForgeManager.IsConfigured && ForgeManager.Client is not null && !directRoute)
-			return await ForgeManager.Client.GenerateAsync(prompt, inputs, token);
+			return await ForgeManager.Client.GenerateAsync(prompt, inputs, token, modelName);
 
 		// Declarations
 		CompletionResult? result = null;
@@ -509,10 +511,12 @@ internal class Infer
 		[EnumeratorCancellation] CancellationToken cancellationToken = default,
 		bool directRoute = false)
 	{
-		// Route through Forge gateway if configured and not bypassed
+		// Route through Forge gateway if configured and not bypassed. The explicit modelName rides
+		// along so Forge can honor it the way a direct route would; without it an explicit model
+		// request silently degrades to Forge's own routing choice.
 		if (ForgeManager.IsConfigured && ForgeManager.Client is not null && !directRoute)
 		{
-			await foreach (var chunk in ForgeManager.Client.GenerateStreamAsync(prompt, inputs, cancellationToken))
+			await foreach (var chunk in ForgeManager.Client.GenerateStreamAsync(prompt, inputs, cancellationToken, modelName))
 				yield return chunk;
 			yield break;
 		}

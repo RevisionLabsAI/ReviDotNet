@@ -67,6 +67,15 @@ the most recent on disk. Version history relies entirely on source control.
   to the API key by the auth middleware. A client could send any string as `ClientId`.
   The middleware already stores the validated `ClientId` in `HttpContext.Items` — it's
   not currently consulted at record time.
+- **The gateway must honor the request's `ModelName` field.** As of Aug 2026 the
+  `ForgeInferClient` sends the caller's explicit `modelName` in `ForgeInferRequest.ModelName`
+  (previously it was dropped at the client boundary, so a caller's explicit model selection —
+  and any application-level fallback built on trying different explicit models — silently
+  degraded to Forge's own routing). The server side does not read the field yet: when present,
+  it should select that exact model profile the way the direct route's `FindModel` does,
+  overriding tier/preference routing, and fail rather than substitute. Until this lands,
+  enabling Forge in front of a client that routes explicitly (e.g. BetterNamer continuation
+  name generation, Terra→Opus) changes that client's model behavior.
 
 ## Observer
 

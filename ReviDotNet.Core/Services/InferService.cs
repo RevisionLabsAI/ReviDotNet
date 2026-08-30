@@ -43,8 +43,10 @@ public sealed class InferService(
         CancellationToken token = default,
         bool directRoute = false)
     {
+        // The explicit modelName rides along so Forge can honor it the way a direct route would;
+        // without it an explicit model request silently degrades to Forge's own routing choice.
         if (ForgeManager.IsConfigured && ForgeManager.Client is not null && !directRoute)
-            return await ForgeManager.Client.GenerateAsync(prompt, inputs, token);
+            return await ForgeManager.Client.GenerateAsync(prompt, inputs, token, modelName);
 
         CompletionResult? result = null;
         string promptString;
@@ -151,9 +153,11 @@ public sealed class InferService(
         [EnumeratorCancellation] CancellationToken cancellationToken = default,
         bool directRoute = false)
     {
+        // The explicit modelName rides along so Forge can honor it the way a direct route would;
+        // without it an explicit model request silently degrades to Forge's own routing choice.
         if (ForgeManager.IsConfigured && ForgeManager.Client is not null && !directRoute)
         {
-            await foreach (string chunk in ForgeManager.Client.GenerateStreamAsync(prompt, inputs, cancellationToken))
+            await foreach (string chunk in ForgeManager.Client.GenerateStreamAsync(prompt, inputs, cancellationToken, modelName))
                 yield return chunk;
             yield break;
         }
