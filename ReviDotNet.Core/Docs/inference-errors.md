@@ -68,6 +68,15 @@ subscribes and feeds `IInferenceProviderHealthTracker`; see `/admin/inference-pr
 A failure that cannot be retried is thrown as `InferenceProviderException`, which carries the
 `InferenceFailure` so a caller can branch on the kind without parsing a message.
 
+## Cancellation
+
+A cancelled stream **throws** `OperationCanceledException` out of the enumeration (since
+2026-09-04). It used to end quietly, which made "the caller stopped this" indistinguishable from
+"the model had nothing to say": a consumer with a model fallback moved on to the next model with a
+dead token. The `StreamingMetadata` completion still records the cancellation rather than an error,
+and the error callback is not raised for it. A dropped connection (`HttpIOException`) still ends the
+stream quietly, because what was received before the drop is real output.
+
 ## Retry-After
 
 Both loops honour the provider's `Retry-After` header when it sends one, capped at 120 seconds so a

@@ -207,8 +207,12 @@ internal class StreamingProcessor
         }
         catch (OperationCanceledException ex) when (ex.CancellationToken.IsCancellationRequested)
         {
+            // Record the outcome, then let the cancellation reach the consumer. Ending the
+            // enumeration quietly here made a cancelled stream indistinguishable from a model
+            // that had nothing to say, and every consumer had to re-check its own token to tell
+            // them apart (BetterNamer, 2026-09-04: a user Stop fell through to the fallback model).
             tracker.CompleteCanceled(ex);
-            return false; // Return false instead of throwing to end the stream gracefully
+            throw;
         }
         catch (System.Net.Http.HttpIOException ex)
         {
@@ -464,25 +468,30 @@ internal class StreamingProcessor
         {
             try
             {
-                if (cancellationToken.IsCancellationRequested)
-                    yield break;
+                cancellationToken.ThrowIfCancellationRequested();
 
                 Task<string?> readTask = reader.ReadLineAsync(cancellationToken).AsTask();
                 Task delayTask = Task.Delay(inactivity, cancellationToken);
                 Task completed = await Task.WhenAny(readTask, delayTask);
                 if (completed == delayTask)
                 {
-                    if (cancellationToken.IsCancellationRequested)
-                        yield break;
+                    cancellationToken.ThrowIfCancellationRequested();
                     string uri = response.RequestMessage?.RequestUri?.ToString() ?? "(unknown)";
                     throw new TimeoutException($"No streaming data received from '{Util.RedactSecrets(uri)}' for {inactivity.TotalSeconds} seconds.");
                 }
 
                 line = await readTask;
             }
-            catch (Exception ex) when (ex is OperationCanceledException || ex is System.Net.Http.HttpIOException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                // Gracefully handle cancellation or premature connection closure
+                // A cancelled read is a cancelled stream. It propagates, so a consumer can tell
+                // "the caller stopped this" from "the model had nothing more to say"; the tracker
+                // upstream records it as cancelled, not as an error.
+                throw;
+            }
+            catch (System.Net.Http.HttpIOException)
+            {
+                // A dropped connection ends the stream; what was received still counts.
                 yield break;
             }
 
