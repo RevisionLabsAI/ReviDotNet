@@ -159,6 +159,22 @@ public static class InferenceErrorClassifier
     private const string GeminiPermissionDenied = "PERMISSION_DENIED";
 
     /// <summary>
+    /// Anthropic's documented <c>error.type</c> values and what each means. Billing is handled
+    /// earlier via <see cref="AnthropicBillingType"/>; the rest are here.
+    /// </summary>
+    private static readonly Dictionary<string, InferenceFailureKind> AnthropicTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["invalid_request_error"] = InferenceFailureKind.RequestInvalid,
+        ["authentication_error"] = InferenceFailureKind.Authentication,
+        ["permission_error"] = InferenceFailureKind.Permission,
+        ["not_found_error"] = InferenceFailureKind.ModelUnavailable,
+        ["request_too_large"] = InferenceFailureKind.RequestInvalid,
+        ["rate_limit_error"] = InferenceFailureKind.RateLimited,
+        ["api_error"] = InferenceFailureKind.Transient,
+        ["overloaded_error"] = InferenceFailureKind.Transient,
+    };
+
+    /// <summary>
     /// Classifies a non-success inference response.
     /// </summary>
     /// <param name="statusCode">The HTTP status the provider returned.</param>
@@ -202,6 +218,14 @@ public static class InferenceErrorClassifier
         if (string.Equals(status, GeminiResourceExhausted, StringComparison.OrdinalIgnoreCase))
         {
             return new InferenceFailure(InferenceFailureKind.RateLimited, (int)statusCode, status, message);
+        }
+
+        // Anthropic names the kind in error.type. Matching it here rather than leaning on the
+        // status matters for an error event inside a stream, where the status is already 200 and
+        // says nothing.
+        if (!string.IsNullOrWhiteSpace(type) && AnthropicTypes.TryGetValue(type, out InferenceFailureKind anthropicKind))
+        {
+            return new InferenceFailure(anthropicKind, (int)statusCode, type, message);
         }
 
         // Then the status, which is authoritative for the cases no code disambiguates.

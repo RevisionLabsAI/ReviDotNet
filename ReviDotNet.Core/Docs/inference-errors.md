@@ -37,9 +37,9 @@ code receives — the same rule `DomainProviderErrorClassifier` follows for regi
 | `Authentication` | No | Yes | **Yes** | 401; `invalid_api_key`, `authentication_error`, `invalid_organization` |
 | `Permission` | No | Yes | **Yes** | 403; Anthropic `permission_error`; Gemini `PERMISSION_DENIED` |
 | `RateLimited` | Yes | Yes | No | 429 with no billing code; Anthropic `rate_limit_error`; Gemini `RESOURCE_EXHAUSTED` |
-| `Transient` | Yes | Yes | No | 408, 409, 498, 5xx; Anthropic 529 `overloaded_error`; network faults and timeouts |
-| `RequestInvalid` | No | **No** | No | 400, 413, 422 and any other 4xx not listed above (405, 410, 415...); `json_validate_failed`, `context_length_exceeded`, `invalid_prompt`, `unsupported_parameter` |
-| `ModelUnavailable` | No | **No** | No | 404; `model_not_found`, `model_decommissioned` |
+| `Transient` | Yes | Yes | No | 408, 409, 498, 5xx; Anthropic `overloaded_error` (529) and `api_error`; network faults and timeouts |
+| `RequestInvalid` | No | **No** | No | 400, 413, 422 and any other 4xx not listed above (405, 410, 415...); `json_validate_failed`, `context_length_exceeded`, `invalid_prompt`, `unsupported_parameter`; Anthropic `invalid_request_error`, `request_too_large` |
+| `ModelUnavailable` | No | **No** | No | 404; `model_not_found`, `model_decommissioned`; Anthropic `not_found_error` |
 
 **Providers covered.** The OpenAI error envelope is shared by every OpenAI-protocol provider we
 carry — OpenAI, Groq, Kimi/Moonshot, Z.ai/GLM and self-hosted vLLM — so those are matched on code
@@ -79,10 +79,13 @@ guessing shorter just earns another 429.
 Each outcome names the model the request body carried (`payload["model"]`), falling back to the
 provider's default model only when the body has none (Gemini puts the model in the URL).
 
-**Known gap.** Only the response status of the initial request is classified. A provider that
-accepts a streaming request and then reports an error inside the SSE stream (`data: {"error":...}`)
-is handled by `StreamingProcessor`'s existing stream-error path, which is not classified and does
-not report to the monitor. None of the failures observed so far arrived that way.
+**Errors inside the stream.** A provider that accepted a streaming request can still fail it
+after the 200 — an overloaded backend, a quota that ran out between the connection and the first
+token — and reports that as an error object on a data line (`data: {"error": {...}}`, or
+Anthropic's `{"type": "error", ...}` event). `StreamingProcessor` classifies that payload exactly
+as it would a failed connection, reports it to the monitor, and throws `InferenceProviderException`.
+Before 2026-09-03 such a line parsed as a chunk with no text and was dropped, so the stream simply
+ended empty and nothing was recorded.
 
 ## A related failure that is not the provider's: examples that contradict the schema
 

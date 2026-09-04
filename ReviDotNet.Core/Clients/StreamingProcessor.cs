@@ -286,7 +286,7 @@ internal class StreamingProcessor
         {
             response = await EstablishStreamingConnection(endpoint, body, cancellationToken, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds, modelName);
             
-            await foreach (string chunk in ProcessStreamingResponse(response, cancellationToken, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds))
+            await foreach (string chunk in ProcessStreamingResponse(response, cancellationToken, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds, modelName ?? _config.DefaultModel))
             {
                 yield return chunk;
             }
@@ -433,12 +433,20 @@ internal class StreamingProcessor
     }
 
     /// <summary>
-    /// Processes the streaming response and yields individual chunks.
+    /// Processes the streaming response and yields individual chunks. An error the provider
+    /// reports inside the stream after a successful connection is classified and reported the
+    /// same way a failed connection is, then thrown as <see cref="InferenceProviderException"/>.
     /// </summary>
+    /// <param name="response">The established streaming response.</param>
+    /// <param name="cancellationToken">A token that cancels the read.</param>
+    /// <param name="inactivityTimeoutSeconds">Seconds of silence after which the stream is abandoned.</param>
+    /// <param name="modelName">The model the request named, for outcome attribution.</param>
+    /// <returns>The text chunks.</returns>
     private async IAsyncEnumerable<string> ProcessStreamingResponse(
         HttpResponseMessage response,
         [EnumeratorCancellation] CancellationToken cancellationToken,
-        int inactivityTimeoutSeconds)
+        int inactivityTimeoutSeconds,
+        string modelName)
     {
         //Util.Log($"[DEBUG] ProcessStreamingResponse started");
         using Stream stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -498,6 +506,23 @@ internal class StreamingProcessor
             // Handle Server-Sent Events format
             if (trimmed.StartsWith("data: "))
             {
+                // A provider that accepted the request can still fail it mid-stream — an
+                // overloaded backend, a quota that ran out between the connection and the first
+                // token — and reports that as an error object on a data line rather than a status.
+                // Without this, such a line was parsed as a chunk with no text and silently dropped,
+                // so the stream ended empty and the outcome never reached the provider monitor.
+                if (TryReadStreamError(trimmed[6..], out string errorBody))
+                {
+                    InferenceFailure failure = InferenceErrorClassifier.Classify(response.StatusCode, errorBody);
+                    InferenceProviderMonitor.ReportFailure(_config.ProviderName, modelName, failure, streaming: true);
+                    string uri = response.RequestMessage?.RequestUri?.ToString() ?? "(unknown)";
+                    Util.Log($"Streaming error from '{Util.RedactSecrets(uri)}' after {lineCount} line(s): {failure} — {Util.RedactSecrets(errorBody)}");
+                    throw new InferenceProviderException(
+                        _config.ProviderName,
+                        failure,
+                        $"The provider reported an error inside the stream: {failure}");
+                }
+
                 //Util.Log($"[DEBUG] Processing SSE data line");
                 string chunk = ProcessStreamingChunk(trimmed);
                 if (!string.IsNullOrEmpty(chunk))
@@ -516,6 +541,39 @@ internal class StreamingProcessor
             }
         }
         //Util.Log($"[DEBUG] Stream reading completed, total lines read: {lineCount}");
+    }
+
+    /// <summary>
+    /// Whether an SSE data payload is an error object rather than a content chunk: an OpenAI-shaped
+    /// <c>{"error": {...}}</c> (also what Gemini and Groq send), or an Anthropic
+    /// <c>{"type": "error", "error": {...}}</c> event. A content chunk never carries a non-null
+    /// <c>error</c> object, so the check is on the object being present rather than on its shape.
+    /// </summary>
+    /// <param name="payload">The data line without its <c>data: </c> prefix.</param>
+    /// <param name="errorBody">The payload, when it is an error, for the classifier.</param>
+    /// <returns><see langword="true"/> when the payload is an error.</returns>
+    private static bool TryReadStreamError(string payload, out string errorBody)
+    {
+        errorBody = string.Empty;
+        string trimmed = payload.Trim();
+        if (trimmed.Length == 0 || trimmed[0] != '{' || !trimmed.Contains("error", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        try
+        {
+            Newtonsoft.Json.Linq.JObject root = Newtonsoft.Json.Linq.JObject.Parse(trimmed);
+            bool isError = root["error"] is Newtonsoft.Json.Linq.JObject
+                || string.Equals(root["type"]?.ToString(), "error", StringComparison.OrdinalIgnoreCase);
+            if (!isError)
+                return false;
+
+            errorBody = trimmed;
+            return true;
+        }
+        catch (Newtonsoft.Json.JsonException)
+        {
+            return false; // Not JSON: ProcessStreamingChunk will treat it as it always has.
+        }
     }
 
     /// <summary>

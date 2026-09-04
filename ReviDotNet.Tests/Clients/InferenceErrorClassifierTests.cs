@@ -104,6 +104,25 @@ public sealed class InferenceErrorClassifierTests
         failure.IsRetryable.Should().Be(retryable);
     }
 
+    /// <summary>
+    /// An Anthropic error event inside a stream arrives with the status already 200, so the
+    /// error type alone has to carry the classification.
+    /// </summary>
+    [Theory]
+    [InlineData("overloaded_error", InferenceFailureKind.Transient)]
+    [InlineData("rate_limit_error", InferenceFailureKind.RateLimited)]
+    [InlineData("authentication_error", InferenceFailureKind.Authentication)]
+    [InlineData("invalid_request_error", InferenceFailureKind.RequestInvalid)]
+    [InlineData("billing_error", InferenceFailureKind.Billing)]
+    public void Anthropic_types_classify_without_a_telling_status(string type, InferenceFailureKind expected)
+    {
+        InferenceFailure failure = InferenceErrorClassifier.Classify(
+            HttpStatusCode.OK,
+            "{\"type\":\"error\",\"error\":{\"type\":\"" + type + "\",\"message\":\"...\"}}");
+
+        failure.Kind.Should().Be(expected);
+    }
+
     /// <summary>Gemini names a canonical status rather than a code.</summary>
     [Theory]
     [InlineData(403, "PERMISSION_DENIED", InferenceFailureKind.Permission, false)]
