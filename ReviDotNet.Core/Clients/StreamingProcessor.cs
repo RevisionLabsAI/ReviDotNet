@@ -251,8 +251,11 @@ internal class StreamingProcessor
             }
             
             string body = JsonConvert.SerializeObject(payload);
+            string modelName = payload.TryGetValue("model", out object? model) && model is string name && !string.IsNullOrWhiteSpace(name)
+                ? name
+                : _config.DefaultModel;
             int chunkCount = 0;
-            await foreach (string chunk in MakeStreamingRequestAsync(endpoint, body, cancellationToken, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds))
+            await foreach (string chunk in MakeStreamingRequestAsync(endpoint, body, cancellationToken, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds, modelName))
             {
                 chunkCount++;
                 yield return chunk;
@@ -275,12 +278,13 @@ internal class StreamingProcessor
         string endpoint,
         string body,
         [EnumeratorCancellation] CancellationToken cancellationToken,
-        int? inactivityTimeoutSeconds = null)
+        int? inactivityTimeoutSeconds = null,
+        string? modelName = null)
     {
         HttpResponseMessage? response = null;
         try
         {
-            response = await EstablishStreamingConnection(endpoint, body, cancellationToken, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds);
+            response = await EstablishStreamingConnection(endpoint, body, cancellationToken, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds, modelName);
             
             await foreach (string chunk in ProcessStreamingResponse(response, cancellationToken, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds))
             {
@@ -300,8 +304,10 @@ internal class StreamingProcessor
         string endpoint,
         string body,
         CancellationToken cancellationToken,
-        int inactivityTimeoutSeconds)
+        int inactivityTimeoutSeconds,
+        string? modelName = null)
     {
+        modelName ??= _config.DefaultModel;
         //Util.Log($"[DEBUG] EstablishStreamingConnection started");
         int retryAttempt = 0;
         HttpResponseMessage? response = null;
@@ -348,7 +354,7 @@ internal class StreamingProcessor
                 if (response.IsSuccessStatusCode)
                 {
                     //Util.Log($"[DEBUG] Connection established successfully");
-                    InferenceProviderMonitor.ReportSuccess(_config.ProviderName, _config.DefaultModel, streaming: true);
+                    InferenceProviderMonitor.ReportSuccess(_config.ProviderName, modelName, streaming: true);
                     return response;
                 }
 
@@ -372,7 +378,7 @@ internal class StreamingProcessor
                     //Util.Log($"[DEBUG] Max retries exceeded, throwing exception");
                     Util.Log(errorMessage);
                     await Util.DumpLog(errorMessage, "ic-streaming-api-failure");
-                    InferenceProviderMonitor.ReportFailure(_config.ProviderName, _config.DefaultModel, failure, streaming: true);
+                    InferenceProviderMonitor.ReportFailure(_config.ProviderName, modelName, failure, streaming: true);
                     throw new InferenceProviderException(_config.ProviderName, failure, errorMessage);
                 }
 

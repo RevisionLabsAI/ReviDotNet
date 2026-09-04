@@ -8,6 +8,11 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Json.Schema.Generation;
+using System.Globalization;
+using System.IO;
+using System.Text.Encodings.Web;
+using System.Text.Json.Nodes;
+using YamlDotNet.RepresentationModel;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 using Json.Schema;
@@ -255,18 +260,112 @@ public static partial class Util
 		return input;
 	}
 	
+	/// <summary>
+	/// Converts a YAML document to indented JSON, keeping the scalar types YAML 1.2 gives a plain
+	/// (unquoted) scalar: <c>true</c>/<c>false</c> become booleans, integers and floats become
+	/// numbers, <c>null</c>/<c>~</c>/empty become null, and a quoted scalar is always a string.
+	/// The previous implementation deserialized into <c>object</c>, which made every scalar a
+	/// string — so a prompt example written <c>is-parked: false</c> reached the model as
+	/// <c>"is-parked": "false"</c> while the schema for the same field said <c>boolean</c>, and the
+	/// example contradicted the contract the provider was asked to enforce.
+	/// </summary>
+	/// <param name="yaml">The YAML text; the first document is converted.</param>
+	/// <returns>The JSON text, or an empty string when the document is empty.</returns>
 	public static string ConvertYamlToJson(string yaml)
 	{
-		var deserializer = new DeserializerBuilder()
-			.WithNamingConvention(UnderscoredNamingConvention.Instance) // or choose another convention
-			.Build();
+		YamlStream stream = new();
+		stream.Load(new StringReader(yaml));
+		if (stream.Documents.Count == 0 || stream.Documents[0].RootNode is null)
+			return "";
 
-		// Deserialize the YAML string into an object
-		var yamlObject = deserializer.Deserialize<object>(yaml);
+		JsonNode? root = YamlNodeToJson(stream.Documents[0].RootNode);
+		JsonSerializerOptions options = new()
+		{
+			WriteIndented = true,
+			// Examples are read by a model: an apostrophe rendered as \u0027 teaches escaping noise.
+			Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+		};
+		return root is null ? "null" : root.ToJsonString(options);
+	}
 
-		// Serialize the object into JSON
-		JsonSerializerOptions options = new() { WriteIndented = true };
-		return JsonSerializer.Serialize(yamlObject, options);
+	/// <summary>Recursively converts one YAML node to its JSON equivalent.</summary>
+	/// <param name="node">The YAML node.</param>
+	/// <returns>The JSON node, or null for a YAML null.</returns>
+	private static JsonNode? YamlNodeToJson(YamlNode node)
+	{
+		switch (node)
+		{
+			case YamlMappingNode mapping:
+			{
+				JsonObject obj = [];
+				foreach (KeyValuePair<YamlNode, YamlNode> pair in mapping.Children)
+				{
+					string key = pair.Key is YamlScalarNode scalarKey ? scalarKey.Value ?? "" : pair.Key.ToString() ?? "";
+					obj[key] = YamlNodeToJson(pair.Value);
+				}
+				return obj;
+			}
+			case YamlSequenceNode sequence:
+			{
+				JsonArray array = [];
+				foreach (YamlNode child in sequence.Children)
+					array.Add(YamlNodeToJson(child));
+				return array;
+			}
+			case YamlScalarNode scalar:
+				return YamlScalarToJson(scalar);
+			default:
+				return JsonValue.Create(node.ToString());
+		}
+	}
+
+	/// <summary>
+	/// Types a YAML scalar the way the YAML 1.2 core schema does. Only a plain (unquoted) scalar is
+	/// ever anything but a string; a quoted <c>"true"</c> or <c>"42"</c> stays a string.
+	/// </summary>
+	/// <param name="scalar">The scalar node.</param>
+	/// <returns>The typed JSON value, or null for a YAML null.</returns>
+	private static JsonNode? YamlScalarToJson(YamlScalarNode scalar)
+	{
+		string value = scalar.Value ?? "";
+		if (scalar.Style != YamlDotNet.Core.ScalarStyle.Plain)
+			return JsonValue.Create(value);
+
+		switch (value)
+		{
+			case "":
+			case "~":
+			case "null":
+			case "Null":
+			case "NULL":
+				return null;
+			case "true":
+			case "True":
+			case "TRUE":
+				return JsonValue.Create(true);
+			case "false":
+			case "False":
+			case "FALSE":
+				return JsonValue.Create(false);
+		}
+
+		if (long.TryParse(value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out long integer))
+			return JsonValue.Create(integer);
+
+		// A float in the core schema: a digit-led token (optionally signed) with a dot and/or an
+		// exponent. Leading-dot forms (.5), a trailing dot (5.), hex/octal, and anything else are
+		// deliberately left as strings.
+		bool digitLed = char.IsDigit(value[0])
+			|| ((value[0] == '-' || value[0] == '+') && value.Length > 1 && char.IsDigit(value[1]));
+		if (digitLed
+			&& (value.Contains('.') || value.Contains('e') || value.Contains('E'))
+			&& !value.EndsWith('.')
+			&& double.TryParse(value, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent, CultureInfo.InvariantCulture, out double number))
+		{
+			return JsonValue.Create(number);
+		}
+
+		return JsonValue.Create(value);
 	}
 	
 	public static string ConvertJsonToYaml(string json)

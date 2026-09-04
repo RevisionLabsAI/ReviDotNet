@@ -33,12 +33,12 @@ code receives — the same rule `DomainProviderErrorClassifier` follows for regi
 
 | Kind | Retry? | Blames provider? | Needs a person? | Signals |
 |---|---|---|---|---|
-| `Billing` | No | Yes | **Yes** | OpenAI-shaped 429 + `insufficient_quota`, `credit_balance_exhausted`, `organization_spend_limit_exceeded`, `project_spend_limit_exceeded`, `organization_usage_limit_exceeded`; Anthropic 402 `billing_error`; any status whose message names credits, quota, spend limits or billing |
+| `Billing` | No | Yes | **Yes** | OpenAI-shaped 429 + `insufficient_quota`, `credit_balance_exhausted`, `organization_spend_limit_exceeded`, `project_spend_limit_exceeded`, `organization_usage_limit_exceeded`; Anthropic 402 `billing_error`; any status whose message names credits remaining/exhausted, insufficient quota, a spend or spending limit, billing details or a payment method (the bare word "billing" is not enough) |
 | `Authentication` | No | Yes | **Yes** | 401; `invalid_api_key`, `authentication_error`, `invalid_organization` |
 | `Permission` | No | Yes | **Yes** | 403; Anthropic `permission_error`; Gemini `PERMISSION_DENIED` |
 | `RateLimited` | Yes | Yes | No | 429 with no billing code; Anthropic `rate_limit_error`; Gemini `RESOURCE_EXHAUSTED` |
 | `Transient` | Yes | Yes | No | 408, 409, 498, 5xx; Anthropic 529 `overloaded_error`; network faults and timeouts |
-| `RequestInvalid` | No | **No** | No | 400, 413, 422; `json_validate_failed`, `context_length_exceeded`, `invalid_prompt`, `unsupported_parameter` |
+| `RequestInvalid` | No | **No** | No | 400, 413, 422 and any other 4xx not listed above (405, 410, 415...); `json_validate_failed`, `context_length_exceeded`, `invalid_prompt`, `unsupported_parameter` |
 | `ModelUnavailable` | No | **No** | No | 404; `model_not_found`, `model_decommissioned` |
 
 **Providers covered.** The OpenAI error envelope is shared by every OpenAI-protocol provider we
@@ -73,3 +73,23 @@ A failure that cannot be retried is thrown as `InferenceProviderException`, whic
 Both loops honour the provider's `Retry-After` header when it sends one, capped at 120 seconds so a
 mis-set header cannot park a request. A rate limit is the provider telling us how long to wait, and
 guessing shorter just earns another 429.
+
+## Model attribution and a known gap
+
+Each outcome names the model the request body carried (`payload["model"]`), falling back to the
+provider's default model only when the body has none (Gemini puts the model in the URL).
+
+**Known gap.** Only the response status of the initial request is classified. A provider that
+accepts a streaming request and then reports an error inside the SSE stream (`data: {"error":...}`)
+is handled by `StreamingProcessor`'s existing stream-error path, which is not classified and does
+not report to the monitor. None of the failures observed so far arrived that way.
+
+## A related failure that is not the provider's: examples that contradict the schema
+
+Groq answered `search-safety-classify` with 400 `json_validate_failed` on the same day. That was
+classified `RequestInvalid` (not retried, provider not blamed) — correctly, because the request
+really was wrong: the prompt's few-shot examples were written under a type-name root
+(`{"SearchSafetyClassification": {...}}`) while the schema described the bare object, and the
+model imitated the examples. See `prompt-files.md`, "The root of an example is the object, never
+the type name", for the guard `ToObject<T>` now applies (`JsonOutputValidation.WarnIfExamplesDoNotConform`,
+`TryUnwrapSingleRoot`).

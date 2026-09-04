@@ -68,7 +68,8 @@ internal class InferenceHttpClient : IDisposable
             }
             
             string body = JsonConvert.SerializeObject(payload);
-            return await MakeRequestAsync(endpoint, body, cancellationToken, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds);
+            string modelName = ModelNameOf(payload);
+            return await MakeRequestAsync(endpoint, body, cancellationToken, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds, modelName);
         }
         finally
         {
@@ -92,8 +93,10 @@ internal class InferenceHttpClient : IDisposable
         string endpoint,
         string body,
         CancellationToken cancellationToken,
-        int? inactivityTimeoutSeconds = null)
+        int? inactivityTimeoutSeconds = null,
+        string? modelName = null)
     {
+        modelName ??= _config.DefaultModel;
         int attempt = 0;
         HttpResponseMessage? response = null;
         TimeSpan inactivity = TimeSpan.FromSeconds(Math.Max(1, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds));
@@ -137,7 +140,7 @@ internal class InferenceHttpClient : IDisposable
                         string msg = $"[{attempt + 1}] API request failed: {response.ReasonPhrase} ({(int)response.StatusCode}) from '{uri}'. Classified {failure}. Body: '{responseContent}'";
                         Util.Log(msg);
                         await Util.DumpLog(msg + $"\nResponse:\n'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''\n", "ic-api-failure");
-                        InferenceProviderMonitor.ReportFailure(_config.ProviderName, _config.DefaultModel, failure, streaming: false);
+                        InferenceProviderMonitor.ReportFailure(_config.ProviderName, modelName, failure, streaming: false);
                         throw new InferenceProviderException(_config.ProviderName, failure, msg);
                     }
 
@@ -153,7 +156,7 @@ internal class InferenceHttpClient : IDisposable
                 // Success -> process body without inactivity watchdog (slow bodies are allowed)
                         Dictionary<string, string> result = await ProcessHttpResponseAsync(response, cancellationToken);
                 response.Dispose();
-                InferenceProviderMonitor.ReportSuccess(_config.ProviderName, _config.DefaultModel, streaming: false);
+                InferenceProviderMonitor.ReportSuccess(_config.ProviderName, modelName, streaming: false);
                 return result;
             }
             catch (OperationCanceledException)
@@ -185,6 +188,18 @@ internal class InferenceHttpClient : IDisposable
             }
         }
     }
+
+    /// <summary>
+    /// The model a payload names, so an outcome is attributed to the model that was actually
+    /// called rather than the provider's default. Gemini carries the model in the URL rather than
+    /// the body, so the default is the fallback there.
+    /// </summary>
+    /// <param name="payload">The request payload.</param>
+    /// <returns>The model name.</returns>
+    private string ModelNameOf(Dictionary<string, object> payload)
+        => payload.TryGetValue("model", out object? model) && model is string name && !string.IsNullOrWhiteSpace(name)
+            ? name
+            : _config.DefaultModel;
 
     /// <summary>
     /// The backoff before the next attempt: the provider's own <c>Retry-After</c> when it sent one

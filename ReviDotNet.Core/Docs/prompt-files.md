@@ -169,6 +169,40 @@ deserializes with no human in the loop), author the example output as **strict J
 imitates the exact shape and scalar types. The Refinery `Evaluator.*` prompts do this deliberately —
 see the comment in `AgentRunJudge.pmt`.
 
+**The root of an example is the object, never the type name.** An example written as
+
+```yaml
+SearchSafetyClassification:
+  category: "Allowed"
+  confidence: "High"
+```
+
+reaches the model as `{"SearchSafetyClassification": {"category": ..., "confidence": ...}}`, which
+contradicts the schema ReviDotNet sends for the type (`{category, confidence, ...}` at the root).
+The model imitates the example. A provider with constrained decoding silently forces the schema
+shape; one that validates after generation rejects the call outright (Groq: 400
+`json_validate_failed`); one that enforces nothing returns the wrapped object, which deserializes
+with every field null. Thirteen BetterNamer prompts carried this for months, invisible until a
+post-hoc validator saw it (2026-09-02). Write the example as the bare object:
+
+```yaml
+category: "Allowed"
+confidence: "High"
+```
+
+`ToObject<T>` warns once per prompt and type when an example does not conform to the schema of
+`T`, naming the example and the wrapping key, and unwraps a single-key wrapper in a model answer
+when the inner object is what conforms (`JsonOutputValidation.WarnIfExamplesDoNotConform`,
+`TryUnwrapSingleRoot`). Treat the warning as a defect in the prompt, not as something the unwrap
+has handled.
+
+**Plain scalars keep their YAML type.** `is-parked: false` reaches the model as a JSON boolean,
+`count: 42` as a number, `question: null` (or `~`) as null; a quoted scalar (`"true"`, `'42'`) is
+always a string. Until 2026-09-03 every scalar was converted to a string, so a boolean example
+contradicted a `boolean` schema field. Note that the generated schema is non-nullable
+(`Nullability.Disabled`): a field the model may leave empty should be shown as `""` or `[]` in the
+example, not `null`, because the strict schema will not let the model answer `null`.
+
 **Escaping inside JSON string values.** When a JSON contract's strings may quote other text (e.g. a
 judge quoting an agent's answer), instruct the model to escape embedded double quotes (`\"`) — a
 single raw `"` inside a string value invalidates the whole document. Add the rule to the instruction

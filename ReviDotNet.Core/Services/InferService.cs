@@ -311,11 +311,23 @@ public sealed class InferService(
         if (prompt.RequestJson is false)
             throw new Exception($"InferService.ToObject: RequestJson is false for prompt '{prompt.Name}'");
 
+        // Once per prompt and type: an example that contradicts the schema is the usual reason a
+        // strict provider rejects an otherwise-good prompt, and the log line names the example.
+        JsonOutputValidation.WarnIfExamplesDoNotConform(prompt, outputType);
+
         CompletionResult? result = await Completion(prompt, inputs, modelProfile, modelName, outputType, token);
 
         try
         {
             extractedJson = Util.ExtractJson(result?.Selected, prompt.ChainOfThought);
+
+            // A lax provider can hand back the answer wrapped under a type-name key the examples
+            // taught; take the inner object when that is what actually conforms.
+            if (!string.IsNullOrEmpty(extractedJson)
+                && JsonOutputValidation.TryUnwrapSingleRoot(extractedJson, outputType, prompt.Name ?? promptName, out string unwrappedJson))
+            {
+                extractedJson = unwrappedJson;
+            }
 
             if (string.IsNullOrEmpty(extractedJson))
             {
@@ -371,6 +383,11 @@ public sealed class InferService(
                     token);
 
                 extractedJson = Util.ExtractJson(result?.Selected, prompt.ChainOfThought);
+                if (!string.IsNullOrEmpty(extractedJson)
+                    && JsonOutputValidation.TryUnwrapSingleRoot(extractedJson, outputType, prompt.Name ?? promptName, out string unwrappedRepair))
+                {
+                    extractedJson = unwrappedRepair;
+                }
 
                 try
                 {

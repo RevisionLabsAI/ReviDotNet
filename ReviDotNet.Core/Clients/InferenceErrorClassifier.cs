@@ -221,6 +221,10 @@ public static class InferenceErrorClassifier
             400 => LooksLikeBilling(message) ? InferenceFailureKind.Billing : InferenceFailureKind.RequestInvalid,
             498 => InferenceFailureKind.Transient,
             >= 500 => InferenceFailureKind.Transient,
+            // Any other 4xx (405, 410, 415, ...) is deterministic: the identical request fails
+            // identically, so it is not worth the retry budget; and it says nothing about the
+            // provider's health. Only a status outside 4xx/5xx is genuinely unknown.
+            >= 400 => InferenceFailureKind.RequestInvalid,
             _ => InferenceFailureKind.Unknown
         };
 
@@ -286,11 +290,19 @@ public static class InferenceErrorClassifier
         }
 
         string text = message.ToLowerInvariant();
-        return text.Contains("credit") && (text.Contains("remaining") || text.Contains("balance") || text.Contains("low"))
+        // Phrases, not the bare word "billing": a 400 whose message merely mentions a billing
+        // address must not take a provider out of service.
+        return text.Contains("credit") && (text.Contains("remaining") || text.Contains("balance") || text.Contains("low") || text.Contains("exhausted"))
             || text.Contains("insufficient quota")
+            || text.Contains("insufficient_quota")
             || text.Contains("exceeded your current quota")
             || text.Contains("spend limit")
-            || text.Contains("billing");
+            || text.Contains("spending limit")
+            || text.Contains("billing details")
+            || text.Contains("billing information")
+            || text.Contains("plan and billing")
+            || text.Contains("payment method")
+            || text.Contains("account is not active");
     }
 
     /// <summary>
