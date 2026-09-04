@@ -23,6 +23,9 @@ public class StreamingMetadataTracker
 
     public Task<StreamingMetadata> CompletionTask => _completionSource.Task;
 
+    /// <summary>Whether an outcome has already been recorded; later reports are ignored.</summary>
+    public bool IsCompleted => _completionSource.Task.IsCompleted;
+
     public void IncrementChunkCount()
     {
         Interlocked.Increment(ref _chunkCount);
@@ -42,7 +45,11 @@ public class StreamingMetadataTracker
             EndTime = endTime,
             Context = "Streaming completed successfully"
         };
-        _completionSource.SetResult(metadata);
+        // First outcome wins. A cancelled stream is reported by the read that observed the
+        // cancellation and then, because the enumeration simply ends, by the consumer that saw
+        // it end; SetResult on the second report threw "attempt to transition a task to a final
+        // state when it had already completed" out of the consumer (dev, 2026-09-04).
+        _completionSource.TrySetResult(metadata);
     }
 
     public void CompleteWithError(Exception exception)
@@ -59,7 +66,7 @@ public class StreamingMetadataTracker
             EndTime = endTime,
             Context = "Streaming failed with error"
         };
-        _completionSource.SetResult(metadata);
+        _completionSource.TrySetResult(metadata);
     }
 
     public void CompleteCanceled(OperationCanceledException exception)
@@ -76,6 +83,6 @@ public class StreamingMetadataTracker
             EndTime = endTime,
             Context = "Streaming was canceled"
         };
-        _completionSource.SetResult(metadata);
+        _completionSource.TrySetResult(metadata);
     }
 }

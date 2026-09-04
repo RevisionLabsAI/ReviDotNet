@@ -160,8 +160,12 @@ internal class StreamingProcessor
                 responseBuilder.Append(chunk); // Collect chunks as they're yielded
                 yield return chunk;
             }
+
+            // MoveNextSafely ends the enumeration quietly on cancellation or a dropped connection
+            // after recording that outcome; only an enumeration that ran out on its own is a success.
             completedSuccessfully = true;
-            tracker.CompleteSuccessfully();
+            if (!tracker.IsCompleted)
+                tracker.CompleteSuccessfully();
         }
         finally
         {
