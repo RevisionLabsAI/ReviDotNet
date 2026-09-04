@@ -50,6 +50,11 @@ public class InferClient : IDisposable
     /// <param name="retryInitialDelaySeconds">The initial delay in seconds before the first retry attempt. Default is 5 seconds.</param>
     /// <param name="simultaneousRequests">The maximum number of simultaneous requests allowed to the API. Default is 10.</param>
     /// <param name="supportsCompletion">Indicates whether the client supports prompt completion instead of just chat completion. Default is false.</param>
+    /// <param name="providerName">
+    /// The provider profile's name, carried so a failure can be attributed to the provider that
+    /// produced it when reported to <see cref="InferenceProviderMonitor"/>. Optional: a client built
+    /// without a profile (tests, ad-hoc callers) reports as "unknown".
+    /// </param>
     public InferClient(
         string apiUrl,
         string apiKey = "",
@@ -67,7 +72,8 @@ public class InferClient : IDisposable
         string? defaultGuidanceString = null,
         JsonSchemaMode jsonSchemaMode = JsonSchemaMode.JsonSchema,
         string? apiVersionPath = null,
-        HttpClient? httpClientOverride = null)
+        HttpClient? httpClientOverride = null,
+        string providerName = "")
     {
         // Normalize the OpenAI-style endpoint version segment: null/unset keeps the standard "v1";
         // "none" (or an explicit empty value) removes the segment entirely for hosts whose base URL
@@ -95,7 +101,8 @@ public class InferClient : IDisposable
             DefaultGuidanceType = defaultGuidanceType,
             DefaultGuidanceString = defaultGuidanceString,
             JsonSchemaMode = jsonSchemaMode,
-            ApiVersionPath = normalizedVersionPath
+            ApiVersionPath = normalizedVersionPath,
+            ProviderName = providerName
         };
         
         // Create shared resources

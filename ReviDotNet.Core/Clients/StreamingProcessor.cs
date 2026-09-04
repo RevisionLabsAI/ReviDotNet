@@ -348,30 +348,46 @@ internal class StreamingProcessor
                 if (response.IsSuccessStatusCode)
                 {
                     //Util.Log($"[DEBUG] Connection established successfully");
+                    InferenceProviderMonitor.ReportSuccess(_config.ProviderName, _config.DefaultModel, streaming: true);
                     return response;
                 }
-                
+
                 // Handle non-success status codes
                 string responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                Util.Log($"EstablishStreamingConnection: Non-success response content: {responseContent}");
-                
-                if (retryAttempt >= _config.RetryAttemptLimit)
+                // Classify before deciding to retry. This loop used to retry EVERY non-success
+                // status, so an account with no credits (HTTP 429, code credit_balance_exhausted)
+                // cost five attempts and about 155 seconds per call and could never succeed
+                // (observed on dev, 2026-09-02). A failure that cannot be fixed by repetition now
+                // fails on the first attempt.
+                InferenceFailure failure = InferenceErrorClassifier.Classify(response.StatusCode, responseContent);
+                Util.Log($"EstablishStreamingConnection: Non-success response ({failure}): {responseContent}");
+
+                if (!failure.IsRetryable || retryAttempt >= _config.RetryAttemptLimit)
                 {
                     string errorMessage = $"Streaming API request failed after {retryAttempt} retries: \n" +
                                          $" - Reason: {response.ReasonPhrase} ({(int)response.StatusCode})\n" +
+                                         $" - Classified: {failure}\n" +
                                          $" - Message: '{responseContent}'\n";
-                    
+
                     //Util.Log($"[DEBUG] Max retries exceeded, throwing exception");
                     Util.Log(errorMessage);
                     await Util.DumpLog(errorMessage, "ic-streaming-api-failure");
-                    throw new Exception(errorMessage);
+                    InferenceProviderMonitor.ReportFailure(_config.ProviderName, _config.DefaultModel, failure, streaming: true);
+                    throw new InferenceProviderException(_config.ProviderName, failure, errorMessage);
                 }
-                
-                // Calculate delay for retry
-                double delaySeconds = _config.RetryInitialDelaySeconds * Math.Pow(2, retryAttempt);
+
+                // Calculate delay for retry, honouring the provider's own Retry-After when it sent one.
+                double delaySeconds = RetryDelaySeconds(retryAttempt, response);
                 //Util.Log($"[DEBUG] Retrying in {delaySeconds} seconds...");
                 await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
                 retryAttempt++;
+            }
+            catch (InferenceProviderException)
+            {
+                // Already classified as hopeless: the catch below would otherwise swallow it and
+                // retry the very failure this method just refused.
+                response?.Dispose();
+                throw;
             }
             catch (Exception ex) when (retryAttempt < _config.RetryAttemptLimit)
             {
@@ -391,6 +407,23 @@ internal class StreamingProcessor
         response?.Dispose();
         Util.Log($"EstablishStreamingConnection: Failed to establish connection after all retries");
         throw new Exception("Failed to establish streaming connection after all retries");
+    }
+
+    /// <summary>
+    /// The backoff before the next streaming attempt: the provider's own <c>Retry-After</c> when it
+    /// sent one, otherwise exponential backoff from the configured initial delay. Mirrors the
+    /// non-streaming path so the two loops cannot drift apart.
+    /// </summary>
+    /// <param name="attempt">The zero-based attempt that just failed.</param>
+    /// <param name="response">The failed response, read for <c>Retry-After</c>.</param>
+    /// <returns>The delay in seconds.</returns>
+    private double RetryDelaySeconds(int attempt, HttpResponseMessage response)
+    {
+        double backoff = _config.RetryInitialDelaySeconds * Math.Pow(2, attempt);
+        System.Net.Http.Headers.RetryConditionHeaderValue? retryAfter = response.Headers.RetryAfter;
+        double? advised = retryAfter?.Delta?.TotalSeconds
+            ?? (retryAfter?.Date is { } date ? (date - DateTimeOffset.UtcNow).TotalSeconds : null);
+        return advised is > 0 and <= 120 ? Math.Max(advised.Value, backoff) : backoff;
     }
 
     /// <summary>

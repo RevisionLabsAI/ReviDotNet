@@ -129,16 +129,20 @@ internal class InferenceHttpClient : IDisposable
                 if (!response.IsSuccessStatusCode)
                 {
                     string responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                    if (!IsRetryableStatus(response.StatusCode) || attempt >= _config.RetryAttemptLimit)
+                    // The provider's own error code decides, not the status alone: a billing failure
+                    // arrives as 429 and would otherwise be retried as if it were a rate limit.
+                    InferenceFailure failure = InferenceErrorClassifier.Classify(response.StatusCode, responseContent);
+                    if (!failure.IsRetryable || attempt >= _config.RetryAttemptLimit)
                     {
-                        string msg = $"[{attempt + 1}] API request failed: {response.ReasonPhrase} ({(int)response.StatusCode}) from '{uri}'. Body: '{responseContent}'";
+                        string msg = $"[{attempt + 1}] API request failed: {response.ReasonPhrase} ({(int)response.StatusCode}) from '{uri}'. Classified {failure}. Body: '{responseContent}'";
                         Util.Log(msg);
                         await Util.DumpLog(msg + $"\nResponse:\n'''\n{JsonConvert.SerializeObject(response, Formatting.Indented)}\n'''\n", "ic-api-failure");
-                        throw new Exception(msg);
+                        InferenceProviderMonitor.ReportFailure(_config.ProviderName, _config.DefaultModel, failure, streaming: false);
+                        throw new InferenceProviderException(_config.ProviderName, failure, msg);
                     }
 
-                    double delaySeconds = _config.RetryInitialDelaySeconds * Math.Pow(2, attempt);
-                    string retryMsg = $"[{attempt + 1}] Non-success response from '{uri}', retrying in {delaySeconds}s: {response.ReasonPhrase} ({(int)response.StatusCode})";
+                    double delaySeconds = RetryDelaySeconds(attempt, response);
+                    string retryMsg = $"[{attempt + 1}] Non-success response from '{uri}' ({failure}), retrying in {delaySeconds}s: {response.ReasonPhrase} ({(int)response.StatusCode})";
                     Util.Log(retryMsg);
                     await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
                     attempt++;
@@ -149,6 +153,7 @@ internal class InferenceHttpClient : IDisposable
                 // Success -> process body without inactivity watchdog (slow bodies are allowed)
                         Dictionary<string, string> result = await ProcessHttpResponseAsync(response, cancellationToken);
                 response.Dispose();
+                InferenceProviderMonitor.ReportSuccess(_config.ProviderName, _config.DefaultModel, streaming: false);
                 return result;
             }
             catch (OperationCanceledException)
@@ -182,17 +187,22 @@ internal class InferenceHttpClient : IDisposable
     }
 
     /// <summary>
-    /// Determines whether a non-success HTTP status is worth retrying. Timeouts, rate limits, and
-    /// server errors are transient; other 4xx responses (400/401/403/404/422, ...) are deterministic —
-    /// the identical request will fail identically, so retrying only burns the backoff budget
-    /// (with a 5-attempt limit and 5s initial delay, ~155s per call for a permanent 400).
+    /// The backoff before the next attempt: the provider's own <c>Retry-After</c> when it sent one
+    /// (a rate limit is the provider telling us how long to wait, and guessing shorter just earns
+    /// another 429), otherwise exponential backoff from the configured initial delay.
     /// </summary>
-    /// <param name="statusCode">The response status code.</param>
-    /// <returns><c>true</c> when the request should be retried with backoff.</returns>
-    private static bool IsRetryableStatus(System.Net.HttpStatusCode statusCode) =>
-        statusCode == System.Net.HttpStatusCode.RequestTimeout ||
-        statusCode == System.Net.HttpStatusCode.TooManyRequests ||
-        (int)statusCode >= 500;
+    /// <param name="attempt">The zero-based attempt that just failed.</param>
+    /// <param name="response">The failed response, read for <c>Retry-After</c>.</param>
+    /// <returns>The delay in seconds.</returns>
+    private double RetryDelaySeconds(int attempt, HttpResponseMessage response)
+    {
+        double backoff = _config.RetryInitialDelaySeconds * Math.Pow(2, attempt);
+        System.Net.Http.Headers.RetryConditionHeaderValue? retryAfter = response.Headers.RetryAfter;
+        double? advised = retryAfter?.Delta?.TotalSeconds
+            ?? (retryAfter?.Date is { } date ? (date - DateTimeOffset.UtcNow).TotalSeconds : null);
+        // Cap what a provider can ask for: a mis-set header must not park a request for an hour.
+        return advised is > 0 and <= 120 ? Math.Max(advised.Value, backoff) : backoff;
+    }
 
     /// <summary>
     /// Processes the HTTP response and extracts the required information.

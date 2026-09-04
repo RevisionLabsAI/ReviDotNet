@@ -191,7 +191,8 @@ public class ProviderProfile
             defaultGuidanceType: GuidanceResolver.ReduceToGuidanceType(DefaultGuidanceType),
             defaultGuidanceString: DefaultGuidanceString ?? "",
             jsonSchemaMode: JsonSchemaMode ?? global::Revi.JsonSchemaMode.JsonSchema,
-            apiVersionPath: APIVersionPath);
+            apiVersionPath: APIVersionPath,
+            providerName: Name ?? string.Empty);
         
         // Initialize EmbedClient for embeddings
         EmbeddingClient = new EmbedClient(

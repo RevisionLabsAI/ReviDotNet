@@ -32,6 +32,13 @@ public class InferClientConfig
     public Protocol Protocol { get; set; }
 
     /// <summary>
+    /// The provider profile's name (for example "openai", "groq"). Carried so a failure can be
+    /// attributed to the provider that produced it when reported to
+    /// <see cref="InferenceProviderMonitor"/>; empty for clients built without a profile (tests).
+    /// </summary>
+    public string ProviderName { get; set; } = string.Empty;
+
+    /// <summary>
     /// The default model identifier to use for requests.
     /// </summary>
     public string DefaultModel { get; set; }
