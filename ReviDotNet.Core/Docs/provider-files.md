@@ -15,15 +15,15 @@ Basic identification and connection info for the provider.
 | :--- | :--- | :--- |
 | `name` | string | Unique identifier for this provider (referenced by model configs). Like prompts/models, the **effective** name is prefixed with the lower-cased subdirectory path under `RConfigs/Providers/` — a file at `Providers/cloud/openai.rcfg` with `name = openai` resolves to `cloud/openai`. That prefixed name is what model `provider-name` values must reference, and it also flows into the env-var key (the slash is **not** sanitized → `PROVAPIKEY__CLOUD/OPENAI`). Keep provider files directly under `Providers/` unless you specifically want this prefixing. |
 | `enabled` | boolean | Whether this provider is available for use. **Note:** `enabled = false` does **not** remove the provider from the registry — it is still loaded and returned by `Get`/`GetAll`, and its HTTP clients are still built. The flag only takes effect when a model/embedding resolves its `provider-name`: a model whose provider is disabled (or missing) is itself force-disabled during resolution. |
-| `protocol` | enum | The communication protocol to use. Recognized values: `OpenAI`, `vLLM`, `Gemini`, `Perplexity`, `LLamaAPI`, `Claude`. **Custom dialect** providers — `OpenAI`, `vLLM`, `Gemini`, `Claude` — each have their own request/response shaping. `LLamaAPI` and `Perplexity` have **no dedicated client** and fall through to the **OpenAI** dialect. (The enum comments that mark `LLamaAPI`/`Claude` "Not implemented" are stale — Claude is implemented.) |
+| `protocol` | enum | The communication protocol/provider adapter to use. Recognized values: `OpenAI`, `OpenRouter`, `vLLM`, `Gemini`, `Perplexity`, `LLamaAPI`, `Claude`. `OpenRouter` inherits the OpenAI-compatible wire format and adds gateway routing translation. Other custom dialects have their own request/response shaping. `LLamaAPI` and `Perplexity` have **no dedicated client** and fall through to the **OpenAI** dialect. (The enum comments that mark `LLamaAPI`/`Claude` "Not implemented" are stale — Claude is implemented.) |
 | `api-url` | string | The base URL for the API (e.g., `https://api.openai.com/v1/`). |
 | `api-key` | string | The API key. Use `environment` to load from an environment variable. |
-| `api-version-path` | string | **OpenAI protocol only.** Version segment prepended to endpoint paths. Unset → the standard `v1` (base URL + `v1/chat/completions`). Set to `none` for hosts whose `api-url` already carries the full version path and have no `v1` segment — e.g. Z.ai: `api-url = https://api.z.ai/api/paas/v4/` + `api-version-path = none` → `…/api/paas/v4/chat/completions`. |
+| `api-version-path` | string | **OpenAI-compatible protocols, including OpenRouter.** Version segment prepended to endpoint paths. Unset → the standard `v1` (base URL + `v1/chat/completions`). Set to `none` for hosts whose `api-url` already carries the full version path and have no `v1` segment — e.g. Z.ai: `api-url = https://api.z.ai/api/paas/v4/` + `api-version-path = none` → `…/api/paas/v4/chat/completions`. |
 | `default-model` | string | The fallback model name to use if none is specified. |
 | `supports-prompt-completion`| boolean | Whether the provider supports the legacy Completion API (vs Chat API). **Overridden per protocol** — see note below. |
 | `supports-response-completion`| boolean | Whether the provider supports the newer Responses API completion endpoint. |
 
-> **Protocol-forced capabilities.** Some capability flags are forced by `protocol` at load and **ignore the file value**: protocol `OpenAI` forces `supports-prompt-completion = false`; protocol `Claude` forces `supports-prompt-completion = true`. So you can't enable legacy completions on an OpenAI provider via the file. (`supports-guidance` is no longer forced off for Claude — Anthropic structured outputs are supported; see the capability matrix below. A model-level `supports-prompt-completion` can still override the effective per-model value during selection — see model-files.md.)
+> **Protocol-forced capabilities.** Some capability flags are forced by `protocol` at load and **ignore the file value**: protocols `OpenAI` and `OpenRouter` force `supports-prompt-completion = false`; protocol `Claude` forces `supports-prompt-completion = true`. So you can't enable legacy completions on an OpenAI-compatible gateway via the file. (`supports-guidance` is no longer forced off for Claude — Anthropic structured outputs are supported; see the capability matrix below. A model-level `supports-prompt-completion` can still override the effective per-model value during selection — see model-files.md.)
 
 #### Environment Variables for API Keys
 If `api-key = environment` is set, ReviDotNet looks for an environment variable named:
@@ -36,7 +36,7 @@ Settings for constrained output/guidance.
 | :--- | :--- | :--- |
 | `supports-guidance` | boolean | Whether the provider supports structured output guidance (e.g., JSON Schema, GBNF). |
 | `default-guidance-type`| enum | Default schema strategy used when a prompt defers via `[[settings]] guidance-schema-type = defer`. One of `disabled`, `json-auto`, `json-manual`, `regex-auto`, `regex-manual`, `gnbf-auto`, `gnbf-manual`. *Auto* generates a schema from the requested output type; *manual* uses the `[[_default-guidance-string]]` raw section below. |
-| `json-schema-mode` | enum | **OpenAI protocol only.** How JSON guidance is sent on the wire: `json-schema` (default — strict `response_format: {type: "json_schema", strict: true, …}`) or `json-object` for hosts that reject the schema form and only accept `response_format: {type: "json_object"}` (e.g. Z.ai/GLM). In `json-object` mode valid JSON is still enforced by the API, and the schema is appended as an extra system message so the model knows the expected shape — but schema *conformance* is best-effort, so callers should validate the parsed result. Ignored by non-OpenAI protocols. |
+| `json-schema-mode` | enum | **OpenAI-compatible protocols with JSON guidance, including OpenRouter.** How JSON guidance is sent on the wire: `json-schema` (default — strict `response_format: {type: "json_schema", strict: true, …}`) or `json-object` for hosts that reject the schema form and only accept `response_format: {type: "json_object"}` (e.g. Z.ai/GLM). In `json-object` mode valid JSON is still enforced by the API, and the schema is appended as an extra system message so the model knows the expected shape — but schema *conformance* is best-effort, so callers should validate the parsed result. Ignored by other protocols. |
 
 #### Guidance capability matrix (which protocol enforces which decode mode)
 
@@ -50,6 +50,7 @@ Even with `supports-guidance = true`, each provider **protocol** only enforces c
 | vLLM | ✅ | ✅ | ❌ | JSON: `response_format: json_schema`; Regex: `structured_outputs: {regex}` — targets vLLM ≥ ~v0.10 (the legacy `guided_json`/`guided_decoding_backend` fields were removed in v0.12) |
 | LLamaAPI | ✅ | ❌ | ✅ | `json_schema` / `grammar` |
 | Claude | ✅ | ❌ | ❌ | `output_config.format: json_schema` — requires Haiku 4.5 / Opus 4.5-generation or later models; set `supports-guidance = false` for providers running older Claude models |
+| OpenRouter | ✅ | ❌ | ❌ | OpenAI-compatible `response_format: json_schema`; `require-request-parameter-support = true` can restrict routing to endpoints that support every requested parameter |
 
 > The GBNF/`gnbf-*` strategies are not yet wired to a schema source and currently apply no constraint on any protocol; a prompt that selects one is warned at runtime.
 
@@ -68,6 +69,52 @@ default-guidance-type = json-manual
   "properties": { "answer": { "type": "string" } },
   "required": ["answer"]
 }
+```
+
+### `[[routing]]` (Optional)
+
+Adapter-neutral constraints and preferences for selecting an inference gateway's upstream endpoint.
+The RConfig describes the required behavior; the selected `protocol` adapter translates it into the
+gateway's native request fields. OpenRouter is the first implemented routing adapter. Configuring a
+routing setting for a protocol without an adapter fails provider initialization rather than silently
+ignoring the policy.
+
+Lists are comma- or space-separated. Hard constraints (`allowed-*`, `blocked-*`, maximum prices, and
+privacy requirements) exclude non-matching routes. The throughput and latency settings are preferences:
+an adapter may deprioritize a slow route without excluding it when that matches the gateway's semantics.
+
+| Option | Type | Description |
+| :--- | :--- | :--- |
+| `upstream-order` | string list | Upstreams to try first, in priority order. OpenRouter: `provider.order`. |
+| `allowed-upstreams` | string list | Only these upstreams may serve the request. OpenRouter: `provider.only`. |
+| `blocked-upstreams` | string list | Upstreams that must not serve the request. OpenRouter: `provider.ignore`. |
+| `allow-fallbacks` | boolean | Whether the gateway may try fallback upstreams. OpenRouter: `provider.allow_fallbacks`. |
+| `selection-strategy` | enum | Primary ordering attribute: `lowest-cost`, `lowest-latency`, or `highest-throughput`. OpenRouter: `provider.sort` (`price`, `latency`, or `throughput`). |
+| `require-request-parameter-support` | boolean | Require every eligible upstream to support every parameter in the request. OpenRouter: `provider.require_parameters`. |
+| `allowed-quantizations` | string list | Eligible model quantization formats. OpenRouter: `provider.quantizations`. |
+| `maximum-cost-per-million-input-tokens` | decimal | Hard input-price ceiling in dollars per million tokens. OpenRouter: `provider.max_price.prompt`. Must be greater than zero. |
+| `maximum-cost-per-million-output-tokens` | decimal | Hard output-price ceiling in dollars per million tokens. OpenRouter: `provider.max_price.completion`. Must be greater than zero. |
+| `preferred-minimum-throughput-tokens-per-second` | number | Soft throughput preference. OpenRouter: `provider.preferred_min_throughput`. Must be greater than zero. |
+| `preferred-maximum-latency-seconds` | number | Soft latency preference. OpenRouter: `provider.preferred_max_latency`. Must be greater than zero. |
+| `data-retention` | enum | Required retention ceiling. The only supported value is `none`, which OpenRouter translates to `provider.zdr = true`. Omit the key to use gateway/account defaults; there is deliberately no setting that disables account-level ZDR. |
+| `data-collection` | enum | `allow` or `deny` upstream data collection. OpenRouter: `provider.data_collection`. |
+| `data-residency` | enum | `any`, `eu`, or `us`. For OpenRouter, `eu` requires an enterprise-enabled `https://eu.openrouter.ai/api/` base URL; OpenRouter has no documented US-only endpoint, so `us` fails validation. Residency is enforced by the base URL and is not added to the request body. |
+
+OpenRouter routing reference: [Provider Routing](https://openrouter.ai/docs/guides/routing/provider-selection).
+OpenRouter residency reference: [Sovereign AI](https://openrouter.ai/docs/guides/features/sovereign-ai).
+
+```ini
+[[general]]
+name = openrouter
+protocol = OpenRouter
+api-url = https://openrouter.ai/api/
+api-key = environment
+
+[[routing]]
+data-retention = none
+data-collection = deny
+require-request-parameter-support = true
+selection-strategy = lowest-cost
 ```
 
 ### `[[limiting]]` (Optional)

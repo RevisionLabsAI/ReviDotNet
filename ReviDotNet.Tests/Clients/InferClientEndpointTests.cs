@@ -12,6 +12,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
+using Newtonsoft.Json.Linq;
 using Revi;
 using Xunit;
 
@@ -27,6 +28,8 @@ public class InferClientEndpointTests
 {
     private const string OpenAiChatJson =
         "{\"choices\":[{\"message\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}";
+    private const string OpenAiResponsesJson =
+        "{\"output_text\":\"ok\",\"status\":\"completed\",\"model\":\"test-model\"}";
 
     [Fact]
     public async Task DefaultVersionPath_UsesV1ChatCompletions()
@@ -62,6 +65,35 @@ public class InferClientEndpointTests
         handler.Uris.Should().ContainSingle().Which.Should().Be("https://api.example.com/v2/chat/completions");
     }
 
+    [Fact]
+    public async Task OpenRouterProtocol_UsesResponsesEndpointAndRoutingAdapter()
+    {
+        CapturingHandler handler = new();
+        HttpClient http = new(handler) { BaseAddress = new Uri("https://openrouter.ai/api/") };
+        using InferClient client = new(
+            apiUrl: "https://openrouter.ai/api/",
+            apiKey: "test",
+            protocol: Protocol.OpenRouter,
+            defaultModel: "test-model",
+            retryAttemptLimit: 1,
+            retryInitialDelaySeconds: 0,
+            supportsResponseCompletion: true,
+            httpClientOverride: http,
+            routingPolicy: new ProviderRoutingPolicy
+            {
+                DataRetention = DataRetentionPolicy.None,
+                RequireRequestParameterSupport = true
+            });
+
+        await client.GenerateAsync(
+            new List<Item> { new() { Type = "message", Role = "user", Content = "hello" } });
+
+        handler.Uris.Should().ContainSingle().Which.Should().Be("https://openrouter.ai/api/v1/responses");
+        JObject payload = JObject.Parse(handler.Bodies.Should().ContainSingle().Which);
+        payload["provider"]!["zdr"]!.Value<bool>().Should().BeTrue();
+        payload["provider"]!["require_parameters"]!.Value<bool>().Should().BeTrue();
+    }
+
     // ==========
     //  Helpers
     // ==========
@@ -94,14 +126,25 @@ public class InferClientEndpointTests
         /// <summary>The absolute URIs of every request the client sent.</summary>
         public List<string> Uris { get; } = [];
 
+        /// <summary>The serialized request bodies sent by the client.</summary>
+        public List<string> Bodies { get; } = [];
+
         /// <inheritdoc/>
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
         {
             Uris.Add(request.RequestUri!.ToString());
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            Bodies.Add(request.Content is null
+                ? string.Empty
+                : await request.Content.ReadAsStringAsync(cancellationToken));
+            string responseJson = request.RequestUri.AbsolutePath.EndsWith("/responses", StringComparison.Ordinal)
+                ? OpenAiResponsesJson
+                : OpenAiChatJson;
+            return new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent(OpenAiChatJson, Encoding.UTF8, "application/json")
-            });
+                Content = new StringContent(responseJson, Encoding.UTF8, "application/json")
+            };
         }
     }
 }

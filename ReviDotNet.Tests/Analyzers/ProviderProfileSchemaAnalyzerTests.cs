@@ -32,9 +32,31 @@ api-url = https://example/
 
             DiagnosticResult expected = DiagnosticResult.CompilerError(ProviderProfileSchemaAnalyzer.DiagnosticId)
                 .WithSpan("RConfigs/Providers/bad.rcfg", 3, 1, 3, 1)
-                .WithArguments("Nope", "general.protocol", " (allowed: OpenAI, vLLM, Gemini, Perplexity, LLamaAPI, Claude)");
+                .WithArguments("Nope", "general.protocol", " (allowed: OpenAI, OpenRouter, vLLM, Gemini, Perplexity, LLamaAPI, Claude)");
 
             await AnalyzerTestHelper.RunAsync<ProviderProfileSchemaAnalyzer>(code, files, expected);
+        }
+
+        [Fact]
+        public async Task NoDiagnostic_OnOpenRouterProtocol()
+        {
+            string code = "class C { void M() {} }";
+            (string path, string content)[] files =
+            {
+                ("RConfigs/Providers/openrouter.rcfg", @"[[general]]
+name = openrouter
+enabled = true
+protocol = OpenRouter
+api-url = https://openrouter.ai/api/
+
+[[routing]]
+data-retention = none
+data-collection = deny
+require-request-parameter-support = true
+")
+            };
+
+            await AnalyzerTestHelper.RunAsync<ProviderProfileSchemaAnalyzer>(code, files);
         }
 
         // D67: protocol Perplexity and `defer` guidance are runtime-valid and must NOT be flagged.

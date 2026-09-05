@@ -32,7 +32,7 @@ public static class GuidanceCapability
 
         return protocol switch
         {
-            Protocol.OpenAI or Protocol.Perplexity or Protocol.Gemini or Protocol.Claude => type == GuidanceType.Json,
+            Protocol.OpenAI or Protocol.OpenRouter or Protocol.Perplexity or Protocol.Gemini or Protocol.Claude => type == GuidanceType.Json,
             Protocol.vLLM => type is GuidanceType.Json or GuidanceType.Regex,
             Protocol.LLamaAPI => type is GuidanceType.Json or GuidanceType.Grammar,
             _ => false,

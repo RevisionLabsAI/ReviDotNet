@@ -52,9 +52,13 @@ public class PayloadTransformer
 
     private readonly InferClientConfig _config;
 
+    /// <summary>Adapter that adds provider-native routing fields to outgoing request payloads.</summary>
+    private readonly IProviderRoutingAdapter? _routingAdapter;
+
     public PayloadTransformer(InferClientConfig config)
     {
         _config = config ?? throw new ArgumentNullException(nameof(config));
+        _routingAdapter = ProviderRoutingAdapterFactory.Create(_config);
     }
 
     
@@ -396,6 +400,8 @@ public class PayloadTransformer
         string? thinking = null,
         string? geminiSafetyThreshold = null)
     {
+        _routingAdapter?.Apply(parameters);
+
         if (temperature.HasValue) parameters.Add("temperature", temperature.Value);
         if (topK.HasValue) parameters.Add("top_k", topK.Value);
         if (topP.HasValue) parameters.Add("top_p", topP.Value);
@@ -419,6 +425,7 @@ public class PayloadTransformer
                     parameters["thinking_mode"] = thinking;
                     break;
                 case Protocol.OpenAI:
+                case Protocol.OpenRouter:
                     parameters["reasoning_effort"] = thinking;
                     break;
             }
@@ -447,6 +454,7 @@ public class PayloadTransformer
         switch (_config.Protocol)
         {
             case Protocol.OpenAI:
+            case Protocol.OpenRouter:
             case Protocol.Perplexity:
             {
                 // OpenAI Parameters - no bestOf support
