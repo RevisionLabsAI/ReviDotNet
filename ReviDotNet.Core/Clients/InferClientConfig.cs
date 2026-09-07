@@ -110,6 +110,11 @@ public class InferClientConfig
     public string ApiVersionPath { get; set; } = "v1";
 
     /// <summary>
+    /// Adapter-neutral routing constraints and preferences to translate for the configured gateway.
+    /// </summary>
+    public ProviderRoutingPolicy? RoutingPolicy { get; set; }
+
+    /// <summary>
     /// Inactivity timeout for non-responsive providers (seconds).
     /// </summary>
     public int InactivityTimeoutSeconds { get; set; } = 60;

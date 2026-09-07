@@ -81,13 +81,70 @@ public class ProviderProfile
     public string? DefaultGuidanceString { get; set; }
 
     /// <summary>
-    /// How JSON guidance is sent for OpenAI-protocol providers: <c>json-schema</c> (default; strict
+    /// How JSON guidance is sent for OpenAI-compatible providers: <c>json-schema</c> (default; strict
     /// <c>response_format: json_schema</c>) or <c>json-object</c> for hosts that only accept
     /// <c>response_format: json_object</c> (e.g. Z.ai/GLM) — the schema then travels as an extra
-    /// system message. Ignored by non-OpenAI protocols.
+    /// system message. Ignored by protocols that do not use OpenAI-compatible JSON guidance.
     /// </summary>
     [RConfigProperty(("guidance_json-schema-mode"))]
     public JsonSchemaMode? JsonSchemaMode { get; set; }
+
+    // Gateway routing
+    /// <summary>Gets or sets the upstreams to try first, in priority order.</summary>
+    [RConfigProperty("routing_upstream-order")]
+    public List<string>? UpstreamOrder { get; set; }
+
+    /// <summary>Gets or sets the only upstreams that may serve requests.</summary>
+    [RConfigProperty("routing_allowed-upstreams")]
+    public List<string>? AllowedUpstreams { get; set; }
+
+    /// <summary>Gets or sets upstreams that must not serve requests.</summary>
+    [RConfigProperty("routing_blocked-upstreams")]
+    public List<string>? BlockedUpstreams { get; set; }
+
+    /// <summary>Gets or sets whether the gateway may use fallback upstreams.</summary>
+    [RConfigProperty("routing_allow-fallbacks")]
+    public bool? AllowFallbacks { get; set; }
+
+    /// <summary>Gets or sets the attribute used to order eligible upstreams.</summary>
+    [RConfigProperty("routing_selection-strategy")]
+    public RoutingSelectionStrategy? SelectionStrategy { get; set; }
+
+    /// <summary>Gets or sets whether routed upstreams must support every request parameter.</summary>
+    [RConfigProperty("routing_require-request-parameter-support")]
+    public bool? RequireRequestParameterSupport { get; set; }
+
+    /// <summary>Gets or sets the model quantization formats eligible to serve requests.</summary>
+    [RConfigProperty("routing_allowed-quantizations")]
+    public List<string>? AllowedQuantizations { get; set; }
+
+    /// <summary>Gets or sets the maximum input-token price in dollars per million tokens.</summary>
+    [RConfigProperty("routing_maximum-cost-per-million-input-tokens")]
+    public decimal? MaximumRoutingCostPerMillionInputTokens { get; set; }
+
+    /// <summary>Gets or sets the maximum output-token price in dollars per million tokens.</summary>
+    [RConfigProperty("routing_maximum-cost-per-million-output-tokens")]
+    public decimal? MaximumRoutingCostPerMillionOutputTokens { get; set; }
+
+    /// <summary>Gets or sets the preferred minimum generation throughput in tokens per second.</summary>
+    [RConfigProperty("routing_preferred-minimum-throughput-tokens-per-second")]
+    public double? PreferredMinimumThroughputTokensPerSecond { get; set; }
+
+    /// <summary>Gets or sets the preferred maximum observed latency in seconds.</summary>
+    [RConfigProperty("routing_preferred-maximum-latency-seconds")]
+    public double? PreferredMaximumLatencySeconds { get; set; }
+
+    /// <summary>Gets or sets the required upstream prompt and response retention policy.</summary>
+    [RConfigProperty("routing_data-retention")]
+    public DataRetentionPolicy? DataRetention { get; set; }
+
+    /// <summary>Gets or sets whether routed upstreams may collect request data.</summary>
+    [RConfigProperty("routing_data-collection")]
+    public DataCollectionPolicy? DataCollection { get; set; }
+
+    /// <summary>Gets or sets the required geographic processing boundary.</summary>
+    [RConfigProperty("routing_data-residency")]
+    public DataResidencyPolicy? DataResidency { get; set; }
 
     // Rate Limiting
     [RConfigProperty("limiting_timeout-seconds")]
@@ -140,7 +197,8 @@ public class ProviderProfile
         
         switch (Protocol)
         {
-            case global::Revi.Protocol.OpenAI: 
+            case global::Revi.Protocol.OpenAI:
+            case global::Revi.Protocol.OpenRouter:
                 SupportsCompletion = false;
                 break;
             
@@ -192,7 +250,8 @@ public class ProviderProfile
             defaultGuidanceString: DefaultGuidanceString ?? "",
             jsonSchemaMode: JsonSchemaMode ?? global::Revi.JsonSchemaMode.JsonSchema,
             apiVersionPath: APIVersionPath,
-            providerName: Name ?? string.Empty);
+            providerName: Name ?? string.Empty,
+            routingPolicy: BuildRoutingPolicy());
         
         // Initialize EmbedClient for embeddings
         EmbeddingClient = new EmbedClient(
@@ -205,6 +264,29 @@ public class ProviderProfile
             retryAttemptLimit: RetryAttemptLimit ?? 5,
             retryInitialDelaySeconds: RetryInitialDelaySeconds ?? 5,
             simultaneousRequests: SimultaneousRequests ?? 10);
+    }
+
+    /// <summary>Builds the adapter-neutral routing policy from flattened RConfig properties.</summary>
+    /// <returns>The routing policy passed to the inference client.</returns>
+    private ProviderRoutingPolicy BuildRoutingPolicy()
+    {
+        return new ProviderRoutingPolicy
+        {
+            UpstreamOrder = UpstreamOrder,
+            AllowedUpstreams = AllowedUpstreams,
+            BlockedUpstreams = BlockedUpstreams,
+            AllowFallbacks = AllowFallbacks,
+            SelectionStrategy = SelectionStrategy,
+            RequireRequestParameterSupport = RequireRequestParameterSupport,
+            AllowedQuantizations = AllowedQuantizations,
+            MaximumCostPerMillionInputTokens = MaximumRoutingCostPerMillionInputTokens,
+            MaximumCostPerMillionOutputTokens = MaximumRoutingCostPerMillionOutputTokens,
+            PreferredMinimumThroughputTokensPerSecond = PreferredMinimumThroughputTokensPerSecond,
+            PreferredMaximumLatencySeconds = PreferredMaximumLatencySeconds,
+            DataRetention = DataRetention,
+            DataCollection = DataCollection,
+            DataResidency = DataResidency
+        };
     }
 
     // Empty constructor for the serialization function

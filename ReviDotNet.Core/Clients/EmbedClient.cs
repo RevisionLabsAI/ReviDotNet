@@ -138,6 +138,7 @@ public class EmbedClient : IDisposable
         switch (_protocol)
         {
             case Protocol.OpenAI:
+            case Protocol.OpenRouter:
                 return "v1/embeddings";
             
             case Protocol.Gemini:
@@ -187,6 +188,7 @@ public class EmbedClient : IDisposable
         switch (_protocol)
         {
             case Protocol.OpenAI:
+            case Protocol.OpenRouter:
                 return ProcessOpenAIResponse(data);
             
             case Protocol.Gemini:
@@ -429,6 +431,7 @@ public class EmbedClient : IDisposable
         switch (_protocol)
         {
             case Protocol.OpenAI:
+            case Protocol.OpenRouter:
                 endpoint = GetEmbeddingEndpoint();
                 parameters = new Dictionary<string, object>
                 {

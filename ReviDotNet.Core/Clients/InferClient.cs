@@ -55,6 +55,7 @@ public class InferClient : IDisposable
     /// produced it when reported to <see cref="InferenceProviderMonitor"/>. Optional: a client built
     /// without a profile (tests, ad-hoc callers) reports as "unknown".
     /// </param>
+    /// <param name="routingPolicy">Optional adapter-neutral gateway routing policy.</param>
     public InferClient(
         string apiUrl,
         string apiKey = "",
@@ -73,7 +74,8 @@ public class InferClient : IDisposable
         JsonSchemaMode jsonSchemaMode = JsonSchemaMode.JsonSchema,
         string? apiVersionPath = null,
         HttpClient? httpClientOverride = null,
-        string providerName = "")
+        string providerName = "",
+        ProviderRoutingPolicy? routingPolicy = null)
     {
         // Normalize the OpenAI-style endpoint version segment: null/unset keeps the standard "v1";
         // "none" (or an explicit empty value) removes the segment entirely for hosts whose base URL
@@ -102,7 +104,8 @@ public class InferClient : IDisposable
             DefaultGuidanceString = defaultGuidanceString,
             JsonSchemaMode = jsonSchemaMode,
             ApiVersionPath = normalizedVersionPath,
-            ProviderName = providerName
+            ProviderName = providerName,
+            RoutingPolicy = routingPolicy
         };
         
         // Create shared resources
@@ -523,7 +526,7 @@ public class InferClient : IDisposable
         CancellationToken cancellationToken = default,
         int? inactivityTimeoutSeconds = null)
     {
-        if (_config.Protocol != Protocol.OpenAI || _config.SupportsResponseCompletion is false)
+        if (!_config.Protocol.UsesOpenAiResponsesApi() || _config.SupportsResponseCompletion is false)
         {
             throw new Exception("Attempting Responses API completion on provider that does not support it");
         }

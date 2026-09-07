@@ -6,15 +6,11 @@
 
 namespace Revi;
 
-public enum Protocol
+/// <summary>
+/// Defines a required upper bound on upstream prompt and response retention.
+/// </summary>
+public enum DataRetentionPolicy
 {
-    OpenAI,
-    vLLM,
-    Gemini,
-    Perplexity,
-    LLamaAPI, // Not implemented
-    Claude, // Not implemented
-
-    /// <summary>OpenRouter's OpenAI-compatible API with provider-routing extensions.</summary>
-    OpenRouter
+    /// <summary>Require an upstream that retains no prompt or response data at rest.</summary>
+    None
 }
