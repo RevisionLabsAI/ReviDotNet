@@ -72,8 +72,8 @@ internal static class ModelManager
         foreach (var file in files)
         {
             Dictionary<string, string> modelDictionary = RConfigParser.Read(file);
-            string folder = Util.ExtractSubDirectories(path, file).ToLower();
-            ModelProfile? model = RConfigParser.ToObject<ModelProfile>(modelDictionary, folder);
+            // Subfolders are organizational only; the declared name is the registered name.
+            ModelProfile? model = RConfigParser.ToObject<ModelProfile>(modelDictionary);
 
             if (model?.Name is null)
                 continue;
@@ -106,8 +106,10 @@ internal static class ModelManager
 
                 using var reader = new StreamReader(stream);
                 var modelDictionary = RConfigParser.ReadEmbedded(reader.ReadToEnd());
-                string folder = Util.ExtractEmbeddedDirectories(".Models.Inference.", resourceName).ToLower();
-                ModelProfile? model = RConfigParser.ToObject<ModelProfile>(modelDictionary, folder);
+                // Register under the declared name verbatim (no folder prefix): an embedded resource
+                // name cannot tell a folder dot from a dot inside a file name, and the declared name is
+                // what every lookup uses. See PromptRegistryNameTests.
+                ModelProfile? model = RConfigParser.ToObject<ModelProfile>(modelDictionary);
 
                 if (model?.Name is null)
                     continue;
