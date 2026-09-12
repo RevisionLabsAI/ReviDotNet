@@ -116,8 +116,8 @@ public sealed class EmbeddingManagerService : IEmbeddingManager
             try
             {
                 Dictionary<string, string> dict = RConfigParser.Read(file);
-                string folder = Util.ExtractSubDirectories(path, file).ToLower();
-                EmbeddingProfile? model = RConfigParser.ToObject<EmbeddingProfile>(dict, folder);
+                // Subfolders are organizational only; the declared name is the registered name.
+                EmbeddingProfile? model = RConfigParser.ToObject<EmbeddingProfile>(dict);
 
                 if (model?.Name is null)
                     continue;
@@ -150,8 +150,10 @@ public sealed class EmbeddingManagerService : IEmbeddingManager
 
                     using StreamReader reader = new(stream);
                     Dictionary<string, string> dict = RConfigParser.ReadEmbedded(reader.ReadToEnd());
-                    string folder = Util.ExtractEmbeddedDirectories(".Models.Embedding.", resourceName).ToLower();
-                    EmbeddingProfile? model = RConfigParser.ToObject<EmbeddingProfile>(dict, folder);
+                    // Register under the declared name verbatim (no folder prefix): an embedded resource
+                    // name cannot tell a folder dot from a dot inside a file name, and the declared name is
+                    // what every lookup uses. See PromptRegistryNameTests.
+                    EmbeddingProfile? model = RConfigParser.ToObject<EmbeddingProfile>(dict);
 
                     if (model?.Name is null)
                         continue;

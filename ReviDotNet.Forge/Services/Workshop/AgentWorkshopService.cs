@@ -612,8 +612,8 @@ public sealed class AgentWorkshopService : IAgentWorkshopService
                 var data = RConfigParser.ReadEmbedded(content);
                 if (!data.TryGetValue("information_name", out var baseName)) continue;
 
-                string folder = Util.ExtractEmbeddedDirectories(".Agents.", resourceName).ToLower();
-                if (string.Equals(folder + baseName, agentName, StringComparison.OrdinalIgnoreCase))
+                // Agents register under their declared name verbatim, so match that name alone.
+                if (string.Equals(baseName, agentName, StringComparison.OrdinalIgnoreCase))
                     return content;
             }
             catch { /* skip unreadable / malformed resource */ }
