@@ -81,8 +81,8 @@ public sealed class AgentManagerService : IAgentManager
             try
             {
                 Dictionary<string, string> data = RConfigParser.Read(file);
-                string folder = Util.ExtractSubDirectories(path, file).ToLower();
-                AgentProfile agent = AgentProfile.ToObject(data, folder);
+                // Subfolders are organizational only; the declared name is the registered name.
+                AgentProfile agent = AgentProfile.ToObject(data);
 
                 if (agent?.Name is null)
                     continue;
@@ -117,8 +117,10 @@ public sealed class AgentManagerService : IAgentManager
 
                     using StreamReader reader = new(stream);
                     Dictionary<string, string> data = RConfigParser.ReadEmbedded(reader.ReadToEnd());
-                    string folder = Util.ExtractEmbeddedDirectories(".Agents.", resourceName).ToLower();
-                    AgentProfile agent = AgentProfile.ToObject(data, folder);
+                    // Register under the declared name verbatim (no folder prefix): an embedded resource
+                    // name cannot tell a folder dot from a dot inside a file name, and the declared name is
+                    // what every lookup uses. See PromptRegistryNameTests.
+                    AgentProfile agent = AgentProfile.ToObject(data);
 
                     if (agent?.Name is null)
                         continue;

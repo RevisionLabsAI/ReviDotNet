@@ -121,8 +121,8 @@ public sealed class ModelManagerService : IModelManager
             try
             {
                 Dictionary<string, string> dict = RConfigParser.Read(file);
-                string folder = Util.ExtractSubDirectories(path, file).ToLower();
-                ModelProfile? model = RConfigParser.ToObject<ModelProfile>(dict, folder);
+                // Subfolders are organizational only; the declared name is the registered name.
+                ModelProfile? model = RConfigParser.ToObject<ModelProfile>(dict);
 
                 if (model?.Name is null)
                     continue;
@@ -155,8 +155,10 @@ public sealed class ModelManagerService : IModelManager
 
                     using StreamReader reader = new(stream);
                     Dictionary<string, string> dict = RConfigParser.ReadEmbedded(reader.ReadToEnd());
-                    string folder = Util.ExtractEmbeddedDirectories(".Models.Inference.", resourceName).ToLower();
-                    ModelProfile? model = RConfigParser.ToObject<ModelProfile>(dict, folder);
+                    // Register under the declared name verbatim (no folder prefix): an embedded resource
+                    // name cannot tell a folder dot from a dot inside a file name, and the declared name is
+                    // what every lookup uses. See PromptRegistryNameTests.
+                    ModelProfile? model = RConfigParser.ToObject<ModelProfile>(dict);
 
                     if (model?.Name is null)
                         continue;

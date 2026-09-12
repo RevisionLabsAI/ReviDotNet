@@ -87,10 +87,10 @@ internal static class EmbeddingManager
             Dictionary<string, string> embeddingDictionary = RConfigParser.Read(file);
             
             // Extract subdirectory information for context
-            string folder = Util.ExtractSubDirectories(path, file).ToLower();
+            // Subfolders are organizational only; the declared name is the registered name.
             
             // Convert dictionary to EmbeddingProfile object
-            EmbeddingProfile? embeddingModel = RConfigParser.ToObject<EmbeddingProfile>(embeddingDictionary, folder);
+            EmbeddingProfile? embeddingModel = RConfigParser.ToObject<EmbeddingProfile>(embeddingDictionary);
 
             // Skip if model name is null
             if (embeddingModel?.Name is null)
@@ -126,8 +126,10 @@ internal static class EmbeddingManager
 
                 using var reader = new StreamReader(stream);
                 var embeddingDictionary = RConfigParser.ReadEmbedded(reader.ReadToEnd());
-                string folder = Util.ExtractEmbeddedDirectories(".Models.Embedding.", resourceName).ToLower();
-                EmbeddingProfile? embeddingModel = RConfigParser.ToObject<EmbeddingProfile>(embeddingDictionary, folder);
+                // Register under the declared name verbatim (no folder prefix): an embedded resource
+                // name cannot tell a folder dot from a dot inside a file name, and the declared name is
+                // what every lookup uses. See PromptRegistryNameTests.
+                EmbeddingProfile? embeddingModel = RConfigParser.ToObject<EmbeddingProfile>(embeddingDictionary);
 
                 if (embeddingModel?.Name is null)
                     continue;

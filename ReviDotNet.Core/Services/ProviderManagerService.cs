@@ -75,8 +75,8 @@ public sealed class ProviderManagerService : IProviderManager
             try
             {
                 Dictionary<string, string> dict = RConfigParser.Read(file);
-                string folder = Util.ExtractSubDirectories(path, file).ToLower();
-                ProviderProfile? provider = RConfigParser.ToObject<ProviderProfile>(dict, folder);
+                // Subfolders are organizational only; the declared name is the registered name.
+                ProviderProfile? provider = RConfigParser.ToObject<ProviderProfile>(dict);
 
                 if (provider?.Name is null)
                     continue;
@@ -108,8 +108,10 @@ public sealed class ProviderManagerService : IProviderManager
 
                     using StreamReader reader = new(stream);
                     Dictionary<string, string> dict = RConfigParser.ReadEmbedded(reader.ReadToEnd());
-                    string folder = Util.ExtractEmbeddedDirectories(".Providers.", resourceName).ToLower();
-                    ProviderProfile? provider = RConfigParser.ToObject<ProviderProfile>(dict, folder);
+                    // Register under the declared name verbatim (no folder prefix): an embedded resource
+                    // name cannot tell a folder dot from a dot inside a file name, and the declared name is
+                    // what every lookup uses. See PromptRegistryNameTests.
+                    ProviderProfile? provider = RConfigParser.ToObject<ProviderProfile>(dict);
 
                     if (provider?.Name is null)
                         continue;

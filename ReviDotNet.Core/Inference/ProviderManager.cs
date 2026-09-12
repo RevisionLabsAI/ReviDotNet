@@ -73,8 +73,8 @@ internal static class ProviderManager
         foreach (var file in files)
         {
             var providerDictionary = RConfigParser.Read(file);
-            string folder = Util.ExtractSubDirectories(path, file).ToLower();
-            ProviderProfile? provider = RConfigParser.ToObject<ProviderProfile>(providerDictionary, folder);
+            // Subfolders are organizational only; the declared name is the registered name.
+            ProviderProfile? provider = RConfigParser.ToObject<ProviderProfile>(providerDictionary);
 
             if (provider?.Name is null)
                 continue;
@@ -113,8 +113,10 @@ internal static class ProviderManager
 
                 using var reader = new StreamReader(stream);
                 var providerDictionary = RConfigParser.ReadEmbedded(reader.ReadToEnd());
-                string folder = Util.ExtractEmbeddedDirectories(".Providers.", resourceName).ToLower();
-                ProviderProfile? provider = RConfigParser.ToObject<ProviderProfile>(providerDictionary, folder);
+                // Register under the declared name verbatim (no folder prefix): an embedded resource
+                // name cannot tell a folder dot from a dot inside a file name, and the declared name is
+                // what every lookup uses. See PromptRegistryNameTests.
+                ProviderProfile? provider = RConfigParser.ToObject<ProviderProfile>(providerDictionary);
 
                 if (provider?.Name is null)
                     continue;
