@@ -8,10 +8,17 @@ using System.Reflection;
 
 namespace Revi;
 
-/// <summary>Service implementation of <see cref="IProviderManager"/>. Holds loaded provider profiles as instance state.</summary>
+/// <summary>
+/// Service implementation of <see cref="IProviderManager"/>. Holds loaded provider profiles as instance state.
+/// Reads never lock and are safe during a reload: every write builds a complete replacement list and publishes it
+/// with one reference swap, so a reader sees either the old list or the new one, never a partial or empty one.
+/// </summary>
 public sealed class ProviderManagerService : IProviderManager, IDisposable
 {
-    private readonly List<ProviderProfile> _providers = [];
+    /// <summary>Serialises writers so concurrent loads and adds cannot lose each other's entries. Readers never take it.</summary>
+    private readonly object _writeLock = new();
+    /// <summary>The published providers. Never mutated once assigned; writers replace the whole array under <see cref="_writeLock"/>.</summary>
+    private volatile ProviderProfile[] _providers = [];
     private readonly IReviLogger<ProviderManagerService> _logger;
 
     /// <summary>Initializes a new <see cref="ProviderManagerService"/>.</summary>
@@ -23,29 +30,35 @@ public sealed class ProviderManagerService : IProviderManager, IDisposable
     /// <inheritdoc/>
     public Task LoadAsync(Assembly assembly, CancellationToken cancellationToken = default)
     {
-        // Replace first, dispose afterwards: callers may still hold the previous profiles, and their decision
-        // clients finish in-flight requests before releasing their resources.
-        ProviderProfile[] previous = [.. _providers];
-        _providers.Clear();
-
         string path = AppDomain.CurrentDomain.BaseDirectory + "RConfigs/Providers/";
+        ProviderProfile[] previous;
+        ProviderProfile[] current;
 
-        try
+        lock (_writeLock)
         {
-            LoadFromFileSystem(path);
+            List<ProviderProfile> loaded = [];
+            try
+            {
+                ReadFileSystem(path, loaded);
+            }
+            catch (DirectoryNotFoundException)
+            {
+                ReadEmbeddedResources(assembly, loaded);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError($"Error loading providers: {e.Message}");
+            }
+
+            previous = _providers;
+            _providers = current = [.. loaded];
         }
-        catch (DirectoryNotFoundException)
-        {
-            LoadFromEmbeddedResources(assembly);
-        }
-        catch (Exception e)
-        {
-            _logger.LogError($"Error loading providers: {e.Message}");
-        }
-        finally
-        {
-            foreach (ProviderProfile provider in previous) provider.Dispose();
-        }
+
+        // Replace first, dispose afterwards: callers may still hold the previous profiles, and their decision
+        // clients finish in-flight requests before releasing their resources. A profile that is still published
+        // (the same instance in the new list) is left alone.
+        foreach (ProviderProfile provider in previous)
+            if (!current.Any(p => ReferenceEquals(p, provider))) provider.Dispose();
 
         return Task.CompletedTask;
     }
@@ -68,7 +81,9 @@ public sealed class ProviderManagerService : IProviderManager, IDisposable
 
     /// <inheritdoc/>
     public void Add(ProviderProfile provider)
-        => _providers.Add(provider);
+    {
+        lock (_writeLock) _providers = [.. _providers, provider];
+    }
 
     /// <summary>Releases owned decision transports when the service provider shuts down.</summary>
     public void Dispose()
@@ -76,7 +91,26 @@ public sealed class ProviderManagerService : IProviderManager, IDisposable
         foreach (ProviderProfile provider in _providers) provider.Dispose();
     }
 
-    private void LoadFromFileSystem(string path)
+    /// <summary>Additively loads the <c>.rcfg</c> files under <paramref name="path"/>; existing providers win a name clash.</summary>
+    /// <param name="path">The directory to read.</param>
+    private void LoadFromFileSystem(string path) => Merge(loaded => ReadFileSystem(path, loaded));
+
+    /// <summary>Publishes the current providers plus whatever <paramref name="read"/> appends, as one swap.</summary>
+    /// <param name="read">Appends newly read providers to the working copy it is given.</param>
+    private void Merge(Action<List<ProviderProfile>> read)
+    {
+        lock (_writeLock)
+        {
+            List<ProviderProfile> merged = [.. _providers];
+            read(merged);
+            _providers = [.. merged];
+        }
+    }
+
+    /// <summary>Reads the <c>.rcfg</c> files under <paramref name="path"/> into <paramref name="target"/>.</summary>
+    /// <param name="path">The directory to read; a missing one throws <see cref="DirectoryNotFoundException"/>.</param>
+    /// <param name="target">The working list new providers are appended to.</param>
+    private void ReadFileSystem(string path, List<ProviderProfile> target)
     {
         List<string> files = Directory
             .EnumerateFiles(path, "*.rcfg", SearchOption.AllDirectories)
@@ -94,7 +128,7 @@ public sealed class ProviderManagerService : IProviderManager, IDisposable
                 if (provider?.Name is null)
                     continue;
 
-                CheckAdd(provider, embedded: false);
+                CheckAdd(target, provider, embedded: false);
             }
             catch (Exception ex)
             {
@@ -104,9 +138,12 @@ public sealed class ProviderManagerService : IProviderManager, IDisposable
     }
 
     /// <inheritdoc/>
-    public void LoadAssembly(Assembly assembly) => LoadFromEmbeddedResources(assembly);
+    public void LoadAssembly(Assembly assembly) => Merge(loaded => ReadEmbeddedResources(assembly, loaded));
 
-    private void LoadFromEmbeddedResources(Assembly assembly)
+    /// <summary>Reads the provider profiles embedded in <paramref name="assembly"/> into <paramref name="target"/>.</summary>
+    /// <param name="assembly">The assembly whose <c>.Providers.</c> resources are read.</param>
+    /// <param name="target">The working list new providers are appended to.</param>
+    private void ReadEmbeddedResources(Assembly assembly, List<ProviderProfile> target)
     {
         try
         {
@@ -132,7 +169,7 @@ public sealed class ProviderManagerService : IProviderManager, IDisposable
                     if (provider?.Name is null)
                         continue;
 
-                    CheckAdd(provider, embedded: true);
+                    CheckAdd(target, provider, embedded: true);
                 }
                 catch (Exception ex)
                 {
@@ -146,12 +183,16 @@ public sealed class ProviderManagerService : IProviderManager, IDisposable
         }
     }
 
-    private void CheckAdd(ProviderProfile provider, bool embedded)
+    /// <summary>Appends <paramref name="provider"/> to <paramref name="target"/> unless a provider of that name is already there.</summary>
+    /// <param name="target">The working list being built.</param>
+    /// <param name="provider">The provider just read.</param>
+    /// <param name="embedded">Whether it came from an embedded resource (for the log line).</param>
+    private void CheckAdd(List<ProviderProfile> target, ProviderProfile provider, bool embedded)
     {
-        if (_providers.Any(p => p.Name == provider.Name))
+        if (target.Any(p => p.Name == provider.Name))
             return;
 
-        _providers.Add(provider);
+        target.Add(provider);
         _logger.LogInfo(embedded
             ? $"Loaded embedded provider \"{provider.Name}\""
             : $"Loaded provider \"{provider.Name}\" from file system");

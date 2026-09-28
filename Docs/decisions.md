@@ -142,8 +142,12 @@ packs deliberately supplied by plugins at runtime. Full schema validation happen
 at startup/editor validation, not inside Roslyn.
 
 Registry assembly extension is additive through `LoadAssembly`; `LoadAsync`
-remains an explicit reset/reload. Startup finishes all providers across sources
-before loading dependent models. Declared names are used verbatim: an organizational
+remains an explicit reset/reload. The provider, model and embedding registries
+publish each reload or addition as one complete replacement list, so a lookup
+running during a reload sees the old or the new list, never an empty or partial
+one; replaced providers are disposed only after the swap. Startup finishes all
+providers across sources before loading dependent models. Declared names are used
+verbatim: an organizational
 folder does not silently prepend a namespace. Decision duplicates of equal version
 must have equal effective questions/model; a higher prompt version wins. Duplicate
 decision model names must have identical settings. Prefer a separately named
