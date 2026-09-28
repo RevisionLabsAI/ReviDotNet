@@ -1,0 +1,6 @@
+[[information]]
+name = decision-app-fixture
+version = 1
+
+[[_instruction]]
+Application-owned fixture retained when plugin assemblies load.

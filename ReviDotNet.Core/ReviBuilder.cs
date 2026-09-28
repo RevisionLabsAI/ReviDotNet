@@ -23,6 +23,14 @@ namespace Revi;
 public sealed class ReviBuilder
 {
     private Assembly? _assembly;
+    private Action<ReviRegistryOptions>? _configure;
+    private Action<IServiceCollection>? _services;
+
+    /// <summary>Configures extra RConfig directories and assemblies.</summary>
+    public ReviBuilder WithConfiguration(Action<ReviRegistryOptions> configure) { _configure = configure; return this; }
+
+    /// <summary>Registers custom transports, observers, or service implementations.</summary>
+    public ReviBuilder WithServices(Action<IServiceCollection> configure) { _services = configure; return this; }
 
     /// <summary>Creates a new <see cref="ReviBuilder"/>. Shorthand for <c>new ReviBuilder()</c>.</summary>
     public static ReviBuilder Create() => new();
@@ -48,7 +56,8 @@ public sealed class ReviBuilder
     public async Task<ReviClient> BuildAsync(CancellationToken cancellationToken = default)
     {
         ServiceCollection services = [];
-        services.AddReviDotNet(_assembly);
+        services.AddReviDotNet(_assembly, _configure);
+        _services?.Invoke(services);
 
         ServiceProvider provider = services.BuildServiceProvider();
 

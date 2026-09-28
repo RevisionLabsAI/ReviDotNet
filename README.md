@@ -65,6 +65,7 @@ The core docs are in this repo:
 - Provider files: `ReviDotNet.Core/Docs/provider-files.md`
 - Model files: `ReviDotNet.Core/Docs/model-files.md`
 - Inference API: `ReviDotNet.Core/Docs/inference.md`
+- Decision models, RConfig decision files with YAML rubrics, context selection, and document search: [Decision guide](Docs/decisions.md)
 - Analyzers: `ReviDotNet.Core/Docs/analyzers.md`
 
 Subsystem docs at the repo root:
@@ -202,7 +203,7 @@ public sealed class SpecAnalyzer(IInferService infer)
 
 Notes
 
-- Prompt names are resolved as: `<lower-cased-subfolder(s)>/<[[information]] name>`; the physical filename is not used for matching. See `ReviDotNet.Core/Docs/analyzers.md`.
+- Prompt names are the declared `[[information]] name`, case-sensitive and without automatic folder prefixes. See `ReviDotNet.Core/Docs/analyzers.md`.
 - Use `ToEnum<TEnum>` for constrained label tasks; pass `includeEnumValues: true` to inject valid options.
 - When `request-json = true` or a guidance schema is enabled, `ToObject<T>` will validate and repair common JSON issues.
 - `ToStringListLimited` allows early stop based on count or a custom evaluator.

@@ -54,6 +54,13 @@ public sealed class AgentRunContext
     /// </summary>
     public SessionFileRegistry? Files { get; init; }
 
+    /// <summary>Explicit authorized document collection for this run.</summary>
+    public DocumentCollection? Documents { get; init; }
+    /// <summary>Per-run document search configuration; never shared across tenants.</summary>
+    public DocumentSearchOptions? DocumentSearchOptions { get; init; }
+    /// <summary>Executable state-authorized metadata available to tool-search for the current dispatch.</summary>
+    public IReadOnlyList<ContextCandidate> AuthorizedContext { get; init; } = [];
+
     /// <summary>
     /// Convenience factory for a top-level (root) run context, optionally carrying attached files.
     /// </summary>
@@ -64,8 +71,8 @@ public sealed class AgentRunContext
     /// </summary>
     /// <param name="parentLog">The parent Rlog the child run should attach to.</param>
     /// <param name="maxAgentDepthOverride">The dispatching state's max-agent-depth guardrail, if any.</param>
-    public AgentRunContext Child(Rlog parentLog, int? maxAgentDepthOverride = null) =>
-        new() { ParentLog = parentLog, Depth = Depth + 1, MaxAgentDepthOverride = maxAgentDepthOverride, Files = Files };
+    public AgentRunContext Child(Rlog parentLog, int? maxAgentDepthOverride = null, IReadOnlyList<ContextCandidate>? authorizedContext = null) =>
+        new() { ParentLog = parentLog, Depth = Depth + 1, MaxAgentDepthOverride = maxAgentDepthOverride, Files = Files, Documents = Documents, DocumentSearchOptions = DocumentSearchOptions, AuthorizedContext = authorizedContext ?? [] };
 
     /// <summary>
     /// Sets the ambient context for the duration of the returned scope. AgentRunner

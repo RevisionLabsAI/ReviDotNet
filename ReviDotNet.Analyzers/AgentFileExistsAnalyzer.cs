@@ -26,7 +26,7 @@ namespace ReviDotNet.Analyzers
 
         private static readonly LocalizableString Title = "Missing Agent";
         private static readonly LocalizableString MessageFormat = "Agent '{0}' not found in AdditionalFiles (RConfigs/Agents)";
-        private static readonly LocalizableString Description = "All agent names used in Agent methods must exist in AdditionalFiles and follow the same name resolution rules (folder prefix + information_name).";
+        private static readonly LocalizableString Description = "All agent names used in Agent methods must exist in AdditionalFiles and follow the same name resolution rules (declared information_name, without folder prefixes).";
         private const string Category = "Usage";
 
         private static readonly DiagnosticDescriptor Rule = new DiagnosticDescriptor(
@@ -101,31 +101,12 @@ namespace ReviDotNet.Analyzers
                 if (string.IsNullOrEmpty(infoName))
                     continue;
 
-                string prefix = ExtractAgentFolderPrefix(path);
-                names.Add(prefix + infoName);
+                names.Add(Revi.ConfigName.Resolve(infoName));
             }
 
             return names;
         }
 
-        private static string ExtractAgentFolderPrefix(string fullPath)
-        {
-            if (string.IsNullOrEmpty(fullPath))
-                return string.Empty;
-
-            string normalized = fullPath.Replace('\\', '/');
-            int idx = normalized.IndexOf("RConfigs/Agents/", StringComparison.OrdinalIgnoreCase);
-            if (idx < 0)
-                return string.Empty;
-
-            int start = idx + "RConfigs/Agents/".Length;
-            string afterBase = normalized.Substring(start);
-            int lastSlash = afterBase.LastIndexOf('/');
-            if (lastSlash <= 0)
-                return string.Empty;
-
-            return afterBase.Substring(0, lastSlash + 1).ToLowerInvariant();
-        }
 
         private static string? TryParseInformationName(string content)
         {

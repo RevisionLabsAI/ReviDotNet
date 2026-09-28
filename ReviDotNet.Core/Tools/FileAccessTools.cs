@@ -22,7 +22,7 @@ public static class FileAccessTools
 {
     /// <summary>Names of the file tools — auto-allowed by AgentRunner whenever a run has attachments.</summary>
     public static readonly IReadOnlySet<string> Names =
-        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "list-files", "read-file", "search-files" };
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "list-files", "read-file", "search-files", "document-search" };
 }
 
 /// <summary>Lists the files attached to the current session (id, name, type, size). No LLM call.</summary>
@@ -193,7 +193,8 @@ internal static class FileReader
         }
         else
         {
-            string text = file.AsText();
+            string? text = new DocumentTextExtractor().Extract(file);
+            if (text is null) return $"(Unsupported document format: {file.MediaType}. Register a format-aware extractor for document-search.)";
             string body = text.Length > MaxTextChars
                 ? text[..MaxTextChars] + $"\n\n[…truncated — file is {text.Length:N0} characters; showing the first {MaxTextChars:N0}.]"
                 : text;

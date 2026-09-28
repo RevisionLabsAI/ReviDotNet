@@ -166,8 +166,7 @@ namespace ReviDotNet.Analyzers
                 if (string.IsNullOrEmpty(infoName))
                     continue;
 
-                string folderPrefix = ExtractPromptFolderPrefix(path);
-                string fullName = folderPrefix + infoName;
+                string fullName = Revi.ConfigName.Resolve(infoName);
 
                 HashSet<string> placeholders = ParsePlaceholders(text);
                 map[fullName] = (placeholders, file);
@@ -307,28 +306,6 @@ namespace ReviDotNet.Analyzers
             }
         }
 
-        /// <summary>
-        /// Extracts the folder prefix under an RConfigs/Prompts/ segment from a full path (forward slashes, trailing '/', lowercased).
-        /// </summary>
-        private static string ExtractPromptFolderPrefix(string fullPath)
-        {
-            if (string.IsNullOrEmpty(fullPath))
-                return string.Empty;
-
-            string normalized = fullPath.Replace('\\', '/');
-            int idx = normalized.IndexOf("RConfigs/Prompts/", StringComparison.OrdinalIgnoreCase);
-            if (idx < 0)
-                return string.Empty;
-
-            int start = idx + "RConfigs/Prompts/".Length;
-            string afterBase = normalized.Substring(start);
-            int lastSlash = afterBase.LastIndexOf('/');
-            if (lastSlash <= 0)
-                return string.Empty;
-
-            string directories = afterBase.Substring(0, lastSlash + 1);
-            return directories.ToLowerInvariant();
-        }
 
         /// <summary>
         /// Attempts to parse the information_name value from a .pmt file content.

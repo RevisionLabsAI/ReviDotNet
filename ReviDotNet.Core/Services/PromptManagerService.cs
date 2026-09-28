@@ -115,6 +115,9 @@ public sealed class PromptManagerService : IPromptManager
         CheckAdd(prompt, embedded: false);
     }
 
+    /// <inheritdoc/>
+    public void LoadAssembly(Assembly assembly) => LoadFromEmbeddedResources(assembly);
+
     private void LoadFromEmbeddedResources(Assembly assembly)
     {
         try

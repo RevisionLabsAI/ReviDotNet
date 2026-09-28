@@ -32,7 +32,7 @@ api-url = https://example/
 
             DiagnosticResult expected = DiagnosticResult.CompilerError(ProviderProfileSchemaAnalyzer.DiagnosticId)
                 .WithSpan("RConfigs/Providers/bad.rcfg", 3, 1, 3, 1)
-                .WithArguments("Nope", "general.protocol", " (allowed: OpenAI, OpenRouter, vLLM, Gemini, Perplexity, LLamaAPI, Claude)");
+                .WithArguments("Nope", "general.protocol", " (allowed: OpenAI, OpenRouter, vLLM, Gemini, Perplexity, LLamaAPI, Claude, SystemOne)");
 
             await AnalyzerTestHelper.RunAsync<ProviderProfileSchemaAnalyzer>(code, files, expected);
         }

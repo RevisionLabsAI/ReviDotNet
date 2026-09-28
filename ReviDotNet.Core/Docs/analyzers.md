@@ -17,7 +17,7 @@ This is the full set of rules (most are on by default):
 
 - REVI001 — Prompt not found (Error)
   - Ensures a referenced prompt name exists among your `.pmt` files under `RConfigs/Prompts` (any depth).
-  - Mirrors the same name resolution that Revi uses at runtime: lower-cased folder prefix + the prompt’s `information.name` declared inside the `.pmt` file. The physical filename is not used for matching.
+  - Uses the declared prompt `information.name`, case-sensitively. Neither organizational folders nor physical filenames alter it.
 - REVI002 — Non-constant prompt name (Warning)
   - Warns when a prompt-name argument to an inference method isn't a compile-time constant, so REVI001 can't validate it.
 - REVI003 — Prompt input/placeholder mismatch (Error for a missing required input; Warning for an unused input)
@@ -32,7 +32,7 @@ This is the full set of rules (most are on by default):
   - Validates a `.agent` file's state graph: a state name with an underscore (undiscoverable), a loop node or transition target with no `[[state.*]]` definition, an entry state with no definition, a dead edge after an unconditional fallback, or a duplicate signal in one state. Mirrors the load-time warnings the runtime now emits from `AgentProfile`.
 - REVI006 — Agent not found
   - Ensures a referenced agent name exists among your `.agent` files under `RConfigs/Agents` (any depth).
-  - Uses runtime-equivalent name resolution: lower-cased folder prefix + `[[information]] name` from the `.agent` file.
+  - Uses the declared `[[information]] name` from the `.agent` file, without folder prefixes.
 - REVI007 — Duplicate agent name
   - Reports when multiple `.agent` files resolve to the same effective name.
 - REVI008 — Non-constant agent name
@@ -40,7 +40,9 @@ This is the full set of rules (most are on by default):
 - REVI040 — Model profile schema (Error/Warning)
   - Validates model `.rcfg` files under `RConfigs/Models` (required `[[general]]` keys; `tier` in A/B/C; numeric `token-limit`; booleans; numeric override-tuning). Also **warns** when an `[[input]]` input type is `listed`/`both` but the `single-item`/`multi-item` templates are missing (which throws at inference).
 - REVI041 — Provider profile schema (Error/Warning)
-  - Validates provider `.rcfg` files under `RConfigs/Providers` (allowed `protocol` — `OpenAI`, `vLLM`, `Gemini`, `Perplexity`, `LLamaAPI`, `Claude`; required name/api-url; booleans; allowed `default-guidance-type` including the `defer` and bare `json`/`regex`/`gbnf` aliases; non-negative `[[limiting]]` integers).
+  - Validates provider profiles, including SystemOne, OpenAI, OpenRouter, vLLM, Gemini, Perplexity, LLamaAPI, and Claude protocols, required name/API URL, guidance settings and limiting integers.
+- REVI060 — Invalid decision RConfig metadata or section structure (Error). Requires `[[information]]` (name/version), `[[settings]]` (model), and `[[_decision]]`.
+- REVI061 — Unknown named decision pack at an IDecisionService call (Error). Include .decision packs in AdditionalFiles; full validation of the YAML object inside `[[_decision]]` runs at startup. See [Decision guide](../../Docs/decisions.md).
 
 To enable the schema rules, include your model/provider `.rcfg` files as `AdditionalFiles` (alongside `.pmt`/`.agent`):
 
@@ -94,9 +96,8 @@ Notes:
 
 ## Prompt name resolution (what the analyzer checks)
 
-Revi resolves a prompt name by combining:
-1) the lower-cased subdirectory path under `RConfigs/Prompts/` with forward slashes and a trailing slash when not empty, plus
-2) the value of `[[information]] name = ...` inside the `.pmt` file.
+Revi resolves a prompt by its declared `[[information]] name`, case-sensitively.
+Organizational folders never change this identity.
 
 The physical filename does not participate in the name. Example:
 
@@ -109,8 +110,8 @@ RConfigs/Prompts/
 ```
 
 - The effective names are:
-  - "search/analyze-specs"
-  - "common/normalize-input"
+  - "analyze-specs"
+  - "normalize-input"
 
 From C# you must pass these exact names (case-sensitive for the final full name):
 
@@ -118,7 +119,7 @@ From C# you must pass these exact names (case-sensitive for the final full name)
 using Revi;
 
 // OK
-var result = await Infer.ToString("search/analyze-specs", new { /* inputs */ });
+var result = await Infer.ToString("analyze-specs", new { /* inputs */ });
 
 // Will trigger REVI001 (if no prompt with that effective name exists)
 var missing = await Infer.ToString("Search/Analyze-Specs", new { /* inputs */ });
@@ -164,21 +165,21 @@ public Task<string> CallInferAsync(string promptName) => Infer.ToString(promptNa
 
 - REVI001 validates only string-literal prompt names (e.g., `Infer.ToString("search/analyze-specs", ...)`). If the value is computed or comes from a variable, the analyzer cannot evaluate it and will not report it.
 - The analyzer parses `.pmt` files provided via AdditionalFiles to extract `[[information]] name = ...` values. If your file omits this or uses a different field name, the prompt will not be discoverable.
-- Folder prefix is derived from the subdirectory path under `RConfigs/Prompts/` and normalized to lowercase with forward slashes. The final, effective name comparison is case-sensitive.
+- Organizational folders and filenames are ignored; declared identifiers are case-sensitive.
 
 ## Troubleshooting
 
 1) "REVI001 fires even though the file exists"
-- Ensure the `.pmt` file’s `[[information]]` section has the expected `name =` and that the value matches exactly the string used in code, after applying the lower-cased folder prefix rules.
+- Ensure `[[information]] name =` exactly matches the string passed in code; folders are not part of name resolution.
 - Confirm that the project where the error appears includes the `.pmt` file as an AdditionalFile (see Required build configuration above). If you only added AdditionalFiles to a different project, the analyzer in this project cannot see them.
-- Verify the path actually contains the `RConfigs/Prompts/` segment. The analyzer only calculates folder prefixes for files under that segment.
+- Verify the file is included in AdditionalFiles; moving it between folders does not rename it.
 
 2) "Analyzer doesn’t find any prompts"
 - Add a temporary build with `-v:n` (normal) and check that AdditionalFiles are listed for the project; or inspect the project file/Directory.Build.props.
 - Make sure your glob matches your actual layout (try `RConfigs\Prompts\**\*.pmt`).
 
 3) "We reference prompts by filename"
-- The filename is intentionally ignored. Update your code to reference the effective name: `<lower-cased-folder(s)>/<information.name>`.
+- The filename is intentionally ignored. Use the declared `[[information]] name`.
 
 ## Rule reference
 
@@ -192,12 +193,12 @@ public Task<string> CallInferAsync(string promptName) => Infer.ToString(promptNa
 Example that produces REVI001:
 
 ```csharp
-// Assuming there is no RConfigs/Prompts/X/y.pmt with [[information]] name = z such that effective name == "x/z"
+// Assuming no prompt explicitly declares [[information]] name = x/z
 string text = await Revi.Infer.ToString("x/z", new { query = "..." });
 ```
 
 How to fix:
-- Create or move a `.pmt` under `RConfigs/Prompts/<folders>/...` with `[[information]] name = <name>` so that the effective name matches the string you pass in code, or
+- Create a `.pmt` with the exact declared `[[information]] name` used in code, or
 - Update the code to use the correct effective name that already exists.
 
 ### REVI009 — Unpaired few-shot example

@@ -7,6 +7,7 @@
 using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Configuration;
 
 namespace Revi;
 
@@ -43,6 +44,8 @@ public static class ReviServiceCollectionExtensions
         services.AddSingleton(options);
 
         // Logging — use TryAdd so callers can substitute their own implementations
+        services.TryAddSingleton<IConfiguration>(_ => new ConfigurationBuilder().Build());
+        services.TryAddSingleton<IRlogEventPublisher, NullRlogEventPublisher>();
         services.TryAddSingleton<IReviLogger, ReviLogger>();
         services.TryAddSingleton(typeof(IReviLogger<>), typeof(ReviLogger<>));
 
@@ -53,11 +56,18 @@ public static class ReviServiceCollectionExtensions
         services.AddSingleton<IPromptManager, PromptManagerService>();
         services.AddSingleton<IToolManager, ToolManagerService>();
         services.AddSingleton<IAgentManager, AgentManagerService>();
+        services.TryAddSingleton<IDecisionRegistry, DecisionRegistry>();
 
         // Primary service interfaces
         services.AddSingleton<IInferService, InferService>();
         services.AddSingleton<IAgentService, AgentService>();
         services.AddSingleton<IEmbedService, EmbedService>();
+        services.TryAddSingleton<IDecisionService, DecisionService>();
+        services.TryAddSingleton<IContextSelector, DecisionContextSelector>();
+        services.TryAddSingleton<IDocumentSearchService, DocumentSearchService>();
+        services.TryAddSingleton<IDocumentTextExtractor, DocumentTextExtractor>();
+        services.TryAddSingleton<CitationVerifier>();
+        services.TryAddSingleton<AdaptiveDocumentSearch>();
 
         // Lazy wrapper for circular-dependency break: ToolManagerService → Lazy<IAgentService> → AgentService → IToolManager
         services.AddSingleton<Lazy<IAgentService>>(sp => new Lazy<IAgentService>(sp.GetRequiredService<IAgentService>));
@@ -77,5 +87,14 @@ public static class ReviServiceCollectionExtensions
             ActivatorUtilities.CreateInstance<RegistryInitService>(sp, resolvedAssembly));
 
         return services;
+    }
+
+    /// <summary>Standalone hosts need no external log sink; registered host publishers always take precedence.</summary>
+    private sealed class NullRlogEventPublisher : IRlogEventPublisher
+    {
+        /// <inheritdoc/>
+        public Task PublishLogEventAsync(RlogEvent rlogEvent) => Task.CompletedTask;
+        /// <inheritdoc/>
+        public void PublishLogEvent(RlogEvent rlogEvent) { }
     }
 }

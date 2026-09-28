@@ -9,7 +9,7 @@ using System.Reflection;
 namespace Revi;
 
 /// <summary>Service implementation of <see cref="IProviderManager"/>. Holds loaded provider profiles as instance state.</summary>
-public sealed class ProviderManagerService : IProviderManager
+public sealed class ProviderManagerService : IProviderManager, IDisposable
 {
     private readonly List<ProviderProfile> _providers = [];
     private readonly IReviLogger<ProviderManagerService> _logger;
@@ -23,6 +23,7 @@ public sealed class ProviderManagerService : IProviderManager
     /// <inheritdoc/>
     public Task LoadAsync(Assembly assembly, CancellationToken cancellationToken = default)
     {
+        foreach (ProviderProfile provider in _providers) provider.Dispose();
         _providers.Clear();
 
         string path = AppDomain.CurrentDomain.BaseDirectory + "RConfigs/Providers/";
@@ -63,6 +64,12 @@ public sealed class ProviderManagerService : IProviderManager
     public void Add(ProviderProfile provider)
         => _providers.Add(provider);
 
+    /// <summary>Releases owned decision transports when the service provider shuts down.</summary>
+    public void Dispose()
+    {
+        foreach (ProviderProfile provider in _providers) provider.Dispose();
+    }
+
     private void LoadFromFileSystem(string path)
     {
         List<string> files = Directory
@@ -89,6 +96,9 @@ public sealed class ProviderManagerService : IProviderManager
             }
         }
     }
+
+    /// <inheritdoc/>
+    public void LoadAssembly(Assembly assembly) => LoadFromEmbeddedResources(assembly);
 
     private void LoadFromEmbeddedResources(Assembly assembly)
     {

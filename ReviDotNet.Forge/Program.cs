@@ -294,6 +294,7 @@ builder.Services.AddSingleton<DependencyAnalyzerService>();
 builder.Services.AddSingleton<RunningJobsService>();
 builder.Services.AddSingleton<SavedSuitesService>();
 builder.Services.AddSingleton<PromptRegistryService>();
+builder.Services.AddSingleton<DecisionEditorService>();
 builder.Services.AddSingleton<TestRunnerService>();
 builder.Services.AddSingleton<AgentTestRunnerService>();
 builder.Services.AddSingleton<PromptGeneratorService>();

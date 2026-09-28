@@ -1,0 +1,18 @@
+[[information]]
+name = research-stop
+version = 1
+
+[[settings]]
+model = decision-default
+
+[[_decision]]
+questions:
+  sufficient:
+    type: boolean
+    instructions: Does the supplied evidence support a complete answer to the query without filling gaps by guessing?
+  unresolved:
+    type: boolean
+    instructions: Are material contradictions or missing facts still unresolved in the supplied evidence?
+  more-useful:
+    type: boolean
+    instructions: Is another retrieval round likely to add evidence needed for a materially better supported answer?

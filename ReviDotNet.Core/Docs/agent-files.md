@@ -5,22 +5,20 @@
 ## File Location and Name Resolution
 
 - Runtime lookup path: `RConfigs/Agents/**/*.agent`
-- Effective agent name:
-1. lower-cased subfolder path under `RConfigs/Agents/` (if any), plus
-2. `[[information]] name`
+- Effective agent name: the declared `[[information]] name`, verbatim.
 
 Example:
 - File: `RConfigs/Agents/Research/market-scan.agent`
 - `[[information]] name = market-scan`
-- Effective name: `research/market-scan`
+- Effective name: `market-scan`
 
 Use this exact effective name in code:
 
 ```csharp
 using Revi;
 
-AgentResult result = await Agent.Run("research/market-scan");
-string? output = await Agent.ToString("research/market-scan", "Find recent pricing trends.");
+AgentResult result = await Agent.Run("market-scan");
+string? output = await Agent.ToString("market-scan", "Find recent pricing trends.");
 ```
 
 ## Sections
@@ -29,7 +27,7 @@ string? output = await Agent.ToString("research/market-scan", "Find recent prici
 
 | Option | Type | Description |
 | :--- | :--- | :--- |
-| `name` | string | Logical agent name (combined with folder prefix). |
+| `name` | string | Declared logical agent name; folders do not add a prefix. |
 | `version` | integer | Optional version number. Must be an integer if present — a non-integer value throws a `FormatException` that is caught per-file and **skips the entire agent**, so the agent silently won't be found at runtime. |
 | `description` | string | Optional description for maintainers. |
 

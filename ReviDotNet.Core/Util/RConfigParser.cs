@@ -207,11 +207,17 @@ public static class RConfigParser
     // ======================
     
     /// <summary>
-    /// Reads rcfg data from a file and converts it into a dictionary.
+    /// Reads embedded rcfg text and converts it into a dictionary.
     /// </summary>
-    /// <param name="filePath">The path of the file to read.</param>
+    /// <param name="content">The complete RConfig document.</param>
     /// <returns>A dictionary containing the rcfg data.</returns>
-    public static Dictionary<string, string> ReadEmbedded(string content)
+    public static Dictionary<string, string> ReadEmbedded(string content) => ReadEmbedded(content, preserveRawSectionWhitespace: false);
+
+    /// <summary>Reads an RConfig document, optionally preserving raw-block whitespace for structured data such as YAML.</summary>
+    /// <param name="content">The complete RConfig document.</param>
+    /// <param name="preserveRawSectionWhitespace">Keeps indentation and trailing newlines in raw sections; ordinary prompts retain their existing trimming behavior.</param>
+    /// <returns>Flattened metadata and raw section bodies.</returns>
+    public static Dictionary<string, string> ReadEmbedded(string content, bool preserveRawSectionWhitespace)
     {
         var configDictionary = new Dictionary<string, string>();
         string currentSection = "";
@@ -231,7 +237,8 @@ public static class RConfigParser
                     line, 
                     ref currentSection, 
                     ref sectionContent, 
-                    ref configDictionary);
+                    ref configDictionary,
+                    preserveRawSectionWhitespace);
             }
         }
         catch (Exception ex)
@@ -283,7 +290,8 @@ public static class RConfigParser
         string line, 
         ref string currentSection, 
         ref StringBuilder sectionContent, 
-        ref Dictionary<string, string> configDictionary)
+        ref Dictionary<string, string> configDictionary,
+        bool preserveRawSectionWhitespace = false)
     {
         if (currentSection.StartsWith("_"))
         {
@@ -292,6 +300,7 @@ public static class RConfigParser
             if (line.StartsWith(@"\[[") && line.EndsWith("]]"))
             {
                 sectionContent.AppendLine(line.Substring(1));
+                configDictionary[currentSection] = preserveRawSectionWhitespace ? sectionContent.ToString() : sectionContent.ToString().Trim();
                 return;
             }
 
@@ -300,7 +309,7 @@ public static class RConfigParser
             {
                 if (sectionContent.Length > 0)
                 {
-                    configDictionary[currentSection] = sectionContent.ToString().Trim();
+                    configDictionary[currentSection] = preserveRawSectionWhitespace ? sectionContent.ToString() : sectionContent.ToString().Trim();
                     sectionContent.Clear();
                 }
 
@@ -338,7 +347,7 @@ public static class RConfigParser
 
         if (currentSection.StartsWith("_") && sectionContent.Length > 0)
         {
-            configDictionary[currentSection] = sectionContent.ToString().Trim();
+            configDictionary[currentSection] = preserveRawSectionWhitespace ? sectionContent.ToString() : sectionContent.ToString().Trim();
         }
     }
     
@@ -480,7 +489,7 @@ public static class RConfigParser
 
                 if (property.Name == "Name" && namePrefix != null)
                 {
-                    value = $"{namePrefix}{value}";
+                    value = ConfigName.Resolve($"{namePrefix}{value}");
                 }
 
                 try

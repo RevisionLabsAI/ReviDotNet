@@ -93,10 +93,10 @@ namespace ReviDotNet.Analyzers
                 {
                     string raw = protocol.Raw.Trim();
                     // Mirror the runtime Protocol enum (which includes Perplexity).
-                    string[] allowed = { "openai", "openrouter", "vllm", "gemini", "perplexity", "llamaapi", "claude" };
+                    string[] allowed = { "openai", "openrouter", "vllm", "gemini", "perplexity", "llamaapi", "claude", "systemone" };
                     if (!allowed.Contains(raw.ToLowerInvariant()))
                     {
-                        ReportError(context, file, protocol.Line, raw, "general.protocol", suffix: " (allowed: OpenAI, OpenRouter, vLLM, Gemini, Perplexity, LLamaAPI, Claude)");
+                        ReportError(context, file, protocol.Line, raw, "general.protocol", suffix: " (allowed: OpenAI, OpenRouter, vLLM, Gemini, Perplexity, LLamaAPI, Claude, SystemOne)");
                     }
                 }
                 else

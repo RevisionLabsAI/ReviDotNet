@@ -14,6 +14,9 @@ public interface IPromptManager
     /// <summary>Loads prompt files from the application assembly.</summary>
     Task LoadAsync(Assembly assembly, CancellationToken cancellationToken = default);
 
+    /// <summary>Additively loads embedded configurations without clearing existing entries.</summary>
+    void LoadAssembly(Assembly assembly) => throw new NotSupportedException("This registry does not support additive assembly loading.");
+
     /// <summary>
     /// Additively loads prompts from <paramref name="rootDirectory"/>/<c>Prompts/</c> on disk (an extra
     /// <c>RConfigs</c> root). Existing prompts are kept unless the loaded one has a higher version; a

@@ -36,6 +36,12 @@ public class AgentRunner
     private readonly IModelManager _models;
     private readonly IPromptManager _prompts;
     private readonly IToolManager _tools;
+    private readonly IContextSelector? _contextSelector;
+    private IReadOnlyList<string>? _visibleTools;
+    private IReadOnlyList<ContextCandidate> _authorizedContext = [];
+    private string _selectionRequest = "";
+    private string? _lastSelectionKey;
+    private ContextSelectionResult? _lastSelection;
 
     /// <summary>
     /// Optional pre-seeded conversation for an interactive chat turn. When supplied, the run starts
@@ -88,7 +94,7 @@ public class AgentRunner
     /// <summary>Creates an <see cref="AgentRunner"/> using the injected service managers (preferred path).</summary>
     public AgentRunner(AgentProfile profile, Dictionary<string, object> inputs, CancellationToken token,
         AgentRunContext ctx, IModelManager models, IPromptManager prompts, IToolManager tools,
-        IReadOnlyList<Message>? seedHistory = null, ModelProfile? modelOverride = null)
+        IReadOnlyList<Message>? seedHistory = null, ModelProfile? modelOverride = null, IContextSelector? contextSelector = null)
     {
         _profile = profile;
         _inputs = inputs;
@@ -99,6 +105,7 @@ public class AgentRunner
         _tools = tools;
         _seedHistory = seedHistory;
         _modelOverride = modelOverride;
+        _contextSelector = contextSelector;
 
         SessionId = Guid.NewGuid().ToString("n");
         // NOTE: the run-root event is emitted at the start of RunAsync, not here — see _runRoot.
@@ -133,6 +140,7 @@ public class AgentRunner
         else
             _conversationHistory.Add(new Message("user", BuildInitialUserMessage()));
 
+        _selectionRequest = _conversationHistory.LastOrDefault(m => m.Role == "user")?.Content ?? "";
         while (true)
         {
             _token.ThrowIfCancellationRequested();
@@ -164,6 +172,10 @@ public class AgentRunner
             }
 
             // ── Build messages and call LLM ──────────────────────────────────
+            try { await SelectVisibleToolsAsync(); }
+            catch (OperationCanceledException) { return Terminate(AgentExitReason.Cancelled); }
+            (bool selectionOverBudget, string selectionBudgetMessage) = CheckBudget();
+            if (selectionOverBudget) return Terminate(AgentExitReason.BudgetExceeded, guardrailMessage: selectionBudgetMessage);
             List<Message> messages = BuildStepMessages();
 
             CompletionResult? llmResult = null;
@@ -796,13 +808,13 @@ public class AgentRunner
     {
         var names = new List<string>(_currentState.Tools);
         if (_ctx.Files is { Files.Count: > 0 })
-            names.AddRange(new[] { "list-files", "read-file", "search-files" });
+            names.AddRange(FileAccessTools.Names);
 
         if (names.Count == 0)
             return "  (none available — use an empty tool_calls array)";
 
         var sb = new System.Text.StringBuilder();
-        foreach (var name in names)
+        foreach (var name in _visibleTools ?? names)
         {
             string? desc = _tools.GetBuiltIn(name)?.Description
                 ?? _tools.GetCustom(name)?.Description
@@ -821,6 +833,51 @@ public class AgentRunner
         "search-files" => "Searches across all attached files for relevant content. Input: a search query string.",
         _ => null,
     };
+
+    /// <summary>Selects only executable authorized tools; execution still checks the original state allowlist.</summary>
+    private async Task SelectVisibleToolsAsync()
+    {
+        _visibleTools = null;
+        List<string> names = [.. _currentState.Tools];
+        if (_ctx.Files is { Files.Count: > 0 }) names.AddRange(FileAccessTools.Names);
+        ContextCandidate[] candidates = names.Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(name => _tools.GetBuiltIn(name))
+            .Where(tool => tool is not null)
+            .Select(tool => new ContextCandidate(tool!.Name, tool.Description, Required:
+                _currentState.AlwaysVisibleTools.Contains(tool.Name, StringComparer.OrdinalIgnoreCase) || FileAccessTools.Names.Contains(tool.Name) || tool.Name == "tool-search"))
+            .ToArray();
+        _authorizedContext = candidates;
+        if (_contextSelector is null || string.IsNullOrWhiteSpace(_currentState.ToolSelector)) return;
+        string request = _selectionRequest;
+        // Request prose and catalog metadata only; tool arguments/results and attached bodies are not sent.
+        string historyDigest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+            string.Join("\n", _conversationHistory.TakeLast(4).Select(m => m.Content)))));
+        object state = new { request = request[..Math.Min(request.Length, 4000)], state = _currentStateName, description = _currentState.Description, historyDigest };
+        ContextSelectionOptions options = new()
+        {
+            Prompt = _currentState.ToolSelector, MaximumSelected = _currentState.MaxVisibleTools,
+            Timeout = TimeSpan.FromMilliseconds(_currentState.SelectorTimeoutMs)
+        };
+        string? key;
+        try { key = _contextSelector.GetCacheKey(state, candidates, options); }
+        catch { key = null; }
+        bool cached = key is not null && key == _lastSelectionKey && _lastSelection is not null;
+        ContextSelectionResult selected;
+        try { selected = cached ? _lastSelection! : await _contextSelector.SelectAsync(state, candidates, options, _token); }
+        catch (OperationCanceledException) when (_token.IsCancellationRequested) { throw; }
+        catch (OperationCanceledException) { selected = new(candidates, "selector-timeout", null); }
+        catch { selected = new(candidates, "selector-unavailable", null); }
+        if (!cached && selected.FallbackReason is null) { _lastSelectionKey = key; _lastSelection = selected; }
+        // Defense in depth even when the host replaces the selector implementation.
+        HashSet<string> selectedIds = (selected.FallbackReason is null ? selected.Candidates : candidates).Select(c => c.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _visibleTools = candidates.Where(c => c.Required || selectedIds.Contains(c.Id)).Select(c => c.Id).ToArray();
+        if (!cached && selected.Decision is not null)
+        {
+            _currentStateCost += selected.Decision.Cost;
+            _runTotalCost += selected.Decision.Cost;
+        }
+        LogStep("context-selection", $"Context selection: candidates={candidates.Length} selected={_visibleTools.Count} fallback={selected.FallbackReason ?? "none"}");
+    }
 
     /// <summary>
     /// Replaces <c>{identifier}</c> placeholders in the given text with the corresponding
@@ -950,7 +1007,7 @@ public class AgentRunner
             ToolCallResult result;
             // Carry the current state's max-agent-depth guardrail so InvokeAgentTool enforces the
             // per-state override rather than only the runner-wide default.
-            AgentRunContext childCtx = _ctx.Child(toolCallRlog, _currentState.Guardrails.MaxAgentDepth);
+            AgentRunContext childCtx = _ctx.Child(toolCallRlog, _currentState.Guardrails.MaxAgentDepth, _authorizedContext);
             using (AgentRunContext.Push(childCtx))
             {
                 result = await ExecuteToolAsync(tc.Name, tc.Input);

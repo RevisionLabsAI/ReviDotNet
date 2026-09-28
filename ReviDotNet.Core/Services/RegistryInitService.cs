@@ -24,6 +24,7 @@ internal sealed class RegistryInitService : IHostedService
     private readonly IAgentManager _agents;
     private readonly Assembly _appAssembly;
     private readonly ReviRegistryOptions _options;
+    private readonly IDecisionRegistry _decisions;
     private readonly IReviLogger<RegistryInitService> _logger;
 
     /// <summary>Initializes the <see cref="RegistryInitService"/> with all registry services.</summary>
@@ -36,7 +37,8 @@ internal sealed class RegistryInitService : IHostedService
         IAgentManager agents,
         Assembly appAssembly,
         ReviRegistryOptions options,
-        IReviLogger<RegistryInitService> logger)
+        IReviLogger<RegistryInitService> logger,
+        IDecisionRegistry decisions)
     {
         _providers = providers;
         _models = models;
@@ -47,6 +49,7 @@ internal sealed class RegistryInitService : IHostedService
         _appAssembly = appAssembly;
         _options = options;
         _logger = logger;
+        _decisions = decisions;
     }
 
     /// <inheritdoc/>
@@ -56,25 +59,33 @@ internal sealed class RegistryInitService : IHostedService
         {
             _logger.LogInfo($"Initializing Revi registries from assembly {_appAssembly.FullName}");
 
+            IReadOnlyList<string> directories = ResolveAdditionalConfigDirectories();
+            Assembly[] extras = _options.AdditionalAssemblies.Distinct().Where(a => a != _appAssembly).ToArray();
+            // Finish each dependency layer across all sources before loading the next.
             await _providers.LoadAsync(_appAssembly, cancellationToken);
+            foreach (Assembly extra in extras) _providers.LoadAssembly(extra);
+            foreach (string dir in directories) _providers.LoadDirectory(dir);
             await _models.LoadAsync(_appAssembly, cancellationToken);
+            foreach (Assembly extra in extras) _models.LoadAssembly(extra);
+            foreach (string dir in directories) _models.LoadDirectory(dir);
             await _embeddings.LoadAsync(_appAssembly, cancellationToken);
+            foreach (Assembly extra in extras) _embeddings.LoadAssembly(extra);
+            foreach (string dir in directories) _embeddings.LoadDirectory(dir);
             await _prompts.LoadAsync(_appAssembly, cancellationToken);
+            foreach (Assembly extra in extras) _prompts.LoadAssembly(extra);
+            foreach (string dir in directories) _prompts.LoadDirectory(dir);
             await _tools.LoadAsync(_appAssembly, cancellationToken);
+            foreach (Assembly extra in extras) _tools.LoadAssembly(extra);
+            foreach (string dir in directories) _tools.LoadDirectory(dir);
             await _agents.LoadAsync(_appAssembly, cancellationToken);
-
-            foreach (Assembly extra in _options.AdditionalAssemblies)
-            {
-                _logger.LogInfo($"Loading additional embedded RConfigs from assembly {extra.GetName().Name}");
-                await _providers.LoadAsync(extra, cancellationToken);
-                await _models.LoadAsync(extra, cancellationToken);
-                await _embeddings.LoadAsync(extra, cancellationToken);
-                await _prompts.LoadAsync(extra, cancellationToken);
-                await _tools.LoadAsync(extra, cancellationToken);
-                await _agents.LoadAsync(extra, cancellationToken);
-            }
-
-            LoadAdditionalConfigDirectories();
+            foreach (Assembly extra in extras) _agents.LoadAssembly(extra);
+            foreach (string dir in directories) _agents.LoadDirectory(dir);
+            _decisions.Reset();
+            _decisions.LoadDirectory(Path.Combine(AppContext.BaseDirectory, "RConfigs"));
+            _decisions.LoadAssembly(_appAssembly);
+            foreach (Assembly extra in extras) _decisions.LoadAssembly(extra);
+            foreach (string dir in directories) _decisions.LoadDirectory(dir);
+            _decisions.LoadAssembly(typeof(DecisionRegistry).Assembly);
 
             ForgeManager.Load();
 
@@ -94,9 +105,9 @@ internal sealed class RegistryInitService : IHostedService
     /// model in one folder can resolve a provider declared in another. Missing/invalid folders are skipped
     /// with a warning rather than aborting startup.
     /// </summary>
-    private void LoadAdditionalConfigDirectories()
+    private IReadOnlyList<string> ResolveAdditionalConfigDirectories()
     {
-        if (_options.AdditionalConfigDirectories.Count == 0) return;
+        if (_options.AdditionalConfigDirectories.Count == 0) return [];
 
         var resolved = new List<string>();
         foreach (string dir in _options.AdditionalConfigDirectories)
@@ -121,14 +132,7 @@ internal sealed class RegistryInitService : IHostedService
             _logger.LogInfo($"Loading additional RConfigs from: {full}");
         }
 
-        if (resolved.Count == 0) return;
-
-        foreach (string dir in resolved) _providers.LoadDirectory(dir);
-        foreach (string dir in resolved) _models.LoadDirectory(dir);
-        foreach (string dir in resolved) _embeddings.LoadDirectory(dir);
-        foreach (string dir in resolved) _prompts.LoadDirectory(dir);
-        foreach (string dir in resolved) _tools.LoadDirectory(dir);
-        foreach (string dir in resolved) _agents.LoadDirectory(dir);
+        return resolved;
     }
 
     /// <inheritdoc/>

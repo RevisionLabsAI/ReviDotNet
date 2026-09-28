@@ -30,9 +30,9 @@ The INI-like parser has a few behaviors worth knowing:
 
 A prompt's **effective name** — the string you pass to `ToObject`/`ToString`/etc. — is:
 
-> `<lower-cased subfolder path under RConfigs/Prompts/>` + `/` (when non-empty) + the `[[information]] name` value.
+> The declared `[[information]] name` value, without any automatic folder prefix.
 
-The physical filename is **ignored**. For example, a file at `RConfigs/Prompts/Search/anything.pmt` with `name = analyze-specs` resolves to `search/analyze-specs`. Lookups (`Get`) match this effective name **exactly and case-sensitively**, so `Get("analyze-specs")` for a prompt in a subfolder returns null — use `"search/analyze-specs"`.
+The physical filename and organizational folders are ignored. `RConfigs/Prompts/Search/anything.pmt` with `name = analyze-specs` is referenced as `analyze-specs`, case-sensitively. To use `search/analyze-specs`, declare that full name explicitly.
 
 **Versioning / duplicates:** when two loaded prompts resolve to the same effective name, a later one replaces an earlier one **only if its `version` is strictly greater**; a reload at an equal or lower version does not win. (This is how your own same-named prompt overrides a built-in embedded default.)
 

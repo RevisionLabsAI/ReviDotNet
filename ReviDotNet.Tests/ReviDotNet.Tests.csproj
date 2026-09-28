@@ -6,6 +6,10 @@
     <LangVersion>12</LangVersion>
   </PropertyGroup>
   <ItemGroup>
+    <None Include="../Docs/Examples/Decisions/RConfigs/**/*" Link="DecisionExamples/RConfigs/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="Decisions/Fixtures/**/*.pmt" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="xunit" Version="2.9.0" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />

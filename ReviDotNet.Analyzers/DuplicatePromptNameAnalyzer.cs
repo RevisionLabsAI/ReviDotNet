@@ -16,10 +16,8 @@ namespace ReviDotNet.Analyzers
 {
     /// <summary>
     /// Analyzer REVI004: Detects duplicate prompt logical names among .pmt AdditionalFiles.
-    /// A prompt's effective name matches Infer/PromptManager rules: lower-cased folder prefix under
-    /// RConfigs/Prompts/ (with forward slashes and a trailing slash when present) concatenated with
-    /// the information_name value inside the file.
-    /// Reports a Warning when multiple distinct files resolve to the same name (case-insensitive).
+    /// A prompt's effective name is its declared information_name; folders are organizational only.
+    /// Reports a Warning when distinct files declare the same case-sensitive name.
     /// </summary>
     [DiagnosticAnalyzer(LanguageNames.CSharp)]
     public sealed class DuplicatePromptNameAnalyzer : DiagnosticAnalyzer
@@ -31,7 +29,7 @@ namespace ReviDotNet.Analyzers
 
         private static readonly LocalizableString Title = "Duplicate prompt name";
         private static readonly LocalizableString Message = "Multiple prompt files resolve to the same name: '{0}'";
-        private static readonly LocalizableString Description = "Ensure each prompt has a unique effective name (folder prefix + information_name).";
+        private static readonly LocalizableString Description = "Ensure each prompt has a unique declared information_name.";
         private const string Category = "Usage";
 
         private static readonly DiagnosticDescriptor Rule = new DiagnosticDescriptor(
@@ -55,13 +53,13 @@ namespace ReviDotNet.Analyzers
         }
 
         /// <summary>
-        /// Scans AdditionalFiles for .pmt prompts and reports duplicates by logical name (case-insensitive).
+        /// Scans AdditionalFiles for .pmt prompts and reports duplicates by declared name.
         /// </summary>
         /// <param name="context">The compilation analysis context.</param>
         private static void AnalyzeCompilation(CompilationAnalysisContext context)
         {
             ImmutableArray<AdditionalText> files = context.Options.AdditionalFiles;
-            Dictionary<string, List<AdditionalText>> byName = new Dictionary<string, List<AdditionalText>>(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, List<AdditionalText>> byName = new Dictionary<string, List<AdditionalText>>(StringComparer.Ordinal);
 
             foreach (AdditionalText file in files)
             {
@@ -78,8 +76,7 @@ namespace ReviDotNet.Analyzers
                 if (string.IsNullOrEmpty(infoName))
                     continue;
 
-                string prefix = ExtractPromptFolderPrefix(path);
-                string fullName = prefix + infoName;
+                string fullName = Revi.ConfigName.Resolve(infoName);
 
                 if (!byName.TryGetValue(fullName, out List<AdditionalText>? list))
                 {
@@ -128,30 +125,6 @@ namespace ReviDotNet.Analyzers
             return nm.Success ? nm.Groups[1].Value.Trim() : null;
         }
 
-        /// <summary>
-        /// Extracts lower-cased forward-slash folder prefix under RConfigs/Prompts/ with trailing slash.
-        /// </summary>
-        /// <param name="fullPath">The OS path.</param>
-        /// <returns>The normalized prefix or empty string.</returns>
-        private static string ExtractPromptFolderPrefix(string fullPath)
-        {
-            if (string.IsNullOrEmpty(fullPath))
-                return string.Empty;
-
-            string normalized = fullPath.Replace('\\', '/');
-            int idx = normalized.IndexOf("RConfigs/Prompts/", StringComparison.OrdinalIgnoreCase);
-            if (idx < 0)
-                return string.Empty;
-
-            int start = idx + "RConfigs/Prompts/".Length;
-            string afterBase = normalized.Substring(start);
-            int lastSlash = afterBase.LastIndexOf('/');
-            if (lastSlash <= 0)
-                return string.Empty;
-
-            string directories = afterBase.Substring(0, lastSlash + 1);
-            return directories.ToLowerInvariant();
-        }
 
         /// <summary>
         /// Creates a file start location for an AdditionalText.

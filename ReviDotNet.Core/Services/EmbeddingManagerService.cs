@@ -132,6 +132,9 @@ public sealed class EmbeddingManagerService : IEmbeddingManager
         }
     }
 
+    /// <inheritdoc/>
+    public void LoadAssembly(Assembly assembly) => LoadFromEmbeddedResources(assembly);
+
     private void LoadFromEmbeddedResources(Assembly assembly)
     {
         try

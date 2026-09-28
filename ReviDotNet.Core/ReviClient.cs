@@ -26,6 +26,8 @@ public sealed class ReviClient : IAsyncDisposable
         Infer = provider.GetRequiredService<IInferService>();
         Agent = provider.GetRequiredService<IAgentService>();
         Embed = provider.GetRequiredService<IEmbedService>();
+        Decide = provider.GetRequiredService<IDecisionService>();
+        Documents = provider.GetRequiredService<IDocumentSearchService>();
     }
 
     /// <summary>LLM inference service. Call as <c>revi.Infer.ToObject&lt;T&gt;(...)</c>.</summary>
@@ -36,6 +38,12 @@ public sealed class ReviClient : IAsyncDisposable
 
     /// <summary>Embedding service. Call as <c>revi.Embed.Generate(...)</c>.</summary>
     public IEmbedService Embed { get; }
+
+    /// <summary>Typed decision service using named question packs and model profiles.</summary>
+    public IDecisionService Decide { get; }
+
+    /// <summary>Search over explicit authorized document collections.</summary>
+    public IDocumentSearchService Documents { get; }
 
     /// <inheritdoc/>
     public ValueTask DisposeAsync() => _provider.DisposeAsync();

@@ -24,7 +24,7 @@ namespace ReviDotNet.Analyzers
 
         private static readonly LocalizableString Title = "Duplicate agent name";
         private static readonly LocalizableString Message = "Multiple agent files resolve to the same name: '{0}'";
-        private static readonly LocalizableString Description = "Ensure each agent has a unique effective name (folder prefix + information_name).";
+        private static readonly LocalizableString Description = "Ensure each agent has a unique effective name (declared information_name, without folder prefixes).";
         private const string Category = "Usage";
 
         private static readonly DiagnosticDescriptor Rule = new DiagnosticDescriptor(
@@ -65,8 +65,7 @@ namespace ReviDotNet.Analyzers
                 if (string.IsNullOrEmpty(infoName))
                     continue;
 
-                string prefix = ExtractAgentFolderPrefix(path);
-                string fullName = prefix + infoName;
+                string fullName = Revi.ConfigName.Resolve(infoName);
 
                 if (!byName.TryGetValue(fullName, out List<AdditionalText>? list))
                 {
@@ -107,24 +106,6 @@ namespace ReviDotNet.Analyzers
             return nm.Success ? nm.Groups[1].Value.Trim() : null;
         }
 
-        private static string ExtractAgentFolderPrefix(string fullPath)
-        {
-            if (string.IsNullOrEmpty(fullPath))
-                return string.Empty;
-
-            string normalized = fullPath.Replace('\\', '/');
-            int idx = normalized.IndexOf("RConfigs/Agents/", StringComparison.OrdinalIgnoreCase);
-            if (idx < 0)
-                return string.Empty;
-
-            int start = idx + "RConfigs/Agents/".Length;
-            string afterBase = normalized.Substring(start);
-            int lastSlash = afterBase.LastIndexOf('/');
-            if (lastSlash <= 0)
-                return string.Empty;
-
-            return afterBase.Substring(0, lastSlash + 1).ToLowerInvariant();
-        }
 
         private static Location CreateFileStartLocation(AdditionalText file)
         {

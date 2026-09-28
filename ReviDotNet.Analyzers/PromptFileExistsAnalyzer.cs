@@ -38,7 +38,7 @@ namespace ReviDotNet.Analyzers
 
         private static readonly LocalizableString Title = "Missing Prompt";
         private static readonly LocalizableString MessageFormat = "Prompt '{0}' not found in AdditionalFiles (RConfigs/Prompts)";
-        private static readonly LocalizableString Description = "All prompts used in Infer methods must exist in AdditionalFiles and follow the same name resolution as Infer (folder prefix + information_name).";
+        private static readonly LocalizableString Description = "All prompts used in Infer methods must exist in AdditionalFiles and follow the same name resolution as Infer (declared information_name, without folder prefixes).";
         private const string Category = "Usage";
 
         private static readonly DiagnosticDescriptor Rule = new DiagnosticDescriptor(
@@ -113,7 +113,7 @@ namespace ReviDotNet.Analyzers
         /// Builds the set of available prompt names from <see cref="AdditionalText"/> files by:
         /// - filtering to <c>.pmt</c> files
         /// - parsing the <c>information_name</c> value
-        /// - prefixing with the lower-cased subdirectory path under <c>RConfigs/Prompts/</c> (with forward slashes and trailing slash)
+        /// - resolving the declared name verbatim; folders are organizational only
         /// </summary>
         /// <param name="additionalFiles">The collection of additional files configured for the compilation.</param>
         /// <returns>A case-sensitive set of fully-resolved prompt names.</returns>
@@ -135,43 +135,13 @@ namespace ReviDotNet.Analyzers
                 if (string.IsNullOrEmpty(infoName))
                     continue;
 
-                string folderPrefix = ExtractPromptFolderPrefix(path);
-                string fullName = folderPrefix + infoName;
+                string fullName = Revi.ConfigName.Resolve(infoName);
                 names.Add(fullName);
             }
 
             return names;
         }
 
-        /// <summary>
-        /// Extracts the folder prefix under an <c>RConfigs/Prompts/</c> segment from a full path.
-        /// The returned value uses forward slashes and includes a trailing slash when not empty, lower-cased.
-        /// If the segment is not present or there are no subdirectories, returns an empty string.
-        /// </summary>
-        /// <param name="fullPath">The full OS path to the file.</param>
-        /// <returns>The normalized folder prefix.</returns>
-        private static string ExtractPromptFolderPrefix(string fullPath)
-        {
-            if (string.IsNullOrEmpty(fullPath))
-                return string.Empty;
-
-            string normalized = fullPath.Replace('\\', '/');
-
-            // Find "RConfigs/Prompts/" (case-insensitive)
-            int idx = normalized.IndexOf("RConfigs/Prompts/", StringComparison.OrdinalIgnoreCase);
-            if (idx < 0)
-                return string.Empty;
-
-            int start = idx + "RConfigs/Prompts/".Length;
-            // Slice after base to end, then remove file name
-            string afterBase = normalized.Substring(start);
-            int lastSlash = afterBase.LastIndexOf('/') ;
-            if (lastSlash <= 0)
-                return string.Empty;
-
-            string directories = afterBase.Substring(0, lastSlash + 1); // keep trailing '/'
-            return directories.ToLowerInvariant();
-        }
 
         /// <summary>
         /// Attempts to parse the <c>information_name</c> value from a .pmt file content.

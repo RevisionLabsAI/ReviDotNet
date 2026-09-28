@@ -1,0 +1,16 @@
+[[information]]
+name = support-route
+version = 1
+
+[[settings]]
+model = decision-default
+
+[[_decision]]
+questions:
+  queue:
+    type: choice
+    instructions: Which support queue should own this ticket?
+    criteria:
+      Billing: Payments, invoices, subscriptions, and refunds.
+      Technical: Product failures and integration problems.
+      Other: No clear fit, or insufficient evidence to choose.

@@ -116,14 +116,11 @@ namespace ReviDotNet.Analyzers
         }
 
         /// <summary>
-        /// Builds a case-insensitive set of available model or provider names from AdditionalFiles (.rcfg).
-        /// Name sources:
-        /// - File stem (without extension)
-        /// - Any explicit 'name = X' or 'id = X' key in the file
+        /// Builds the declared general_name identifiers from AdditionalFiles, matching runtime naming.
         /// </summary>
         private static HashSet<string> BuildAvailableConfigNames(ImmutableArray<AdditionalText> files, bool isModel)
         {
-            HashSet<string> set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> set = new HashSet<string>(StringComparer.Ordinal);
             foreach (AdditionalText f in files)
             {
                 string p = f.Path ?? string.Empty;
@@ -135,31 +132,18 @@ namespace ReviDotNet.Analyzers
                 if (normalized.IndexOf(segment, StringComparison.OrdinalIgnoreCase) < 0)
                     continue;
 
-                // File stem
-                try
-                {
-                    string fileName = Path.GetFileNameWithoutExtension(p);
-                    if (!string.IsNullOrWhiteSpace(fileName))
-                        set.Add(NormalizeKey(fileName));
-                }
-                catch
-                {
-                    // ignore path issues
-                }
-
-                // Parse textual id/name keys inside file
+                // Decision and embedding models cannot satisfy inference prompt references.
+                if (isModel && (normalized.IndexOf("/Models/Decision/", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    normalized.IndexOf("/Models/Embedding/", StringComparison.OrdinalIgnoreCase) >= 0)) continue;
                 SourceText? st = f.GetText();
                 string text = st?.ToString() ?? string.Empty;
                 if (string.IsNullOrWhiteSpace(text))
                     continue;
 
-                foreach (Match m in Regex.Matches(text, @"^\s*(name|id)\s*[:=]\s*(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase))
-                {
-                    string raw = m.Groups[2].Value.Trim();
-                    raw = StripQuotes(raw);
-                    if (!string.IsNullOrWhiteSpace(raw))
-                        set.Add(NormalizeKey(raw));
-                }
+                Match flat = Regex.Match(text, @"^\s*general_name\s*=\s*(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+                Match section = Regex.Match(text, @"\[\[\s*general\s*\]\](?<body>.*?)(?:\n\s*\[\[|\z)", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+                Match declared = flat.Success ? flat : Regex.Match(section.Groups["body"].Value, @"^\s*name\s*=\s*(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+                if (declared.Success) set.Add(NormalizeKey(declared.Groups[1].Value));
             }
             return set;
         }
@@ -193,7 +177,7 @@ namespace ReviDotNet.Analyzers
             foreach (Match m in rx.Matches(content))
             {
                 string key = m.Groups[1].Value.Trim().ToLowerInvariant();
-                string raw = StripQuotes(m.Groups[4].Value.Trim());
+                string raw = m.Groups[4].Value.Trim();
                 if (string.IsNullOrWhiteSpace(raw))
                     continue;
 
@@ -253,7 +237,7 @@ namespace ReviDotNet.Analyzers
 
         private static string NormalizeKey(string key)
         {
-            return key.Trim().ToLowerInvariant();
+            return Revi.ConfigName.Resolve(key);
         }
 
         private static Location CreateLocation(AdditionalText file, LinePositionSpan? span)

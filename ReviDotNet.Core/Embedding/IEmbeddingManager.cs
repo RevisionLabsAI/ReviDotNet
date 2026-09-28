@@ -14,6 +14,9 @@ public interface IEmbeddingManager
     /// <summary>Loads embedding model profiles from the application assembly.</summary>
     Task LoadAsync(Assembly assembly, CancellationToken cancellationToken = default);
 
+    /// <summary>Additively loads embedded configurations without clearing existing entries.</summary>
+    void LoadAssembly(Assembly assembly) => throw new NotSupportedException("This registry does not support additive assembly loading.");
+
     /// <summary>
     /// Additively loads embedding model profiles from <paramref name="rootDirectory"/>/<c>Models/Embedding/</c>
     /// on disk (an extra <c>RConfigs</c> root). Existing models are kept on a name clash; a missing folder is a no-op.

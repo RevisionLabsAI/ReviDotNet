@@ -20,11 +20,13 @@ public sealed class ToolManagerService : IToolManager
     private readonly IReviLogger<ToolManagerService> _logger;
 
     /// <summary>Initializes a new <see cref="ToolManagerService"/> and registers the default built-in tools.</summary>
-    public ToolManagerService(Lazy<IAgentService> agentService, IWebContentService webContent, IModelManager models, IReviLogger<ToolManagerService> logger)
+    public ToolManagerService(Lazy<IAgentService> agentService, IWebContentService webContent, IModelManager models, IReviLogger<ToolManagerService> logger,
+        IDocumentSearchService? documentSearch = null, IDocumentTextExtractor? textExtractor = null)
     {
         _logger = logger;
 
         Register(new WebSearchTool());
+        Register(new ToolSearchTool());
         Register(new WebScrapeTool(webContent));
         Register(new WebExtractTool(webContent));
         Register(new InvokeAgentTool(agentService));
@@ -32,7 +34,13 @@ public sealed class ToolManagerService : IToolManager
         // File-access tools (operate on AgentRunContext.Files; the reader needs the model registry).
         Register(new ListFilesTool());
         Register(new ReadFileTool(models));
-        Register(new SearchFilesTool(models));
+        if (documentSearch is not null)
+        {
+            IDocumentTextExtractor extractor = textExtractor ?? new DocumentTextExtractor();
+            Register(new DocumentSearchTool(documentSearch, extractor));
+            Register(new DocumentSearchTool(documentSearch, extractor, "search-files"));
+        }
+        else Register(new SearchFilesTool(models));
     }
 
     /// <inheritdoc/>
@@ -129,6 +137,9 @@ public sealed class ToolManagerService : IToolManager
             }
         }
     }
+
+    /// <inheritdoc/>
+    public void LoadAssembly(Assembly assembly) => LoadFromEmbeddedResources(assembly);
 
     private void LoadFromEmbeddedResources(Assembly assembly)
     {

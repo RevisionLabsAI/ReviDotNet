@@ -15,7 +15,8 @@ public sealed class AgentService(
     IModelManager models,
     IPromptManager prompts,
     IToolManager tools,
-    IReviLogger<AgentService> logger) : IAgentService
+    IReviLogger<AgentService> logger,
+    IContextSelector? contextSelector = null) : IAgentService
 {
     /// <inheritdoc/>
     public Task<AgentResult> Run(
@@ -32,7 +33,7 @@ public sealed class AgentService(
         CancellationToken token = default)
     {
         AgentProfile profile = FindAgent(agentName);
-        AgentRunner runner = new(profile, inputs ?? new Dictionary<string, object>(), token, ctx, models, prompts, tools);
+        AgentRunner runner = new(profile, inputs ?? new Dictionary<string, object>(), token, ctx, models, prompts, tools, contextSelector: contextSelector);
         return await runner.RunAsync();
     }
 
@@ -63,7 +64,8 @@ public sealed class AgentService(
             models,
             prompts,
             toolOverride ?? tools,
-            modelOverride: modelOverride);
+            modelOverride: modelOverride,
+            contextSelector: contextSelector);
         return await runner.RunAsync();
     }
 

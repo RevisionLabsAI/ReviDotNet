@@ -137,6 +137,9 @@ public sealed class ModelManagerService : IModelManager
         }
     }
 
+    /// <inheritdoc/>
+    public void LoadAssembly(Assembly assembly) => LoadFromEmbeddedResources(assembly);
+
     private void LoadFromEmbeddedResources(Assembly assembly)
     {
         try

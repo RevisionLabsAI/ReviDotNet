@@ -100,6 +100,9 @@ public sealed class AgentManagerService : IAgentManager
         }
     }
 
+    /// <inheritdoc/>
+    public void LoadAssembly(Assembly assembly) => LoadFromEmbeddedResources(assembly);
+
     private void LoadFromEmbeddedResources(Assembly assembly)
     {
         try

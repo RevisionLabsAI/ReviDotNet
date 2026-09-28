@@ -1,6 +1,6 @@
 # Model and Embedding Configuration Files
 
-ReviDotNet uses `.rcfg` files to define specific AI models and their capabilities. These files are categorized into **Inference** (LLMs for text generation) and **Embedding** (models for vector embeddings) and are typically stored in the `Models/Inference` and `Models/Embedding` directories, respectively.
+ReviDotNet uses `.rcfg` files for Inference, Embedding, and Decision models, stored under `Models/Inference`, `Models/Embedding`, and `Models/Decision`. Decision models have a separate registry/API: see [Decision models](../../Docs/decisions.md).
 
 ## File Format Overview
 
@@ -10,7 +10,7 @@ Like other ReviDotNet configuration files, model files use an INI-like structure
 
 These rules apply to **both** inference and embedding models:
 
-- **Folder prefixing.** A model's effective lookup name is the lower-cased subdirectory path under the load root (`Models/Inference` or `Models/Embedding`), joined with `/`, prepended to the `[[general]] name`. For example a file at `Models/Inference/openai/fast.rcfg` with `name = gpt` resolves to `openai/gpt`. You must pass that **prefixed** name to `modelName` / `Get` / `Find` / `embed.Generate(text, "<name>")` — the bare `name` won't resolve when the file lives in a subfolder (you'll get a null / "Could not find model" result).
+- **Declared names.** The lookup name is `[[general]] name` verbatim. Organizational folders and physical filenames never prepend a prefix. For example, `Models/Inference/openai/fast.rcfg` with `name = gpt` is referenced as `gpt`.
 - **Provider binding side effects.** A model is bound to its provider by `provider-name`. If `provider-name` is missing, the profile's `Init()` throws and the model is force-disabled. If the named provider is absent or itself disabled, the model is force-disabled (logged) during provider resolution. Either way the model silently **drops out of `Find`/selection** — a perfectly well-formed model can become non-selectable purely because of provider configuration, so check startup logs if a model "disappears".
 
 ## Inference Model Sections (`.rcfg`)

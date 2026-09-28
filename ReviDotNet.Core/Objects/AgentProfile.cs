@@ -355,6 +355,10 @@ public class AgentProfile
                     case "tools":
                         state.Tools = Util.SplitByCommaOrSpace(value);
                         break;
+                    case "tool-selector": state.ToolSelector = value; break;
+                    case "max-visible-tools": state.MaxVisibleTools = int.Parse(value); break;
+                    case "always-visible-tools": state.AlwaysVisibleTools = Util.SplitByCommaOrSpace(value); break;
+                    case "selector-timeout-ms": state.SelectorTimeoutMs = int.Parse(value); break;
                 }
             }
         }

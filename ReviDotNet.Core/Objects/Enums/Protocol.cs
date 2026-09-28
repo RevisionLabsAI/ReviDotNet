@@ -16,5 +16,8 @@ public enum Protocol
     Claude, // Not implemented
 
     /// <summary>OpenRouter's OpenAI-compatible API with provider-routing extensions.</summary>
-    OpenRouter
+    OpenRouter,
+
+    /// <summary>Typed decisions over shared state; independent of provider and model family.</summary>
+    SystemOne
 }

@@ -1,0 +1,14 @@
+[[general]]
+name = typesafe
+enabled = true
+protocol = SystemOne
+api-url = https://api.typesafe.ai
+api-version-path = v1
+api-key = environment
+api-key-environment = PROVAPIKEY__TYPESAFE
+
+[[limiting]]
+timeout-seconds = 10
+retry-attempt-limit = 2
+retry-initial-delay-seconds = 1
+simultaneous-requests = 8

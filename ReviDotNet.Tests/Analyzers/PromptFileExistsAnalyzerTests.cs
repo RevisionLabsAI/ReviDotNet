@@ -21,7 +21,7 @@ public sealed class PromptFileExistsAnalyzerTests
     [Fact]
     public async Task NoDiagnostic_WhenPromptExists()
     {
-        string src = "using Revi; class C { void M(){ _ = Infer.ToString(\"folder/my-prompt\"); } }";
+        string src = "using Revi; class C { void M(){ _ = Infer.ToString(\"my-prompt\"); } }";
 
         (string, string)[] files =
         [
@@ -57,7 +57,7 @@ public sealed class PromptFileExistsAnalyzerTests
     [Fact]
     public async Task NoDiagnostic_WhenPromptExists_ViaInjectedService()
     {
-        string src = "using Revi; class C { void M(IInferService infer){ _ = infer.ToString(\"folder/my-prompt\"); } }";
+        string src = "using Revi; class C { void M(IInferService infer){ _ = infer.ToString(\"my-prompt\"); } }";
 
         (string, string)[] files =
         [

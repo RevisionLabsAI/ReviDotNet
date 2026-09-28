@@ -30,10 +30,10 @@ public sealed class DuplicatePromptNameAnalyzerTests
 
         DiagnosticResult d1 = new DiagnosticResult(DuplicatePromptNameAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
             .WithSpan("C:/proj/RConfigs/Prompts/alpha/a1.pmt", 1, 1, 1, 1)
-            .WithArguments("alpha/x");
+            .WithArguments("x");
         DiagnosticResult d2 = new DiagnosticResult(DuplicatePromptNameAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
             .WithSpan("C:/proj/RConfigs/Prompts/alpha/a2.pmt", 1, 1, 1, 1)
-            .WithArguments("alpha/x");
+            .WithArguments("x");
 
         await AnalyzerTestHelper.RunAsync<DuplicatePromptNameAnalyzer>(src, files, d1, d2);
     }

@@ -16,6 +16,27 @@ namespace ReviDotNet.Tests;
 /// </summary>
 public class RConfigParserTests
 {
+    /// <summary>Structured raw bodies opt into whitespace preservation without changing existing prompt parsing.</summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("[[settings]]\nmodel = next")]
+    public void ReadEmbedded_RawWhitespacePreservationIsOptIn(string suffix)
+    {
+        string content = "[[_decision]]\n\n  instructions: |+\n    Keep prose.\n\n\n" + suffix;
+        string expected = string.Join(System.Environment.NewLine, "", "  instructions: |+", "    Keep prose.", "", "", "");
+        RConfigParser.ReadEmbedded(content, preserveRawSectionWhitespace: true)["_decision"].Should().Be(expected);
+        RConfigParser.ReadEmbedded(content)["_decision"].Should().Be(expected.Trim());
+    }
+
+    /// <summary>An escaped section marker on the last line is still part of the raw content.</summary>
+    [Fact]
+    public void ReadEmbedded_FinalEscapedSectionMarkerIsPreserved()
+    {
+        string content = "[[_system]]\nText\n\\[[literal]]";
+        RConfigParser.ReadEmbedded(content)["_system"].Should().Be("Text" + System.Environment.NewLine + "[[literal]]");
+        RConfigParser.ReadEmbedded(content, preserveRawSectionWhitespace: true)["_system"].Should().Be("Text" + System.Environment.NewLine + "[[literal]]" + System.Environment.NewLine);
+    }
+
     /// <summary>
     /// Verifies that full-line comments starting with '#' are ignored in non-raw sections.
     /// </summary>

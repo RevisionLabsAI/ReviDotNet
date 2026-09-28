@@ -12,7 +12,7 @@ using Revi;
 
 namespace Revi;
 
-public class ProviderProfile
+public class ProviderProfile : IDisposable
 {
     // ===================================
     //  ProviderProfile Object Definition
@@ -27,6 +27,22 @@ public class ProviderProfile
     
     public InferClient? InferenceClient;
     public EmbedClient? EmbeddingClient;
+
+    /// <summary>Decision capability, independent of inference and embedding clients.</summary>
+    public IDecisionModelClient? DecisionClient { get; set; }
+    private IDisposable? _ownedDecisionClient;
+
+    /// <summary>Releases only decision transports created by this profile; injected clients belong to their host.</summary>
+    public void Dispose()
+    {
+        _ownedDecisionClient?.Dispose();
+        if (ReferenceEquals(DecisionClient, _ownedDecisionClient)) DecisionClient = null;
+        _ownedDecisionClient = null;
+    }
+
+    /// <summary>Environment variable to read when api-key is environment; defaults to PROVAPIKEY__NAME.</summary>
+    [RConfigProperty("general_api-key-environment")]
+    public string? APIKeyEnvironment { get; set; }
     
     [RConfigProperty("general_protocol")]
     public Protocol? Protocol { get; set; }
@@ -179,10 +195,10 @@ public class ProviderProfile
         {
             string providerName = (Name ?? string.Empty).Trim();
             // Construct environment variable name: PROVAPIKEY_<PROVIDERNAME>
-            string envVarName = "PROVAPIKEY__" + providerName
+            string envVarName = APIKeyEnvironment ?? ("PROVAPIKEY__" + providerName
                 .Replace('-', '_')
                 .Replace(' ', '_')
-                .ToUpperInvariant();
+                .ToUpperInvariant());
             string? envApiKey = Environment.GetEnvironmentVariable(envVarName);
             if (string.IsNullOrWhiteSpace(envApiKey))
             {
@@ -195,6 +211,19 @@ public class ProviderProfile
             }
         }
         
+        if (Protocol == global::Revi.Protocol.SystemOne)
+        {
+            InferenceClient = null;
+            EmbeddingClient = null;
+            if (DecisionClient is null)
+            {
+                SystemOneClient client = new(this);
+                DecisionClient = client;
+                _ownedDecisionClient = client;
+            }
+            return;
+        }
+
         switch (Protocol)
         {
             case global::Revi.Protocol.OpenAI:

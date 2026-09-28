@@ -1,0 +1,17 @@
+[[general]]
+name = decision-default
+enabled = true
+model-string = jev-1.13.0
+provider-name = typesafe
+revision-pinned = true
+
+[[limits]]
+maximum-choice-options = 255
+maximum-score-levels = 10
+context-window = 64000
+state-plus-longest-question = 32000
+
+[[pricing]]
+# Published TypeSafe pricing checked September 23, 2026; USD per million tokens.
+input-per-million = 0.042
+output-per-million = 0

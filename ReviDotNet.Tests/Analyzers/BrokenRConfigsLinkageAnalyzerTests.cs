@@ -25,7 +25,7 @@ public sealed class BrokenRConfigsLinkageAnalyzerTests
         (string, string)[] files =
         [
             ("C:/proj/RConfigs/Prompts/p.pmt", "[[information]]\nname = p\n\n[[settings]]\nmodel_profile = does-not-exist\n"),
-            ("C:/proj/RConfigs/Models/existing.rcfg", "id = existing-model\n")
+            ("C:/proj/RConfigs/Models/Inference/existing.rcfg", "[[general]]\nname = existing-model\n")
         ];
 
         DiagnosticResult expected = new DiagnosticResult(BrokenRConfigsLinkageAnalyzer.DiagnosticId, DiagnosticSeverity.Error)
@@ -41,8 +41,8 @@ public sealed class BrokenRConfigsLinkageAnalyzerTests
         (string, string)[] files =
         [
             ("C:/proj/RConfigs/Prompts/p.pmt", "[[information]]\nname = p\n\n[[settings]]\nmodel_profile = existing-model\nprovider_profile = provider-a\n"),
-            ("C:/proj/RConfigs/Models/existing.rcfg", "id = existing-model\n"),
-            ("C:/proj/RConfigs/Providers/a.rcfg", "id = provider-a\n")
+            ("C:/proj/RConfigs/Models/Inference/existing.rcfg", "[[general]]\nname = existing-model\n"),
+            ("C:/proj/RConfigs/Providers/a.rcfg", "[[general]]\nname = provider-a\n")
         ];
 
         await AnalyzerTestHelper.RunAsync<BrokenRConfigsLinkageAnalyzer>(src, files);

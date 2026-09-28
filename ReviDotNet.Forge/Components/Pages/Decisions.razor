@@ -1,0 +1,35 @@
+@page "/decisions"
+@rendermode InteractiveServer
+@inject DecisionEditorService Editor
+
+<PageTitle>Decision prompts — Forge</PageTitle>
+<MudText Typo="Typo.h4">Decision prompts</MudText>
+<MudText Class="mb-4">Use standard [[information]] and [[settings]] sections. Only the [[_decision]] body is YAML. Increase the version when changing behavior.</MudText>
+<MudSelect T="string" Label="Loaded question pack" Value="_selected" ValueChanged="Load">
+    @foreach (DecisionPrompt prompt in Editor.GetAll().OrderBy(p => p.Name))
+    {
+        <MudSelectItem T="string" Value="@prompt.Name">@prompt.Name (v@prompt.Version)</MudSelectItem>
+    }
+</MudSelect>
+<MudTextField T="string" Label="Decision file" @bind-Value="_text" Lines="24" Variant="Variant.Outlined" Class="my-4" />
+<MudButton OnClick="Validate" Variant="Variant.Outlined">Validate</MudButton>
+<MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Class="ml-2">Save</MudButton>
+@if (_message is not null)
+{
+    <MudAlert Severity="@(_error ? Severity.Error : Severity.Success)" Class="mt-4">@_message</MudAlert>
+}
+
+@code {
+    private string? _selected;
+    private string _text = "[[information]]\nname = support-route\nversion = 1\n\n[[settings]]\nmodel = decision-default\n\n[[_decision]]\nquestions:\n  queue:\n    type: choice\n    instructions: Which support queue fits the request?\n    criteria:\n      billing: Charges and refunds.\n      technical: Product errors and troubleshooting.\n      other: None of the listed queues.\n";
+    private string? _message;
+    private bool _error;
+    private void Load(string value) { _selected = value; _text = Editor.Read(value); _message = null; }
+    private void Validate() => Perform(() => { DecisionPrompt prompt = Editor.Validate(_text); return $"Valid: {prompt.Name}, version {prompt.Version}, {prompt.Questions.Count} questions."; });
+    private void Save() => Perform(() => { Editor.Save(_text); return "Saved the RConfig decision file and refreshed the registry."; });
+    private void Perform(Func<string> action)
+    {
+        try { _message = action(); _error = false; }
+        catch (Exception ex) { _message = ex.Message; _error = true; }
+    }
+}

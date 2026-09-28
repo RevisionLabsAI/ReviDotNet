@@ -36,6 +36,15 @@ public class AgentState
     /// </summary>
     public List<string> Tools { get; set; } = new();
 
+    /// <summary>Optional named decision pack for visible-context selection.</summary>
+    public string? ToolSelector { get; set; }
+    /// <summary>Maximum optional tools advertised after selection.</summary>
+    public int MaxVisibleTools { get; set; } = 3;
+    /// <summary>Authorized tools retained regardless of rank.</summary>
+    public List<string> AlwaysVisibleTools { get; set; } = [];
+    /// <summary>Hard selection deadline in milliseconds; no retries.</summary>
+    public int SelectorTimeoutMs { get; set; } = 750;
+
     /// <summary>
     /// The state-specific instruction text, from [[_state.&lt;name&gt;.instruction]] in the .agent file.
     /// Appended to the agent's global system prompt for every LLM call in this state.
