@@ -18,8 +18,9 @@ namespace ReviDotNet.Tests.Decisions;
 
 /// <summary>
 /// Text extraction shared by read-file, search-files and document-search: the host's registered extractor is
-/// used everywhere, textual formats and untyped UTF-8 uploads are read, large or non-UTF-8 text degrades
-/// instead of failing, genuine binary is never decoded, and one bad attachment cannot break a session index.
+/// used everywhere, textual formats and untyped UTF-8 uploads are read, a declared charset is honoured (a
+/// byte-order mark wins), large or undeclared non-UTF-8 text degrades instead of failing, genuine binary is never
+/// decoded, and one bad attachment cannot break a session index.
 /// </summary>
 public sealed class DocumentTextTests
 {
@@ -55,6 +56,86 @@ public sealed class DocumentTextTests
         extractor.Extract(File("menu.txt", "text/plain", Encoding.Latin1.GetBytes("Caf\u00e9 au lait"))).Should().Be("Caf\uFFFD au lait");
         byte[] utf16 = [.. Encoding.Unicode.GetPreamble(), .. Encoding.Unicode.GetBytes("Wide text")];
         extractor.Extract(File("wide.txt", "text/plain", utf16)).Should().Be("Wide text");
+    }
+
+    [Theory]
+    [InlineData("text/plain; charset=iso-8859-1")]
+    [InlineData("text/plain;charset=ISO-8859-1")]
+    [InlineData("text/csv; charset=latin1")]
+    [InlineData("application/json; charset=\"iso-8859-1\"")]
+    public void ExtractorDecodesDeclaredLatin1Text(string mediaType)
+    {
+        const string text = "Caf\u00e9 cr\u00e8me br\u00fbl\u00e9e, na\u00efve fa\u00e7ade, \u00c5ngstr\u00f6m, \u00a3 \u00bd";
+        new DocumentTextExtractor().Extract(File("menu.txt", mediaType, Encoding.Latin1.GetBytes(text))).Should().Be(text);
+    }
+
+    [Theory]
+    [InlineData("text/plain; charset=windows-1252")]
+    [InlineData("Text/Plain; Charset=\"Windows-1252\"")]
+    [InlineData("text/plain; format=flowed; charset=cp1252")]
+    // Browsers decode an ISO-8859-1 label as Windows-1252, so 0x80-0x9F are its punctuation, not C1 controls.
+    [InlineData("text/plain; charset=iso-8859-1")]
+    public void ExtractorDecodesDeclaredWindows1252Text(string mediaType)
+    {
+        // Windows-1252 bytes: 0xE9 e-acute, 0x93/0x94 curly double quotes, 0x80 euro sign, 0x97 em dash, 0xEF i-diaeresis.
+        byte[] bytes = [0x43, 0x61, 0x66, 0xE9, 0x20, 0x93, 0x71, 0x75, 0x6F, 0x74, 0x65, 0x64, 0x94, 0x20, 0x80, 0x35, 0x20, 0x97, 0x20, 0x6E, 0x61, 0xEF, 0x76, 0x65];
+        new DocumentTextExtractor().Extract(File("letter.txt", mediaType, bytes)).Should().Be("Caf\u00e9 \u201cquoted\u201d \u20ac5 \u2014 na\u00efve");
+    }
+
+    [Theory]
+    [InlineData("text/plain; charset=x-no-such-charset")]
+    [InlineData("text/plain; charset=")]
+    [InlineData("text/plain; charset=\"\"")]
+    [InlineData("text/plain; charset=utf-7")]
+    public void ExtractorFallsBackToLenientUtf8ForAnUnknownOrUnusableCharset(string mediaType)
+    {
+        DocumentTextExtractor extractor = new();
+        extractor.Extract(File("menu.txt", mediaType, Encoding.UTF8.GetBytes("Caf\u00e9 au lait"))).Should().Be("Caf\u00e9 au lait");
+        extractor.Extract(File("menu.txt", mediaType, Encoding.Latin1.GetBytes("Caf\u00e9 au lait"))).Should().Be("Caf\uFFFD au lait");
+    }
+
+    [Theory]
+    [InlineData("text/plain; charset=utf-8")]
+    [InlineData("text/markdown; charset=\"UTF-8\"")]
+    // US-ASCII is a subset of UTF-8, and text labelled ASCII is often really UTF-8.
+    [InlineData("text/plain; charset=us-ascii")]
+    public void ExtractorDecodesDeclaredUtf8TextLeniently(string mediaType)
+    {
+        DocumentTextExtractor extractor = new();
+        extractor.Extract(File("notes.txt", mediaType, Encoding.UTF8.GetBytes("Caf\u00e9 \u2014 \u65e5\u672c"))).Should().Be("Caf\u00e9 \u2014 \u65e5\u672c");
+        extractor.Extract(File("notes.txt", mediaType, [0x43, 0x61, 0x66, 0xE9, 0x21])).Should().Be("Caf\uFFFD!");
+    }
+
+    [Fact]
+    public void AByteOrderMarkWinsOverAConflictingDeclaredCharset()
+    {
+        DocumentTextExtractor extractor = new();
+        byte[] utf8 = [.. Encoding.UTF8.GetPreamble(), .. Encoding.UTF8.GetBytes("Caf\u00e9")];
+        extractor.Extract(File("bom.txt", "text/plain; charset=windows-1252", utf8)).Should().Be("Caf\u00e9");
+        byte[] utf16 = [.. Encoding.Unicode.GetPreamble(), .. Encoding.Unicode.GetBytes("Wide caf\u00e9")];
+        extractor.Extract(File("wide.txt", "text/plain; charset=iso-8859-1", utf16)).Should().Be("Wide caf\u00e9");
+        // A declared UTF-16 charset without a mark is honoured instead of failing on the NUL bytes UTF-8 would see.
+        extractor.Extract(File("wide.txt", "text/plain; charset=utf-16", Encoding.Unicode.GetBytes("No mark"))).Should().Be("No mark");
+    }
+
+    [Fact]
+    public void BoundedReadsHonourTheDeclaredCharset()
+    {
+        SessionFile file = File("letter.txt", "text/plain; charset=windows-1252", Encoding.Latin1.GetBytes("\u00e9t\u00e9 \u00e0 Montr\u00e9al"));
+        DocumentTextExtractor.ReadText(file, 3, out bool truncated).Should().Be("\u00e9t\u00e9");
+        truncated.Should().BeTrue();
+        DocumentTextExtractor.ReadText(file, 100, out truncated).Should().Be("\u00e9t\u00e9 \u00e0 Montr\u00e9al");
+        truncated.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ReadFileSendsDeclaredCharsetTextDecoded()
+    {
+        using Reader reader = new();
+        (ToolCallResult result, string request) = await reader.ReadAsync(File("menu.txt", "text/plain; charset=iso-8859-1", Encoding.Latin1.GetBytes("Cr\u00e8me br\u00fbl\u00e9e MARKER")));
+        result.Failed.Should().BeFalse();
+        // The request is JSON, which may escape non-ASCII characters; compare the unescaped string values.
+        JsonStrings(request).Should().Contain("Cr\u00e8me br\u00fbl\u00e9e MARKER");
     }
 
     [Fact]
@@ -114,6 +195,25 @@ public sealed class DocumentTextTests
     }
 
     private static SessionFile File(string name, string mediaType, byte[] bytes) => new() { Id = name, Name = name, MediaType = mediaType, Bytes = bytes };
+
+    /// <summary>Every string value in a JSON document, unescaped and joined by newlines.</summary>
+    private static string JsonStrings(string json)
+    {
+        using JsonDocument document = JsonDocument.Parse(json);
+        List<string> values = [];
+        Collect(document.RootElement);
+        return string.Join("\n", values);
+
+        void Collect(JsonElement element)
+        {
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.String: values.Add(element.GetString()!); break;
+                case JsonValueKind.Object: foreach (JsonProperty property in element.EnumerateObject()) Collect(property.Value); break;
+                case JsonValueKind.Array: foreach (JsonElement item in element.EnumerateArray()) Collect(item); break;
+            }
+        }
+    }
 
     private static IEmbedService Embeddings()
     {

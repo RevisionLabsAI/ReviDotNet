@@ -219,7 +219,8 @@ internal static class EmbeddingManager
     /// <returns>The best matching embedding model if one exists, otherwise null.</returns>
     public static EmbeddingProfile? Find(string? minTier)
     {
-        Enum.TryParse(minTier ?? "", out ModelTier foundTier);
+        // Case-insensitive so a lowercase a/b/c resolves correctly instead of silently defaulting to C.
+        Enum.TryParse(minTier ?? "", ignoreCase: true, out ModelTier foundTier);
         return Find(foundTier);
     }
 
@@ -232,7 +233,8 @@ internal static class EmbeddingManager
     /// <returns>The best matching embedding model if one exists, otherwise null.</returns>
     public static EmbeddingProfile? Find(string? minTier, List<string>? blockedModels)
     {
-        Enum.TryParse(minTier ?? "", out ModelTier foundTier);
+        // Case-insensitive so a lowercase a/b/c resolves correctly instead of silently defaulting to C.
+        Enum.TryParse(minTier ?? "", ignoreCase: true, out ModelTier foundTier);
         return Find(foundTier, blockedModels);
     }
     

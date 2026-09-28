@@ -142,8 +142,13 @@ packs deliberately supplied by plugins at runtime. Full schema validation happen
 at startup/editor validation, not inside Roslyn.
 
 Registry assembly extension is additive through `LoadAssembly`; `LoadAsync`
-remains an explicit reset/reload. Startup finishes all providers across sources
-before loading dependent models. Declared names are used verbatim: an organizational
+remains an explicit reset/reload. The provider, model, embedding, prompt, agent
+and custom-tool registries publish each reload or addition as one complete
+replacement list, so a lookup
+running during a reload sees the old or the new list, never an empty or partial
+one; replaced providers are disposed only after the swap. Startup finishes all
+providers across sources before loading dependent models. Declared names are used
+verbatim: an organizational
 folder does not silently prepend a namespace. Decision duplicates of equal version
 must have equal effective questions/model; a higher prompt version wins. Duplicate
 decision model names must have identical settings. Prefer a separately named
@@ -230,7 +235,10 @@ The `document-search` tool and `search-files` alias return source passages. The
 default extractor supports text (text/*, JSON, XML, YAML, CSV, SQL and +json/+xml
 media types, plus untyped or octet-stream uploads that are valid UTF-8 without
 binary control bytes; invalid bytes decode as U+FFFD) and DOCX; PDF, images, OCR,
-and other binary formats require an `IDocumentTextExtractor` implementation. A
+and other binary formats require an `IDocumentTextExtractor` implementation.
+Declared text decodes in the media type's `charset` (ISO-8859-1 as its
+Windows-1252 superset, US-ASCII as UTF-8) and falls back to UTF-8 when there is
+none or the name is unknown; a byte-order mark overrides the declaration. A
 registered extractor also serves `read-file`, which reads only the first 120,000
 characters of large text. Unsupported attachments, and attachments whose
 extraction fails, are reported, never treated as plain text. Attachment indexes are

@@ -27,6 +27,7 @@ public class TBatch1FixesTests
     {
         string dir = Path.Combine(AppContext.BaseDirectory, "RConfigs");
         string path = Path.Combine(dir, "forge.rcfg");
+        bool createdDir = !Directory.Exists(dir);
         Directory.CreateDirectory(dir);
         string? backup = File.Exists(path) ? File.ReadAllText(path) : null;
 
@@ -53,6 +54,7 @@ public class TBatch1FixesTests
         {
             if (backup != null) File.WriteAllText(path, backup);
             else File.Delete(path);
+            RemoveIfCreatedAndEmpty(dir, createdDir);
             ForgeManager.Reset();   // never leak active Forge into other tests
         }
     }
@@ -62,6 +64,7 @@ public class TBatch1FixesTests
     {
         string dir = Path.Combine(AppContext.BaseDirectory, "RConfigs");
         string path = Path.Combine(dir, "forge.rcfg");
+        bool createdDir = !Directory.Exists(dir);
         Directory.CreateDirectory(dir);
         string? backup = File.Exists(path) ? File.ReadAllText(path) : null;
 
@@ -76,6 +79,7 @@ public class TBatch1FixesTests
         {
             if (backup != null) File.WriteAllText(path, backup);
             else File.Delete(path);
+            RemoveIfCreatedAndEmpty(dir, createdDir);
             ForgeManager.Reset();
         }
     }
@@ -274,4 +278,16 @@ public class TBatch1FixesTests
         SystemInUser = true,
         PromptInUser = true,
     };
+
+    /// <summary>
+    /// Deletes <paramref name="dir"/> when this test created it and nothing else is in it, so the test leaves the output
+    /// folder as it found it instead of an empty <c>RConfigs</c> folder that later tests would inherit.
+    /// </summary>
+    /// <param name="dir">The folder the test ensured existed.</param>
+    /// <param name="created">Whether the folder was missing before the test created it.</param>
+    private static void RemoveIfCreatedAndEmpty(string dir, bool created)
+    {
+        if (created && Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any())
+            Directory.Delete(dir);
+    }
 }

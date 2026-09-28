@@ -19,8 +19,9 @@ public interface IDocumentTextExtractor
 /// <summary>
 /// Bounded text and DOCX extraction. Text is declared textual media types (text/*, JSON, XML, YAML, CSV,
 /// SQL and +json/+xml/+yaml suffixes), or an untyped/octet-stream upload whose bytes are valid UTF-8 with
-/// no NUL or binary control bytes. Text decodes leniently (BOM-aware; invalid bytes become U+FFFD).
-/// PDF/images require an explicitly registered extractor.
+/// no NUL or binary control bytes. Declared text decodes in the media type's <c>charset</c> when the runtime
+/// knows it, otherwise as UTF-8; a byte-order mark overrides either. Decoding is lenient: invalid bytes
+/// become U+FFFD. PDF/images require an explicitly registered extractor.
 /// </summary>
 public sealed class DocumentTextExtractor : IDocumentTextExtractor
 {
@@ -43,6 +44,21 @@ public sealed class DocumentTextExtractor : IDocumentTextExtractor
 
     /// <summary>Lenient UTF-8: invalid sequences become U+FFFD instead of throwing.</summary>
     private static readonly UTF8Encoding LenientUtf8 = new(false, false);
+
+    /// <summary>Decoder fallback for a declared charset: bytes it cannot map become U+FFFD, as in <see cref="LenientUtf8"/>.</summary>
+    private static readonly DecoderReplacementFallback ReplacementCharacter = new("\uFFFD");
+
+    /// <summary>ISO-8859-1 code page; decoded as Windows-1252, which differs only in using 0x80-0x9F for printable characters.</summary>
+    private const int Latin1CodePage = 28591;
+
+    /// <summary>Windows-1252 (Western European) code page.</summary>
+    private const int Windows1252CodePage = 1252;
+
+    /// <summary>US-ASCII code page; decoded as UTF-8, its superset.</summary>
+    private const int AsciiCodePage = 20127;
+
+    /// <summary>UTF-8 code page; decoded with <see cref="LenientUtf8"/>.</summary>
+    private const int Utf8CodePage = 65001;
 
     /// <summary>The UTF-8 byte-order mark (EF BB BF).</summary>
     private static ReadOnlySpan<byte> Utf8ByteOrderMark => [0xEF, 0xBB, 0xBF];
@@ -78,13 +94,17 @@ public sealed class DocumentTextExtractor : IDocumentTextExtractor
     {
         truncated = false;
         string mime = NormalizeMediaType(file.MediaType);
-        // A UTF-8 character needs at most 4 bytes (as do UTF-16/32 units); the extra 4 cover a byte-order mark.
+        // A character needs at most 4 bytes in UTF-8, UTF-16/32 and the multi-byte code pages; the extra 4 cover a
+        // byte-order mark. A stateful code page that needs more stops early and is still reported as truncated.
         int byteCount = (int)Math.Min(file.Bytes.Length, (long)maximumCharacters * 4 + 4);
         bool declared = mime.StartsWith("text/", StringComparison.Ordinal) || TextMediaTypes.Contains(mime) ||
             mime.EndsWith("+json", StringComparison.Ordinal) || mime.EndsWith("+xml", StringComparison.Ordinal) || mime.EndsWith("+yaml", StringComparison.Ordinal);
         if (!declared && !(UntypedMediaTypes.Contains(mime) && IsUtf8Text(file.Bytes.AsSpan(0, byteCount)))) return null;
+        // Sniffed untyped bytes are UTF-8 by construction; declared text uses its charset. The reader still honours a
+        // byte-order mark, which wins over a conflicting declaration.
+        Encoding encoding = declared ? DeclaredEncoding(file.MediaType) : LenientUtf8;
         using MemoryStream stream = new(file.Bytes, 0, byteCount, false);
-        using StreamReader reader = new(stream, LenientUtf8, detectEncodingFromByteOrderMarks: true);
+        using StreamReader reader = new(stream, encoding, detectEncodingFromByteOrderMarks: true);
         string text;
         if (maximumCharacters >= byteCount) text = reader.ReadToEnd();
         else
@@ -92,7 +112,7 @@ public sealed class DocumentTextExtractor : IDocumentTextExtractor
             char[] buffer = new char[maximumCharacters];
             int read = reader.ReadBlock(buffer, 0, buffer.Length);
             text = new string(buffer, 0, read);
-            truncated = read == maximumCharacters && (reader.Peek() >= 0 || byteCount < file.Bytes.Length);
+            truncated = byteCount < file.Bytes.Length || (read == maximumCharacters && reader.Peek() >= 0);
         }
         if (text.Contains('\0')) throw new InvalidDataException("Text contains binary null bytes.");
         return text;
@@ -100,6 +120,46 @@ public sealed class DocumentTextExtractor : IDocumentTextExtractor
 
     /// <summary>Lower-cased media type without parameters; empty when none was supplied.</summary>
     private static string NormalizeMediaType(string? mediaType) => (mediaType ?? "").Split(';')[0].Trim().ToLowerInvariant();
+
+    /// <summary>
+    /// The lenient encoding for the media type's <c>charset</c>: lenient UTF-8 when none is declared or the runtime does
+    /// not know the name. Code pages the runtime does not enable by default (windows-1252, ISO-8859-2, Shift_JIS, ...)
+    /// come from <see cref="CodePagesEncodingProvider"/>, asked directly rather than registered, so extracting a
+    /// document never changes how the rest of the host process resolves encodings. ISO-8859-1 decodes as its
+    /// Windows-1252 superset and US-ASCII as UTF-8, as browsers do, so mislabelled real-world text still reads.
+    /// </summary>
+    /// <param name="mediaType">The file's media type, parameters included.</param>
+    private static Encoding DeclaredEncoding(string? mediaType)
+    {
+        string? charset = CharsetParameter(mediaType);
+        if (charset is null) return LenientUtf8;
+        Encoding? encoding = null;
+        // Built-in encodings, plus any provider the host registered itself.
+        try { encoding = Encoding.GetEncoding(charset, EncoderFallback.ReplacementFallback, ReplacementCharacter); }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException) { }
+        encoding ??= CodePagesEncodingProvider.Instance.GetEncoding(charset, EncoderFallback.ReplacementFallback, ReplacementCharacter);
+        return encoding?.CodePage switch
+        {
+            null or AsciiCodePage or Utf8CodePage => LenientUtf8,
+            Latin1CodePage => CodePagesEncodingProvider.Instance.GetEncoding(Windows1252CodePage, EncoderFallback.ReplacementFallback, ReplacementCharacter) ?? encoding,
+            _ => encoding
+        };
+    }
+
+    /// <summary>The media type's <c>charset</c> parameter (name matched case-insensitively, quotes removed), or null.</summary>
+    /// <param name="mediaType">The file's media type, parameters included.</param>
+    private static string? CharsetParameter(string? mediaType)
+    {
+        string[] parts = (mediaType ?? "").Split(';');
+        for (int i = 1; i < parts.Length; i++)
+        {
+            int equals = parts[i].IndexOf('=');
+            if (equals < 0 || !parts[i].AsSpan(0, equals).Trim().Equals("charset", StringComparison.OrdinalIgnoreCase)) continue;
+            string value = parts[i][(equals + 1)..].Trim().Trim('"').Trim();
+            return value.Length == 0 ? null : value;
+        }
+        return null;
+    }
 
     /// <summary>
     /// Sniffs untyped bytes: strictly valid UTF-8 (an incomplete sequence is tolerated only at the end of the
