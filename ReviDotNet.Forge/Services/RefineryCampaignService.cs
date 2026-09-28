@@ -347,7 +347,10 @@ public sealed class RefineryCampaignService(
         IWebContentService webContent = _rootServices.GetRequiredService<IWebContentService>();
         IModelManager models = _rootServices.GetRequiredService<IModelManager>();
         IReviLogger<ToolManagerService> logger = _rootServices.GetRequiredService<IReviLogger<ToolManagerService>>();
-        return new ToolManagerService(lazyAgents, webContent, models, logger);
+        // Same file tools as the root manager: document-search / search-files and the host's text extractor.
+        IDocumentSearchService? documentSearch = _rootServices.GetService<IDocumentSearchService>();
+        IDocumentTextExtractor? textExtractor = _rootServices.GetService<IDocumentTextExtractor>();
+        return new ToolManagerService(lazyAgents, webContent, models, logger, documentSearch, textExtractor);
     }
 
     /// <summary>

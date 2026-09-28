@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -120,6 +121,33 @@ public sealed class DecisionConfigurationTests
         add.Should().Throw<InvalidOperationException>();
         registry.Add(DecisionPromptParser.Parse(PromptText.Replace("version = 1", "version = 2").Replace("Charges and refunds.", "Anything.")));
         registry.GetPrompt("support-route").Version.Should().Be(2);
+    }
+
+    /// <summary>
+    /// Startup loads the output directory's packs before the embedded copies; an equal-version embedded copy
+    /// must not drop the file the editor opens and saves.
+    /// </summary>
+    [Fact]
+    public void EqualVersionEmbeddedCopyKeepsTheOnDiskSource()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "decision-source-" + Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(root, "Decisions", "support-route.decision");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        string onDisk = "# Comment added on disk\n" + PromptText;
+        File.WriteAllText(path, onDisk);
+        try
+        {
+            DecisionRegistry registry = new();
+            registry.LoadDirectory(root);
+            registry.Add(DecisionPromptParser.Parse(PromptText)); // what LoadAssembly adds for the embedded copy
+            DecisionPrompt prompt = registry.GetPrompt("support-route");
+            prompt.SourcePath.Should().Be(Path.GetFullPath(path));
+            prompt.SourceText.Should().Be(onDisk);
+            // A later on-disk source (an additional directory, or an editor save) still replaces it.
+            registry.Add(DecisionPromptParser.Parse(PromptText) with { SourcePath = "other.decision" });
+            registry.GetPrompt("support-route").SourcePath.Should().Be("other.decision");
+        }
+        finally { Directory.Delete(root, true); }
     }
 
     [Fact]

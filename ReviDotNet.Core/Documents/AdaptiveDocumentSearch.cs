@@ -37,6 +37,8 @@ public sealed class AdaptiveDocumentSearch(IDocumentSearchService search, IDecis
             options.Search.CandidateCount is < 1 or > 255 || options.Search.ResultCount < 1 || options.Search.ResultCount > options.Search.CandidateCount)
             throw new ArgumentOutOfRangeException(nameof(options));
         options.Sufficiency.Validate(); options.Contradictions.Validate(); options.SearchUtility.Validate();
+        // Checked here too: inside the round loop the search's own refusal would be reported as "judge-unavailable".
+        DocumentSearchService.ValidateEvidencePolicy(options.Search.EvidencePolicy);
         if (options.Sufficiency.Question != "sufficient" || options.Contradictions.Question != "unresolved" || options.SearchUtility.Question != "more-useful")
             throw new ArgumentException("Stopping policies must target sufficient, unresolved, and more-useful respectively.");
         using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -75,6 +77,9 @@ public sealed class AdaptiveDocumentSearch(IDocumentSearchService search, IDecis
                 if (latest.Status == DocumentSearchStatus.Found && options.Sufficiency.Evaluate(check) == DecisionDisposition.Accept &&
                     options.Contradictions.Evaluate(check) == DecisionDisposition.Reject && options.SearchUtility.Evaluate(check) == DecisionDisposition.Reject)
                 { reason = "sufficient-evidence"; break; }
+                // Retrieval returns only matching passages (BM25 score > 0), so a short round means a deeper
+                // round would refetch and re-judge the same set: stop instead of paying for it again.
+                if (latest.CandidateCount < candidateCount) { reason = "retrieval-exhausted"; break; }
                 if (candidateCount >= collection.Passages.Count || candidateCount == 255) { reason = "candidate-limit"; break; }
             }
         }

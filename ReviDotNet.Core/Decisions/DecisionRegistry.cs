@@ -72,7 +72,10 @@ public sealed class DecisionRegistry : IDecisionRegistry
             if (previous.Version == prompt.Version)
             {
                 if (previous.Hash != prompt.Hash || previous.Model != prompt.Model) throw new InvalidOperationException($"Conflicting decision prompt '{prompt.Name}' version {prompt.Version}.");
-                return prompt.SourceText is not null ? prompt : previous;
+                if (prompt.SourceText is null) return previous;
+                // Same pack from a source without a file (e.g. the embedded copy after the output directory's):
+                // keep the on-disk entry, so the editor shows that file's text and saves back to its path.
+                return prompt.SourcePath is null && previous.SourcePath is not null ? previous : prompt;
             }
             return prompt;
         });

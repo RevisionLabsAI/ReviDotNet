@@ -171,8 +171,9 @@ path; include it in the state's allowed tools explicitly.
 No selector runs by default. Missing configuration, deadline, incomplete response,
 or an oversized catalog restores the full authorized catalog; there is no silent
 lexical truncation of a large catalog. Selection uses bounded request prose,
-state metadata, tool descriptions/examples, and a history fingerprint, not raw tool
+state metadata and tool descriptions/examples, not conversation history, raw tool
 results or attachment contents. Selector decisions count toward agent USD budgets.
+Attachment tools are offered only when the run's tool manager can execute them.
 
 `ContextCandidate.Kind` supports tool/skill/resource metadata. Hosts with their
 own skills/resources can call `IContextSelector.SelectAsync` and load selected
@@ -184,7 +185,9 @@ There is no universal no-match threshold. A calibrated `FitPolicy` for
 `any-fit` can be supplied by a host-owned selector. Choices and fit metadata are
 both placed in shared state so the independent fit question sees the catalog.
 Caching is per run and requires `revision-pinned = true`; keys include prompt,
-model, candidates, state/history, and selection settings. Failures are not cached.
+model, candidates, request/state metadata, and selection settings, so the steps of
+one state activation share one selection. Failures are not cached. The selector
+enforces `selector-timeout-ms` itself, whether or not the transport honours it.
 
 ## Document search and exact evidence
 
@@ -224,9 +227,13 @@ fact is false. `DecisionPrompt = null` opts into lexical/vector-only retrieval.
 
 Agent runs can carry `AgentRunContext.Documents` and `DocumentSearchOptions`.
 The `document-search` tool and `search-files` alias return source passages. The
-default extractor supports strict UTF-8 text and DOCX; PDF, images, OCR, and other
-binary formats require an `IDocumentTextExtractor` implementation. Unsupported
-attachments are reported, never treated as plain text. Attachment indexes are
+default extractor supports text (text/*, JSON, XML, YAML, CSV, SQL and +json/+xml
+media types, plus untyped or octet-stream uploads that are valid UTF-8 without
+binary control bytes; invalid bytes decode as U+FFFD) and DOCX; PDF, images, OCR,
+and other binary formats require an `IDocumentTextExtractor` implementation. A
+registered extractor also serves `read-file`, which reads only the first 120,000
+characters of large text. Unsupported attachments, and attachments whose
+extraction fails, are reported, never treated as plain text. Attachment indexes are
 scoped to their session registry, not a global current collection. Synthesis
 remains a separate normal named inference prompt supplied with these exact sources.
 
@@ -272,7 +279,10 @@ policy approval is implied.
 `sufficient`, `unresolved`, and `more-useful`. It increases candidate depth;
 code enforces rounds, worst-case decision-call reservations and a total deadline.
 The model cannot increase those limits. Early success also requires an accepted
-evidence passage. This pilot does not rewrite queries or crawl arbitrary new sites.
+evidence passage. A round that retrieves fewer candidates than it asked for stops
+with `retrieval-exhausted`, since a deeper round would only re-judge the same set.
+Policies are validated before any paid call. This pilot does not rewrite queries
+or crawl arbitrary new sites.
 
 ## Forge and privacy
 
@@ -288,7 +298,8 @@ bodies. Catalog labels and authored score legends remain part of distributions:
 do not put secrets in labels. Transport errors report status, not echoed response
 bodies. An `IDecisionObserver.Starting` can enforce host-owned call limits before
 a request. The HTTP adapter retries only 429/529, honors Retry-After, and uses one
-deadline across queueing and retries.
+deadline across queueing and retries; a Retry-After that would outlast that
+deadline reports the 429/529 status at once instead of waiting into a timeout.
 
 ## WonderBase pilot
 

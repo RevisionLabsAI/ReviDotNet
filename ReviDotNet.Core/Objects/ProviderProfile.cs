@@ -30,7 +30,7 @@ public class ProviderProfile : IDisposable
 
     /// <summary>Decision capability, independent of inference and embedding clients.</summary>
     public IDecisionModelClient? DecisionClient { get; set; }
-    private IDisposable? _ownedDecisionClient;
+    private SystemOneClient? _ownedDecisionClient;
 
     /// <summary>Releases only decision transports created by this profile; injected clients belong to their host.</summary>
     public void Dispose()
@@ -211,16 +211,11 @@ public class ProviderProfile : IDisposable
             }
         }
         
+        InitDecisionClient();
         if (Protocol == global::Revi.Protocol.SystemOne)
         {
             InferenceClient = null;
             EmbeddingClient = null;
-            if (DecisionClient is null)
-            {
-                SystemOneClient client = new(this);
-                DecisionClient = client;
-                _ownedDecisionClient = client;
-            }
             return;
         }
 
@@ -293,6 +288,32 @@ public class ProviderProfile : IDisposable
             retryAttemptLimit: RetryAttemptLimit ?? 5,
             retryInitialDelaySeconds: RetryInitialDelaySeconds ?? 5,
             simultaneousRequests: SimultaneousRequests ?? 10);
+    }
+
+    /// <summary>
+    /// Aligns <see cref="DecisionClient"/> with <see cref="Protocol"/>. A SystemOne client is this profile's only
+    /// when it is bound to this profile: one bound to another profile (copied along with that profile's
+    /// properties, or by a shallow clone) would send that profile's URL and key, so it is replaced. Other
+    /// protocols have no SystemOne transport: this profile's own is disposed and any other is dropped.
+    /// Host-injected clients of other types are left alone.
+    /// </summary>
+    private void InitDecisionClient()
+    {
+        // A shallow clone also copies this field; the original profile owns (and disposes) that client.
+        if (_ownedDecisionClient is not null && !ReferenceEquals(_ownedDecisionClient.Provider, this))
+            _ownedDecisionClient = null;
+        if (Protocol == global::Revi.Protocol.SystemOne)
+        {
+            if (DecisionClient is null || DecisionClient is SystemOneClient bound && !ReferenceEquals(bound.Provider, this))
+            {
+                _ownedDecisionClient ??= new SystemOneClient(this);
+                DecisionClient = _ownedDecisionClient;
+            }
+            return;
+        }
+        if (DecisionClient is SystemOneClient) DecisionClient = null;
+        _ownedDecisionClient?.Dispose();
+        _ownedDecisionClient = null;
     }
 
     /// <summary>Builds the adapter-neutral routing policy from flattened RConfig properties.</summary>

@@ -31,16 +31,17 @@ public sealed class ToolManagerService : IToolManager
         Register(new WebExtractTool(webContent));
         Register(new InvokeAgentTool(agentService));
 
-        // File-access tools (operate on AgentRunContext.Files; the reader needs the model registry).
+        // File-access tools (operate on AgentRunContext.Files; the reader needs the model registry). Every file
+        // tool shares the host's registered extractor, so a host PDF extractor serves read-file too.
+        IDocumentTextExtractor extractor = textExtractor ?? new DocumentTextExtractor();
         Register(new ListFilesTool());
-        Register(new ReadFileTool(models));
+        Register(new ReadFileTool(models, extractor));
         if (documentSearch is not null)
         {
-            IDocumentTextExtractor extractor = textExtractor ?? new DocumentTextExtractor();
             Register(new DocumentSearchTool(documentSearch, extractor));
             Register(new DocumentSearchTool(documentSearch, extractor, "search-files"));
         }
-        else Register(new SearchFilesTool(models));
+        else Register(new SearchFilesTool(models, extractor));
     }
 
     /// <inheritdoc/>

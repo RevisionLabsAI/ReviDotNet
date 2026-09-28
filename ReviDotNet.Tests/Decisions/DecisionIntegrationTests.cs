@@ -145,6 +145,60 @@ public sealed class DecisionIntegrationTests
         result.StopReason.Should().Be("call-limit"); result.Rounds.Should().Be(0); decisions.Calls.Should().Be(0);
     }
 
+    [Fact]
+    public async Task AdaptiveSearchStopsWhenRetrievalIsExhausted()
+    {
+        FakeDecisions decisions = new((prompt, _, _) => Task.FromResult(prompt == "research-stop"
+            ? new DecisionRun("fixed-version", new Dictionary<string, DecisionAnswer>
+            {
+                ["sufficient"] = new BooleanAnswer(.5), ["unresolved"] = new BooleanAnswer(.01), ["more-useful"] = new BooleanAnswer(.9)
+            }, new(1, 0))
+            : PassageRun(.5)));
+        // Thirty passages, two of which match: lexical retrieval returns those two however deep a round asks.
+        DocumentCollection collection = new("scope", Enumerable.Range(0, 30).Select(i => new SearchDocument(i.ToString(), i < 2 ? "Refund rules." : "Shipping times.", "file-" + i)));
+        AdaptiveDocumentSearch adaptive = new(new DocumentSearchService(decisions, Embeddings()), decisions);
+        AdaptiveSearchResult result = await adaptive.SearchAsync(collection, "refund", new AdaptiveSearchOptions
+        {
+            MaximumRounds = 3,
+            Search = new() { CandidateCount = 5, ResultCount = 2, EvidencePolicy = Policy("evidence") },
+            Sufficiency = Policy("sufficient"), Contradictions = Policy("unresolved"), SearchUtility = Policy("more-useful")
+        });
+        result.StopReason.Should().Be("retrieval-exhausted"); result.Rounds.Should().Be(1);
+        decisions.Calls.Should().Be(3); // two passage judgments and one stopping check, never repeated
+    }
+
+    [Fact]
+    public async Task IncompletePoliciesFailBeforeAnyPaidDecision()
+    {
+        FakeDecisions decisions = new((_, _, _) => Task.FromResult(PassageRun(.99)));
+        DecisionPolicy evidence = Policy("evidence"); evidence.RejectAt = null;
+        DocumentCollection collection = new("scope", [new("a", "Refund rules.", "a")]);
+        Func<Task> search = () => new DocumentSearchService(decisions, Embeddings()).SearchAsync(collection, "refund", new() { EvidencePolicy = evidence });
+        await search.Should().ThrowAsync<InvalidOperationException>();
+        Func<Task> adaptive = () => new AdaptiveDocumentSearch(new DocumentSearchService(decisions, Embeddings()), decisions).SearchAsync(collection, "refund", new AdaptiveSearchOptions
+        {
+            Search = new() { EvidencePolicy = evidence },
+            Sufficiency = Policy("sufficient"), Contradictions = Policy("unresolved"), SearchUtility = Policy("more-useful")
+        });
+        await adaptive.Should().ThrowAsync<InvalidOperationException>();
+        DecisionPolicy relation = Policy("relation"); relation.AcceptAt = null;
+        DocumentPassage passage = new("p", "d", "v", "file", 0, 10, 1, "Real quote");
+        Func<Task> cite = () => new CitationVerifier(decisions).CheckAsync(passage, "Real quote", "claim", relation);
+        await cite.Should().ThrowAsync<InvalidOperationException>();
+        decisions.Calls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task SelectorEnforcesItsDeadlineWhenTheDecisionServiceIgnoresTheTimeout()
+    {
+        // Honours cancellation but not DecisionOptions.Timeout, as a host's decision service or client may.
+        FakeDecisions decisions = new(async (_, _, token) => { await Task.Delay(Timeout.Infinite, token); return PassageRun(0); });
+        DecisionContextSelector selector = new(decisions, Registry());
+        Task<ContextSelectionResult> selection = selector.SelectAsync("q", [new("one", "tool")], new() { Timeout = TimeSpan.FromMilliseconds(50) });
+        (await Task.WhenAny(selection, Task.Delay(TimeSpan.FromSeconds(10)))).Should().BeSameAs(selection);
+        (await selection).FallbackReason.Should().Be("selector-timeout");
+    }
+
     private static DecisionPolicy Policy(string question) => new() { Name = question, Model = "fixed-version", PromptHash = new string('a', 64), Question = question, TrafficSlice = "test", AcceptAt = .9, RejectAt = .1 };
     private static DecisionRun PassageRun(double evidence) => new("fixed-version", new Dictionary<string, DecisionAnswer>
     {

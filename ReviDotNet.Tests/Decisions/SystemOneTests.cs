@@ -128,6 +128,69 @@ public sealed class SystemOneTests
         ((IDisposable)provider.DecisionClient!).Dispose();
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RetryAfterBeyondTheDeadlineReportsTheStatusInsteadOfWaiting(bool beyondDelayLimit)
+    {
+        Handler handler = new((_, _) =>
+        {
+            HttpResponseMessage response = new((HttpStatusCode)429) { Content = new StringContent("private echoed state") };
+            response.Headers.RetryAfter = new RetryConditionHeaderValue(beyondDelayLimit ? TimeSpan.FromDays(100) : TimeSpan.FromSeconds(30));
+            return Task.FromResult(response);
+        });
+        using HttpClient http = new(handler);
+        using SystemOneClient client = new(Provider(), http);
+        // 100 days exceeds Task.Delay's limit even with no deadline; 30 seconds exceeds a 500 ms deadline.
+        TimeSpan timeout = beyondDelayLimit ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(500);
+        Func<Task> action = () => client.EvaluateAsync(Request(), new DecisionOptions { RetryLimit = 2, Timeout = timeout });
+        HttpRequestException error = (await action.Should().ThrowAsync<HttpRequestException>()).Which;
+        error.StatusCode.Should().Be((HttpStatusCode)429);
+        error.Message.Should().NotContain("private");
+        handler.Attempts.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DisposingDuringAnInFlightRequestLetsItFinish()
+    {
+        TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        using HttpClient http = new(new Handler(async (_, token) =>
+        {
+            entered.SetResult();
+            await release.Task.WaitAsync(token);
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(Good) };
+        }));
+        SystemOneClient client = new(Provider(), http);
+        Task<DecisionRun> pending = client.EvaluateAsync(Request(), new DecisionOptions { Timeout = TimeSpan.FromSeconds(10) });
+        await entered.Task;
+        client.Dispose(); // what a provider reload does to the previous profile's client
+        release.SetResult();
+        (await pending).Usage.InputTokens.Should().Be(123);
+        Func<Task> afterDispose = () => client.EvaluateAsync(Request());
+        await afterDispose.Should().ThrowAsync<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public void CopiedProfileGetsItsOwnDecisionClientAndOtherProtocolsDropIt()
+    {
+        ProviderProfile original = Provider(); original.Init();
+        IDecisionModelClient originalClient = original.DecisionClient!;
+        // A host copying properties (including DecisionClient) onto a new profile with its own key, then Init().
+        ProviderProfile copy = new() { Name = "copy", APIURL = "https://copy.invalid/", APIKey = "copy-key", Protocol = Protocol.SystemOne, DecisionClient = originalClient };
+        copy.Init();
+        copy.DecisionClient.Should().NotBeSameAs(originalClient);
+        ((SystemOneClient)copy.DecisionClient!).Provider.Should().BeSameAs(copy);
+        original.DecisionClient.Should().BeSameAs(originalClient);
+        IDecisionModelClient own = copy.DecisionClient!;
+        copy.Init();
+        copy.DecisionClient.Should().BeSameAs(own, "re-initialising keeps the profile's own client");
+        copy.Protocol = Protocol.OpenAI;
+        copy.Init();
+        copy.DecisionClient.Should().BeNull();
+        original.Dispose(); copy.Dispose();
+    }
+
     private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
     {
         public int Attempts { get; private set; }

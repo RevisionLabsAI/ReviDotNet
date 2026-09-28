@@ -4,6 +4,7 @@
 //  See LICENSE.txt in the project root for full license information.
 // ===================================================================
 
+using System.Runtime.ExceptionServices;
 using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -58,7 +59,16 @@ public sealed class ListFilesTool : IBuiltInTool
 public sealed class ReadFileTool : IBuiltInTool
 {
     private readonly IModelManager _models;
-    public ReadFileTool(IModelManager models) => _models = models;
+    private readonly IDocumentTextExtractor _extractor;
+
+    /// <summary>Creates the tool.</summary>
+    /// <param name="models">Model registry used to resolve the reader model.</param>
+    /// <param name="extractor">The host's registered text extractor (e.g. a PDF extractor); defaults to <see cref="DocumentTextExtractor"/>.</param>
+    public ReadFileTool(IModelManager models, IDocumentTextExtractor? extractor = null)
+    {
+        _models = models;
+        _extractor = extractor ?? new DocumentTextExtractor();
+    }
 
     public string Name => "read-file";
     public string Description =>
@@ -83,7 +93,7 @@ public sealed class ReadFileTool : IBuiltInTool
 
         try
         {
-            string answer = await FileReader.ReadAsync(_models, file, query, token);
+            string answer = await FileReader.ReadAsync(_models, file, query, token, _extractor);
             return new ToolCallResult { ToolName = Name, Output = answer };
         }
         catch (OperationCanceledException) { throw; }
@@ -120,7 +130,16 @@ public sealed class ReadFileTool : IBuiltInTool
 public sealed class SearchFilesTool : IBuiltInTool
 {
     private readonly IModelManager _models;
-    public SearchFilesTool(IModelManager models) => _models = models;
+    private readonly IDocumentTextExtractor _extractor;
+
+    /// <summary>Creates the tool.</summary>
+    /// <param name="models">Model registry used to resolve the reader model.</param>
+    /// <param name="extractor">The host's registered text extractor (e.g. a PDF extractor); defaults to <see cref="DocumentTextExtractor"/>.</param>
+    public SearchFilesTool(IModelManager models, IDocumentTextExtractor? extractor = null)
+    {
+        _models = models;
+        _extractor = extractor ?? new DocumentTextExtractor();
+    }
 
     public string Name => "search-files";
     public string Description =>
@@ -141,7 +160,7 @@ public sealed class SearchFilesTool : IBuiltInTool
         {
             token.ThrowIfCancellationRequested();
             sb.AppendLine($"## {file.Name}");
-            try { sb.AppendLine(await FileReader.ReadAsync(_models, file, query, token)); }
+            try { sb.AppendLine(await FileReader.ReadAsync(_models, file, query, token, _extractor)); }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex) { sb.AppendLine($"(could not read: {ex.Message})"); }
             sb.AppendLine();
@@ -172,7 +191,8 @@ internal static class FileReader
     // Cap text injected into a single reader call; very large files are truncated with a note.
     private const int MaxTextChars = 120_000;
 
-    public static async Task<string> ReadAsync(IModelManager models, SessionFile file, string query, CancellationToken token)
+    public static async Task<string> ReadAsync(IModelManager models, SessionFile file, string query, CancellationToken token,
+        IDocumentTextExtractor? extractor = null)
     {
         ModelProfile? reader = ResolveReaderModel(models, needVision: file.IsImage);
         if (reader?.Provider?.InferenceClient is null)
@@ -193,11 +213,8 @@ internal static class FileReader
         }
         else
         {
-            string? text = new DocumentTextExtractor().Extract(file);
-            if (text is null) return $"(Unsupported document format: {file.MediaType}. Register a format-aware extractor for document-search.)";
-            string body = text.Length > MaxTextChars
-                ? text[..MaxTextChars] + $"\n\n[…truncated — file is {text.Length:N0} characters; showing the first {MaxTextChars:N0}.]"
-                : text;
+            string? body = ExtractBody(file, extractor ?? new DocumentTextExtractor());
+            if (body is null) return $"(Unsupported document format: {file.MediaType}. Register a format-aware extractor for document-search.)";
             messages = new List<Message>
             {
                 new("system", system),
@@ -216,6 +233,36 @@ internal static class FileReader
         return string.IsNullOrWhiteSpace(result?.Selected)
             ? $"(The reader model returned no content for '{file.Name}'.)"
             : result.Selected.Trim();
+    }
+
+    /// <summary>
+    /// The text handed to the reader for a non-image file, capped at <see cref="MaxTextChars"/> with an explicit
+    /// note. The host's registered extractor goes first (so a host PDF extractor serves read-file exactly as it
+    /// serves document-search); a textual file it declines or cannot handle (e.g. one over its size limit) is
+    /// then read leniently, decoding only the characters that will be sent. Null when the file is neither.
+    /// </summary>
+    /// <param name="file">The attached file.</param>
+    /// <param name="extractor">The host's registered extractor.</param>
+    internal static string? ExtractBody(SessionFile file, IDocumentTextExtractor extractor)
+    {
+        string? text = null;
+        ExceptionDispatchInfo? failure = null;
+        try { text = extractor.Extract(file); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { failure = ExceptionDispatchInfo.Capture(ex); }
+        if (text is not null)
+            return text.Length > MaxTextChars
+                ? text[..MaxTextChars] + $"\n\n[…truncated — file is {text.Length:N0} characters; showing the first {MaxTextChars:N0}.]"
+                : text;
+        string? prefix = DocumentTextExtractor.ReadText(file, MaxTextChars, out bool truncated);
+        if (prefix is null)
+        {
+            // Not text either: surface the extractor's own failure rather than a generic "unsupported".
+            failure?.Throw();
+            return null;
+        }
+        return truncated
+            ? prefix + $"\n\n[…truncated — file is {file.Size:N0} bytes; showing the first {MaxTextChars:N0} characters.]"
+            : prefix;
     }
 
     private static ModelProfile? ResolveReaderModel(IModelManager models, bool needVision)

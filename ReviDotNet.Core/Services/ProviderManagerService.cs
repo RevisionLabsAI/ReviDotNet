@@ -23,7 +23,9 @@ public sealed class ProviderManagerService : IProviderManager, IDisposable
     /// <inheritdoc/>
     public Task LoadAsync(Assembly assembly, CancellationToken cancellationToken = default)
     {
-        foreach (ProviderProfile provider in _providers) provider.Dispose();
+        // Replace first, dispose afterwards: callers may still hold the previous profiles, and their decision
+        // clients finish in-flight requests before releasing their resources.
+        ProviderProfile[] previous = [.. _providers];
         _providers.Clear();
 
         string path = AppDomain.CurrentDomain.BaseDirectory + "RConfigs/Providers/";
@@ -39,6 +41,10 @@ public sealed class ProviderManagerService : IProviderManager, IDisposable
         catch (Exception e)
         {
             _logger.LogError($"Error loading providers: {e.Message}");
+        }
+        finally
+        {
+            foreach (ProviderProfile provider in previous) provider.Dispose();
         }
 
         return Task.CompletedTask;

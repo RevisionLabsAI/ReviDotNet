@@ -47,4 +47,22 @@ public sealed class BrokenRConfigsLinkageAnalyzerTests
 
         await AnalyzerTestHelper.RunAsync<BrokenRConfigsLinkageAnalyzer>(src, files);
     }
+
+    /// <summary>
+    /// A declared name read from a CRLF file (or one with trailing spaces) must not keep the '\r' or blanks:
+    /// the runtime registers the trimmed name, so the analyzer must not report a false REVI005.
+    /// </summary>
+    [Fact]
+    public async Task NoDiagnostic_WhenConfigFilesUseCrlfOrTrailingSpaces()
+    {
+        string src = "class C { }";
+        (string, string)[] files =
+        [
+            ("C:/proj/RConfigs/Prompts/p.pmt", "[[information]]\r\nname = p\r\n\r\n[[settings]]\r\nmodel_profile = existing-model\r\nprovider_profile = provider-a\r\n"),
+            ("C:/proj/RConfigs/Models/Inference/existing.rcfg", "[[general]]\r\nname = existing-model\r\n"),
+            ("C:/proj/RConfigs/Providers/a.rcfg", "general_name = provider-a   \n")
+        ];
+
+        await AnalyzerTestHelper.RunAsync<BrokenRConfigsLinkageAnalyzer>(src, files);
+    }
 }

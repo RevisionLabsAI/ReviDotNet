@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -44,6 +46,33 @@ public sealed class DecisionStartupTests
         prompts.Get("temporary").Should().BeNull();
         prompts.Get("decision-app-fixture").Should().NotBeNull();
         prompts.Get(LlmJudge.JudgePromptName).Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task StartupSkipsExtraAssembliesForHostRegistriesWithoutAdditiveLoading()
+    {
+        ServiceCollection services = new();
+        services.AddReviDotNet(typeof(DecisionStartupTests).Assembly, options => options.AdditionalAssemblies.Add(typeof(LlmJudge).Assembly));
+        services.AddSingleton<IToolManager, LegacyToolManager>();
+        await using ServiceProvider provider = services.BuildServiceProvider();
+        IHostedService startup = provider.GetServices<IHostedService>().Single();
+        Func<Task> start = () => startup.StartAsync(CancellationToken.None);
+        await start.Should().NotThrowAsync();
+        provider.GetRequiredService<IPromptManager>().Get(LlmJudge.JudgePromptName).Should().NotBeNull();
+        provider.GetRequiredService<IDecisionRegistry>().GetPrompts().Should().NotBeEmpty("registries after the tool registry still load");
+    }
+
+    /// <summary>A host tool registry written before additive loading: it keeps the interface's default LoadAssembly.</summary>
+    private sealed class LegacyToolManager : IToolManager
+    {
+        public Task LoadAsync(Assembly assembly, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public void LoadDirectory(string rootDirectory) { }
+        public void Register(IBuiltInTool tool) { }
+        public bool Unregister(string name) => false;
+        public IBuiltInTool? GetBuiltIn(string name) => null;
+        public IReadOnlyCollection<string> GetBuiltInNames() => [];
+        public ToolProfile? GetCustom(string name) => null;
+        public List<ToolProfile> GetAllCustom() => [];
     }
 
     [Fact]

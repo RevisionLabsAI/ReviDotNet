@@ -11,6 +11,8 @@ public sealed class CitationVerifier(IDecisionService decisions)
         DecisionPolicy policy, string prompt = "citation-support", DecisionOptions? options = null, CancellationToken token = default)
     {
         if (policy.Question != "relation") throw new ArgumentException("Citation policies must target the relation question.", nameof(policy));
+        // An incomplete policy must fail before the paid request, not when interpreting its answer.
+        policy.Validate();
         if (string.IsNullOrEmpty(quote) || !passage.Text.Contains(quote, StringComparison.Ordinal))
             return new(false, DecisionDisposition.Reject, "quote-not-found", null);
         DecisionRun run = await decisions.EvaluateAsync(prompt, new { claim, quote, passage = passage.Text }, token, options).ConfigureAwait(false);

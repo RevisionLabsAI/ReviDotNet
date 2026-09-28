@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
@@ -10,10 +11,19 @@ namespace Revi;
 /// <summary>HTTP adapter for the SystemOne wire protocol, independent of provider hostname or model family.</summary>
 public sealed class SystemOneClient : IDecisionModelClient, IDisposable
 {
+    /// <summary>Longest wait <see cref="Task.Delay(TimeSpan, CancellationToken)"/> accepts.</summary>
+    private static readonly TimeSpan MaximumRetryDelay = TimeSpan.FromMilliseconds(uint.MaxValue - 1);
+
     private readonly HttpClient _http;
     private readonly bool _ownsHttp;
     private readonly ProviderProfile _provider;
     private readonly SemaphoreSlim _gate;
+
+    // Disposal waits for in-flight evaluations: a provider reload disposes the old profile's client while
+    // requests may still hold it, and releasing a disposed gate would turn their answers into exceptions.
+    private int _active;
+    private int _disposed;
+    private int _released;
 
     /// <summary>Creates an adapter. Inject an HTTP client for fixtures or a custom handler pipeline.</summary>
     public SystemOneClient(ProviderProfile provider, HttpClient? httpClient = null)
@@ -24,14 +34,19 @@ public sealed class SystemOneClient : IDecisionModelClient, IDisposable
         _gate = new SemaphoreSlim(Math.Max(1, provider.SimultaneousRequests ?? 10));
     }
 
+    /// <summary>The profile whose URL, key and limits this client sends; a copied profile must not reuse it.</summary>
+    internal ProviderProfile Provider => _provider;
+
     /// <inheritdoc/>
     public async Task<DecisionRun> EvaluateAsync(DecisionRequest request, DecisionOptions? options = null, CancellationToken token = default)
     {
         DecisionValidation.Validate(request);
         int retries = options?.RetryLimit ?? _provider.RetryAttemptLimit ?? 2;
         if (retries < 0 || retries > 10) throw new ArgumentOutOfRangeException(nameof(options), "Retry limit must be 0–10.");
+        TimeSpan timeout = options?.Timeout ?? TimeSpan.FromSeconds(_provider.TimeoutSeconds ?? 10);
         using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
-        deadline.CancelAfter(options?.Timeout ?? TimeSpan.FromSeconds(_provider.TimeoutSeconds ?? 10));
+        deadline.CancelAfter(timeout);
+        Stopwatch clock = Stopwatch.StartNew();
         CancellationToken ct = deadline.Token;
         JsonObject questions = [];
         foreach (KeyValuePair<string, DecisionQuestion> pair in request.Questions)
@@ -44,6 +59,21 @@ public sealed class SystemOneClient : IDecisionModelClient, IDisposable
         string version = _provider.APIVersionPath ?? "v1";
         string path = version.Equals("none", StringComparison.OrdinalIgnoreCase) ? "systemone" : version.Trim('/') + "/systemone";
         Uri endpoint = new(new Uri((_provider.APIURL ?? throw new InvalidOperationException("Decision provider has no API URL.")).TrimEnd('/') + "/"), path);
+        Interlocked.Increment(ref _active);
+        try
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
+            return await SendWithRetriesAsync(endpoint, body, request, retries, timeout, clock, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (Interlocked.Decrement(ref _active) == 0 && Volatile.Read(ref _disposed) == 1) ReleaseResources();
+        }
+    }
+
+    /// <summary>Sends under the concurrency gate with bounded 429/529 retries; only called while counted as active.</summary>
+    private async Task<DecisionRun> SendWithRetriesAsync(Uri endpoint, string body, DecisionRequest request, int retries, TimeSpan timeout, Stopwatch clock, CancellationToken ct)
+    {
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
@@ -60,7 +90,12 @@ public sealed class SystemOneClient : IDecisionModelClient, IDisposable
                     TimeSpan delay = response.Headers.RetryAfter?.Delta
                         ?? (response.Headers.RetryAfter?.Date is DateTimeOffset at ? at - DateTimeOffset.UtcNow :
                             TimeSpan.FromSeconds(Math.Max(1, _provider.RetryInitialDelaySeconds ?? 1) * Math.Pow(2, attempt)));
-                    await Task.Delay(delay < TimeSpan.Zero ? TimeSpan.Zero : delay, ct).ConfigureAwait(false);
+                    if (delay < TimeSpan.Zero) delay = TimeSpan.Zero;
+                    // A wait that outlasts the deadline (or Task.Delay's own limit) could only end as a timeout:
+                    // report the provider's status instead, still without its body.
+                    if (delay > MaximumRetryDelay || (timeout != Timeout.InfiniteTimeSpan && delay >= timeout - clock.Elapsed))
+                        throw new HttpRequestException($"SystemOne request failed with HTTP {status}.", null, response.StatusCode);
+                    await Task.Delay(delay, ct).ConfigureAwait(false);
                     continue;
                 }
                 if (!response.IsSuccessStatusCode)
@@ -141,9 +176,17 @@ public sealed class SystemOneClient : IDecisionModelClient, IDisposable
         return double.IsFinite(value) && value is >= 0 and <= 1 ? value : throw new FormatException();
     }
 
-    /// <inheritdoc/>
+    /// <summary>Stops new evaluations; the HTTP client and gate are released once in-flight evaluations finish.</summary>
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) == 1) return;
+        if (Volatile.Read(ref _active) == 0) ReleaseResources();
+    }
+
+    /// <summary>Releases the owned HTTP client and the gate exactly once.</summary>
+    private void ReleaseResources()
+    {
+        if (Interlocked.Exchange(ref _released, 1) == 1) return;
         if (_ownsHttp) _http.Dispose();
         _gate.Dispose();
     }

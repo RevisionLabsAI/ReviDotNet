@@ -174,7 +174,7 @@ public class AgentRunner
             // ── Build messages and call LLM ──────────────────────────────────
             try { await SelectVisibleToolsAsync(); }
             catch (OperationCanceledException) { return Terminate(AgentExitReason.Cancelled); }
-            (bool selectionOverBudget, string selectionBudgetMessage) = CheckBudget();
+            (bool selectionOverBudget, string? selectionBudgetMessage) = CheckBudget();
             if (selectionOverBudget) return Terminate(AgentExitReason.BudgetExceeded, guardrailMessage: selectionBudgetMessage);
             List<Message> messages = BuildStepMessages();
 
@@ -291,12 +291,12 @@ public class AgentRunner
             }
 
             // ── Execute tool calls IN PARALLEL ───────────────────────────────
-            // A tool is allowed if the state lists it, or it's a file-access tool and the run has
-            // attachments (so authors needn't list list-files/read-file just to use uploaded files).
-            bool filesAttached = _ctx.Files is { Files.Count: > 0 };
+            // A tool is allowed if the state lists it, or it's a file-access tool this run can execute and the
+            // run has attachments (so authors needn't list list-files/read-file just to use uploaded files).
+            HashSet<string> fileTools = AvailableFileTools().ToHashSet(StringComparer.OrdinalIgnoreCase);
             bool IsToolAllowed(string name) =>
                 _currentState.Tools.Contains(name, StringComparer.OrdinalIgnoreCase)
-                || (filesAttached && FileAccessTools.Names.Contains(name));
+                || fileTools.Contains(name);
 
             var allowedCalls = stepResponse.ToolCalls
                 .Where(tc => !string.IsNullOrWhiteSpace(tc.Name))
@@ -807,8 +807,7 @@ public class AgentRunner
     private string BuildToolGuide()
     {
         var names = new List<string>(_currentState.Tools);
-        if (_ctx.Files is { Files.Count: > 0 })
-            names.AddRange(FileAccessTools.Names);
+        names.AddRange(AvailableFileTools());
 
         if (names.Count == 0)
             return "  (none available — use an empty tool_calls array)";
@@ -834,12 +833,22 @@ public class AgentRunner
         _ => null,
     };
 
+    /// <summary>
+    /// The file-access tools auto-allowed for a run with attachments, limited to those this run's tool manager
+    /// can execute (built-in or custom). A host that registers no document search service, for example, must
+    /// not advertise or allow <c>document-search</c>. Empty when the run has no attachments.
+    /// </summary>
+    private IEnumerable<string> AvailableFileTools() =>
+        _ctx.Files is { Files.Count: > 0 }
+            ? FileAccessTools.Names.Where(name => _tools.GetBuiltIn(name) is not null || _tools.GetCustom(name) is not null)
+            : [];
+
     /// <summary>Selects only executable authorized tools; execution still checks the original state allowlist.</summary>
     private async Task SelectVisibleToolsAsync()
     {
         _visibleTools = null;
         List<string> names = [.. _currentState.Tools];
-        if (_ctx.Files is { Files.Count: > 0 }) names.AddRange(FileAccessTools.Names);
+        names.AddRange(AvailableFileTools());
         ContextCandidate[] candidates = names.Distinct(StringComparer.OrdinalIgnoreCase)
             .Select(name => _tools.GetBuiltIn(name))
             .Where(tool => tool is not null)
@@ -849,10 +858,10 @@ public class AgentRunner
         _authorizedContext = candidates;
         if (_contextSelector is null || string.IsNullOrWhiteSpace(_currentState.ToolSelector)) return;
         string request = _selectionRequest;
-        // Request prose and catalog metadata only; tool arguments/results and attached bodies are not sent.
-        string historyDigest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
-            string.Join("\n", _conversationHistory.TakeLast(4).Select(m => m.Content)))));
-        object state = new { request = request[..Math.Min(request.Length, 4000)], state = _currentStateName, description = _currentState.Description, historyDigest };
+        // Request prose and catalog metadata only; tool arguments/results, history and attached bodies are not
+        // sent. Everything here is fixed for a state activation, so the cache key (state + candidates + options)
+        // repeats across the steps of one state and only the first step pays for a selection call.
+        object state = new { request = request[..Math.Min(request.Length, 4000)], state = _currentStateName, description = _currentState.Description };
         ContextSelectionOptions options = new()
         {
             Prompt = _currentState.ToolSelector, MaximumSelected = _currentState.MaxVisibleTools,

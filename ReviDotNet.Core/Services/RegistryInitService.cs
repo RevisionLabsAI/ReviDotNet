@@ -63,22 +63,22 @@ internal sealed class RegistryInitService : IHostedService
             Assembly[] extras = _options.AdditionalAssemblies.Distinct().Where(a => a != _appAssembly).ToArray();
             // Finish each dependency layer across all sources before loading the next.
             await _providers.LoadAsync(_appAssembly, cancellationToken);
-            foreach (Assembly extra in extras) _providers.LoadAssembly(extra);
+            foreach (Assembly extra in extras) LoadExtraAssembly("provider", _providers.LoadAssembly, extra);
             foreach (string dir in directories) _providers.LoadDirectory(dir);
             await _models.LoadAsync(_appAssembly, cancellationToken);
-            foreach (Assembly extra in extras) _models.LoadAssembly(extra);
+            foreach (Assembly extra in extras) LoadExtraAssembly("model", _models.LoadAssembly, extra);
             foreach (string dir in directories) _models.LoadDirectory(dir);
             await _embeddings.LoadAsync(_appAssembly, cancellationToken);
-            foreach (Assembly extra in extras) _embeddings.LoadAssembly(extra);
+            foreach (Assembly extra in extras) LoadExtraAssembly("embedding", _embeddings.LoadAssembly, extra);
             foreach (string dir in directories) _embeddings.LoadDirectory(dir);
             await _prompts.LoadAsync(_appAssembly, cancellationToken);
-            foreach (Assembly extra in extras) _prompts.LoadAssembly(extra);
+            foreach (Assembly extra in extras) LoadExtraAssembly("prompt", _prompts.LoadAssembly, extra);
             foreach (string dir in directories) _prompts.LoadDirectory(dir);
             await _tools.LoadAsync(_appAssembly, cancellationToken);
-            foreach (Assembly extra in extras) _tools.LoadAssembly(extra);
+            foreach (Assembly extra in extras) LoadExtraAssembly("tool", _tools.LoadAssembly, extra);
             foreach (string dir in directories) _tools.LoadDirectory(dir);
             await _agents.LoadAsync(_appAssembly, cancellationToken);
-            foreach (Assembly extra in extras) _agents.LoadAssembly(extra);
+            foreach (Assembly extra in extras) LoadExtraAssembly("agent", _agents.LoadAssembly, extra);
             foreach (string dir in directories) _agents.LoadDirectory(dir);
             _decisions.Reset();
             _decisions.LoadDirectory(Path.Combine(AppContext.BaseDirectory, "RConfigs"));
@@ -95,6 +95,24 @@ internal sealed class RegistryInitService : IHostedService
         {
             _logger.LogError("Failed to initialize Revi registries", object1: ex);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Additively loads one extra assembly into a registry. A host's own registry manager written before
+    /// additive loading existed keeps the interface's default <c>LoadAssembly</c>, which throws
+    /// <see cref="NotSupportedException"/>; that registry skips the assembly with a warning instead of
+    /// aborting startup.
+    /// </summary>
+    /// <param name="registry">Registry kind, for the warning.</param>
+    /// <param name="load">The registry's <c>LoadAssembly</c>.</param>
+    /// <param name="assembly">The extra assembly.</param>
+    private void LoadExtraAssembly(string registry, Action<Assembly> load, Assembly assembly)
+    {
+        try { load(assembly); }
+        catch (NotSupportedException)
+        {
+            _logger.LogWarning($"The {registry} registry does not support additive loading; skipped {assembly.GetName().Name}.");
         }
     }
 

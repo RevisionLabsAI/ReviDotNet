@@ -143,7 +143,10 @@ namespace ReviDotNet.Analyzers
                 Match flat = Regex.Match(text, @"^\s*general_name\s*=\s*(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
                 Match section = Regex.Match(text, @"\[\[\s*general\s*\]\](?<body>.*?)(?:\n\s*\[\[|\z)", RegexOptions.Singleline | RegexOptions.IgnoreCase);
                 Match declared = flat.Success ? flat : Regex.Match(section.Groups["body"].Value, @"^\s*name\s*=\s*(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
-                if (declared.Success) set.Add(NormalizeKey(declared.Groups[1].Value));
+                // `$` stops before '\n' only, so a CRLF file (or trailing spaces) leaves '\r'/blanks in the capture;
+                // trim to match the runtime parser, which reads the value without them.
+                string declaredName = declared.Success ? declared.Groups[1].Value.Trim() : string.Empty;
+                if (declaredName.Length > 0) set.Add(NormalizeKey(declaredName));
             }
             return set;
         }

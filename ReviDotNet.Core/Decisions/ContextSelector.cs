@@ -62,6 +62,10 @@ public sealed class DecisionContextSelector(IDecisionService decisions, IDecisio
             throw new ArgumentException("Candidate IDs must be unique.");
         if (candidates.Length == 0) return new([], null, null);
         DecisionRun? run = null;
+        // The deadline is enforced here, not left to the transport honouring DecisionOptions.Timeout: a host's
+        // decision service or model client may ignore it, and the agent step waits on this call.
+        using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(options.Timeout);
         try
         {
             DecisionPrompt prompt = registry.GetPrompt(options.Prompt);
@@ -70,7 +74,7 @@ public sealed class DecisionContextSelector(IDecisionService decisions, IDecisio
                 return new(candidates, "candidate-limit", null);
             Dictionary<string, object?> criteria = candidates.ToDictionary(c => c.Id,
                 c => (object?)new { description = c.Description, kind = c.Kind, examples = c.Examples }, StringComparer.Ordinal);
-            run = await decisions.EvaluateAsync(options.Prompt, new { task = state, candidates = criteria }, token, new DecisionOptions
+            run = await decisions.EvaluateAsync(options.Prompt, new { task = state, candidates = criteria }, deadline.Token, new DecisionOptions
             {
                 Model = options.Model, Timeout = options.Timeout, RetryLimit = 0,
                 Choices = new Dictionary<string, IReadOnlyDictionary<string, object?>> { ["rank"] = criteria }

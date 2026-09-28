@@ -52,8 +52,7 @@ public sealed class DocumentSearchService(IDecisionService decisions, IEmbedServ
     public async Task<DocumentSearchResult> SearchAsync(DocumentCollection collection, string query, DocumentSearchOptions? options = null, CancellationToken token = default)
     {
         options ??= new DocumentSearchOptions();
-        if (options.EvidencePolicy is not null && options.EvidencePolicy.Question != "evidence")
-            throw new ArgumentException("Document evidence policies must target the evidence question.", nameof(options));
+        ValidateEvidencePolicy(options.EvidencePolicy);
         if (options.CandidateCount is < 1 or > 255 || options.ResultCount < 1 || options.ResultCount > options.CandidateCount || options.MaximumConcurrency is < 1 or > 32 || options.Timeout <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(options));
         token.ThrowIfCancellationRequested();
@@ -104,5 +103,18 @@ public sealed class DocumentSearchService(IDecisionService decisions, IEmbedServ
         DocumentSearchHit[] hits = ranked.Take(options.ResultCount).ToArray();
         return new(hits, !incomplete && hits.Any(h => h.Disposition == DecisionDisposition.Accept) ? DocumentSearchStatus.Found : DocumentSearchStatus.NeedsMoreSearch,
             candidates.Count, incomplete ? "decision-incomplete-or-unavailable" : fallback);
+    }
+
+    /// <summary>
+    /// Refuses an evidence policy that targets another question or is incomplete before any paid call; inside the
+    /// per-passage judgment an invalid policy would only surface as "decision-incomplete-or-unavailable".
+    /// </summary>
+    /// <param name="policy">The configured evidence policy, or null.</param>
+    internal static void ValidateEvidencePolicy(DecisionPolicy? policy)
+    {
+        if (policy is null) return;
+        if (policy.Question != "evidence")
+            throw new ArgumentException("Document evidence policies must target the evidence question.", "options");
+        policy.Validate();
     }
 }
