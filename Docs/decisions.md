@@ -230,7 +230,10 @@ The `document-search` tool and `search-files` alias return source passages. The
 default extractor supports text (text/*, JSON, XML, YAML, CSV, SQL and +json/+xml
 media types, plus untyped or octet-stream uploads that are valid UTF-8 without
 binary control bytes; invalid bytes decode as U+FFFD) and DOCX; PDF, images, OCR,
-and other binary formats require an `IDocumentTextExtractor` implementation. A
+and other binary formats require an `IDocumentTextExtractor` implementation.
+Declared text decodes in the media type's `charset` (ISO-8859-1 as its
+Windows-1252 superset, US-ASCII as UTF-8) and falls back to UTF-8 when there is
+none or the name is unknown; a byte-order mark overrides the declaration. A
 registered extractor also serves `read-file`, which reads only the first 120,000
 characters of large text. Unsupported attachments, and attachments whose
 extraction fails, are reported, never treated as plain text. Attachment indexes are
