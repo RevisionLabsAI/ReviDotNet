@@ -14,6 +14,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Revi;
 using Revi.Tests.Helpers;
 using Xunit;
@@ -21,10 +22,11 @@ using Xunit;
 namespace ReviDotNet.Tests.Services;
 
 /// <summary>
-/// The provider, model and embedding registries are read on every inference while a host may reload them. A reload
-/// used to clear the live list and refill it, so a concurrent reader could find it empty or half-built, or throw while
-/// enumerating it. These tests read from several threads while reloads and adds run, and pin the provider reload's
-/// ordering: the old list stays visible until the new one is published, and only then are replaced providers disposed.
+/// The provider, model, embedding, prompt, agent and custom-tool registries are read on every run while a host may
+/// reload them. A reload used to clear the live list and refill it, so a concurrent reader could find it empty or
+/// half-built, or throw while enumerating it. These tests read from several threads while reloads and adds run, and
+/// pin the provider reload's ordering: the old list stays visible until the new one is published, and only then are
+/// replaced providers disposed.
 /// </summary>
 public sealed class RegistryReloadConcurrencyTests
 {
@@ -126,6 +128,102 @@ public sealed class RegistryReloadConcurrencyTests
     }
 
     [Fact]
+    public async Task PromptReadersNeverSeeAnEmptyOrPartialListDuringReloadsAndUpdates()
+    {
+        PromptManagerService service = new(new RecordingReviLogger<PromptManagerService>());
+        ConfigAssembly configs = new(Configs("Prompts", i => PromptConfig($"prompt-{i}"), "pmt"));
+        await service.LoadAsync(configs);
+        string[] names = [.. Enumerable.Range(0, ConfigCount).Select(i => $"prompt-{i}")];
+        service.GetAll().Select(p => p.Name).Should().Contain(names, "the embedded fallback serves the test prompts");
+        service.Get("json-fixer").Should().NotBeNull("LoadAsync overlays the built-in prompts");
+        int loadedCount = service.GetAll().Count;
+
+        HammerResult result = await HammerAsync(
+            async i =>
+            {
+                await service.LoadAsync(configs);
+                service.AddOrUpdate(new Prompt { Name = $"added-{i}", Version = 1 });
+                // A higher version replaces a loaded prompt in place; it must never leave a gap.
+                service.AddOrUpdate(new Prompt { Name = names[i % ConfigCount], Version = 2 });
+            },
+            () =>
+            {
+                foreach (string name in names)
+                    if (service.Get(name) is null) return $"Get(\"{name}\") returned null";
+                if (service.Get("json-fixer") is null) return "Get(\"json-fixer\") returned null";
+                List<Prompt> all = service.GetAll();
+                if (all.Count < loadedCount) return $"GetAll() returned {all.Count} prompts";
+                return all.Any(p => p is null) ? "GetAll() returned a null entry" : null;
+            });
+
+        result.Failures.Should().BeEmpty("a reader must see either the old or the new complete list");
+        result.Reads.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task AgentReadersNeverSeeAnEmptyOrPartialListDuringReloadsAndReplacements()
+    {
+        AgentManagerService service = new(new RecordingReviLogger<AgentManagerService>());
+        ConfigAssembly configs = new(Configs("Agents", i => AgentConfig($"agent-{i}"), "agent"));
+        await service.LoadAsync(configs);
+        string[] names = [.. Enumerable.Range(0, ConfigCount).Select(i => $"agent-{i}")];
+        service.GetAll().Select(a => a.Name).Should().Equal(names, "the embedded fallback serves the test agents");
+
+        HammerResult result = await HammerAsync(
+            async i =>
+            {
+                await service.LoadAsync(configs);
+                service.Add(new AgentProfile { Name = $"added-{i}" });
+                // Replacing a loaded agent must never leave a moment where its name is missing.
+                service.AddOrReplace(new AgentProfile { Name = names[i % ConfigCount] });
+            },
+            () =>
+            {
+                foreach (string name in names)
+                    if (service.Get(name) is null) return $"Get(\"{name}\") returned null";
+                List<AgentProfile> all = service.GetAll();
+                if (all.Count < ConfigCount) return $"GetAll() returned {all.Count} agents";
+                return all.Any(a => a is null) ? "GetAll() returned a null entry" : null;
+            });
+
+        result.Failures.Should().BeEmpty("a reader must see either the old or the new complete list");
+        result.Reads.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task CustomToolReadersNeverSeeAnEmptyOrPartialListDuringReloadsAndAdditiveLoads()
+    {
+        ServiceCollection services = new();
+        services.AddReviDotNet(typeof(RegistryReloadConcurrencyTests).Assembly);
+        await using ServiceProvider provider = services.BuildServiceProvider();
+        ToolManagerService service = new(new Lazy<IAgentService>(provider.GetRequiredService<IAgentService>),
+            provider.GetRequiredService<IWebContentService>(), provider.GetRequiredService<IModelManager>(), new RecordingReviLogger<ToolManagerService>());
+        ConfigAssembly configs = new(Configs("Tools", i => ToolConfig($"tool-{i}"), "tool"));
+        ConfigAssembly extra = new(new Dictionary<string, string> { ["Revi.Tests.Extra.RConfigs.Tools.extra.tool"] = ToolConfig("extra-tool") });
+        await service.LoadAsync(configs);
+        string[] names = [.. Enumerable.Range(0, ConfigCount).Select(i => $"tool-{i}")];
+        service.GetAllCustom().Select(t => t.Name).Should().Equal(names, "the embedded fallback serves the test tools");
+
+        HammerResult result = await HammerAsync(
+            async i =>
+            {
+                await service.LoadAsync(configs);
+                service.LoadAssembly(extra);
+            },
+            () =>
+            {
+                foreach (string name in names)
+                    if (service.GetCustom(name) is null) return $"GetCustom(\"{name}\") returned null";
+                List<ToolProfile> all = service.GetAllCustom();
+                if (all.Count < ConfigCount) return $"GetAllCustom() returned {all.Count} tools";
+                return all.Any(t => t is null) ? "GetAllCustom() returned a null entry" : null;
+            });
+
+        result.Failures.Should().BeEmpty("a reader must see either the old or the new complete list");
+        result.Reads.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
     public async Task AProviderReloadKeepsTheOldListVisibleUntilItSwapsThenDisposesTheReplacedProviders()
     {
         ProviderManagerService service = new(new RecordingReviLogger<ProviderManagerService>());
@@ -214,15 +312,36 @@ public sealed class RegistryReloadConcurrencyTests
 
     /// <summary><see cref="ConfigCount"/> embedded resources under <c>RConfigs.{folder}.</c>, the layout the loaders look for.</summary>
     /// <param name="folder">The resource folder segment, e.g. <c>Providers</c> or <c>Models.Inference</c>.</param>
-    /// <param name="content">The <c>.rcfg</c> text for config <c>i</c>.</param>
-    private static Dictionary<string, string> Configs(string folder, Func<int, string> content)
+    /// <param name="content">The config text for config <c>i</c>.</param>
+    /// <param name="extension">The file extension the registry loads, e.g. <c>rcfg</c>, <c>pmt</c>, <c>agent</c> or <c>tool</c>.</param>
+    private static Dictionary<string, string> Configs(string folder, Func<int, string> content, string extension = "rcfg")
     {
         // LoadAsync reads BaseDirectory/RConfigs/<folder>/ and falls back to embedded resources only when it is missing.
         // (Other tests may leave an empty RConfigs root behind, which does not matter.)
         string loadPath = AppDomain.CurrentDomain.BaseDirectory + "RConfigs/" + folder.Replace('.', '/') + "/";
         Directory.Exists(loadPath).Should().BeFalse("LoadAsync must fall back to the embedded test configs, so {0} must not exist", loadPath);
-        return Enumerable.Range(0, ConfigCount).ToDictionary(i => $"Revi.Tests.RConfigs.{folder}.config-{i}.rcfg", content);
+        return Enumerable.Range(0, ConfigCount).ToDictionary(i => $"Revi.Tests.RConfigs.{folder}.config-{i}.{extension}", content);
     }
+
+    /// <summary>A minimal chat prompt.</summary>
+    /// <param name="name">The prompt name.</param>
+    private static string PromptConfig(string name) =>
+        $"[[information]]\nname = {name}\nversion = 1\n\n[[settings]]\ncompletion-type = chat-only\n\n" +
+        "[[_system]]\nYou are a test prompt.\n\n[[_instruction]]\nReply with OK.\n";
+
+    /// <summary>A minimal one-state agent.</summary>
+    /// <param name="name">The agent name.</param>
+    private static string AgentConfig(string name) =>
+        $"[[information]]\nname = {name}\nversion = 1\ndescription = test agent\n\n" +
+        "[[loop]]\nentry = start\n\n[[state.start]]\ndescription = test state\n\n" +
+        "[[_state.start.instruction]]\nReply and finish.\n\n[[state.start.guardrails]]\nmax-steps = 2\ntimeout = 30\n\n" +
+        "[[_loop]]\nstart\n  -> [end] [when: DONE]\n";
+
+    /// <summary>A minimal HTTP MCP tool.</summary>
+    /// <param name="name">The tool name.</param>
+    private static string ToolConfig(string name) =>
+        $"[[information]]\nname = {name}\ndescription = test tool\n\n[[general]]\nenabled = true\n\n" +
+        "[[mcp]]\ntransport = Http\nserver-url = https://tools.invalid\n";
 
     /// <summary>A SystemOne provider: it owns a disposable decision client, which makes disposal observable.</summary>
     /// <param name="name">The provider name.</param>

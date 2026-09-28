@@ -8,10 +8,17 @@ using System.Reflection;
 
 namespace Revi;
 
-/// <summary>Service implementation of <see cref="IAgentManager"/>. Holds loaded agent profiles as instance state.</summary>
+/// <summary>
+/// Service implementation of <see cref="IAgentManager"/>. Holds loaded agent profiles as instance state.
+/// Reads never lock and are safe during a reload: every write builds a complete replacement list and publishes it
+/// with one reference swap, so a reader sees either the old list or the new one, never a partial or empty one.
+/// </summary>
 public sealed class AgentManagerService : IAgentManager
 {
-    private readonly List<AgentProfile> _agents = [];
+    /// <summary>Serialises writers so concurrent loads and adds cannot lose each other's entries. Readers never take it.</summary>
+    private readonly object _writeLock = new();
+    /// <summary>The published agents. Never mutated once assigned; writers replace the whole array under <see cref="_writeLock"/>.</summary>
+    private volatile AgentProfile[] _agents = [];
     private readonly IReviLogger<AgentManagerService> _logger;
 
     /// <summary>Initializes a new <see cref="AgentManagerService"/>.</summary>
@@ -23,21 +30,25 @@ public sealed class AgentManagerService : IAgentManager
     /// <inheritdoc/>
     public Task LoadAsync(Assembly assembly, CancellationToken cancellationToken = default)
     {
-        _agents.Clear();
-
         string path = AppDomain.CurrentDomain.BaseDirectory + "RConfigs/Agents/";
 
-        try
+        lock (_writeLock)
         {
-            LoadFromFileSystem(path);
-        }
-        catch (DirectoryNotFoundException)
-        {
-            LoadFromEmbeddedResources(assembly);
-        }
-        catch (Exception e)
-        {
-            _logger.LogError($"AgentManager: Error loading agents: {e.Message}");
+            List<AgentProfile> loaded = [];
+            try
+            {
+                ReadFileSystem(path, loaded);
+            }
+            catch (DirectoryNotFoundException)
+            {
+                ReadEmbeddedResources(assembly, loaded);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError($"AgentManager: Error loading agents: {e.Message}");
+            }
+
+            _agents = [.. loaded];
         }
 
         return Task.CompletedTask;
@@ -61,16 +72,36 @@ public sealed class AgentManagerService : IAgentManager
 
     /// <inheritdoc/>
     public void Add(AgentProfile agent)
-        => _agents.Add(agent);
+    {
+        lock (_writeLock) _agents = [.. _agents, agent];
+    }
 
     /// <inheritdoc/>
     public void AddOrReplace(AgentProfile agent)
     {
-        _agents.RemoveAll(a => a.Name == agent.Name);
-        _agents.Add(agent);
+        lock (_writeLock) _agents = [.. _agents.Where(a => a.Name != agent.Name), agent];
     }
 
-    private void LoadFromFileSystem(string path)
+    /// <summary>Additively loads the <c>.agent</c> files under <paramref name="path"/>; existing agents win a name clash.</summary>
+    /// <param name="path">The directory to read.</param>
+    private void LoadFromFileSystem(string path) => Merge(loaded => ReadFileSystem(path, loaded));
+
+    /// <summary>Publishes the current agents plus whatever <paramref name="read"/> appends, as one swap.</summary>
+    /// <param name="read">Appends newly read agents to the working copy it is given.</param>
+    private void Merge(Action<List<AgentProfile>> read)
+    {
+        lock (_writeLock)
+        {
+            List<AgentProfile> merged = [.. _agents];
+            read(merged);
+            _agents = [.. merged];
+        }
+    }
+
+    /// <summary>Reads the <c>.agent</c> files under <paramref name="path"/> into <paramref name="target"/>.</summary>
+    /// <param name="path">The directory to read; a missing one throws <see cref="DirectoryNotFoundException"/>.</param>
+    /// <param name="target">The working list new agents are appended to.</param>
+    private void ReadFileSystem(string path, List<AgentProfile> target)
     {
         List<string> files = Directory
             .EnumerateFiles(path, "*.agent", SearchOption.AllDirectories)
@@ -91,7 +122,7 @@ public sealed class AgentManagerService : IAgentManager
                 // outside the app's own RConfigs (e.g. an additional RConfig folder).
                 agent.SourcePath = Path.GetFullPath(file);
 
-                CheckAdd(agent, embedded: false);
+                CheckAdd(target, agent, embedded: false);
             }
             catch (Exception ex)
             {
@@ -101,9 +132,12 @@ public sealed class AgentManagerService : IAgentManager
     }
 
     /// <inheritdoc/>
-    public void LoadAssembly(Assembly assembly) => LoadFromEmbeddedResources(assembly);
+    public void LoadAssembly(Assembly assembly) => Merge(loaded => ReadEmbeddedResources(assembly, loaded));
 
-    private void LoadFromEmbeddedResources(Assembly assembly)
+    /// <summary>Reads the agent profiles embedded in <paramref name="assembly"/> into <paramref name="target"/>.</summary>
+    /// <param name="assembly">The assembly whose <c>.Agents.</c> resources are read.</param>
+    /// <param name="target">The working list new agents are appended to.</param>
+    private void ReadEmbeddedResources(Assembly assembly, List<AgentProfile> target)
     {
         try
         {
@@ -128,7 +162,7 @@ public sealed class AgentManagerService : IAgentManager
                     if (agent?.Name is null)
                         continue;
 
-                    CheckAdd(agent, embedded: true);
+                    CheckAdd(target, agent, embedded: true);
                 }
                 catch (Exception ex)
                 {
@@ -142,15 +176,19 @@ public sealed class AgentManagerService : IAgentManager
         }
     }
 
-    private void CheckAdd(AgentProfile agent, bool embedded)
+    /// <summary>Appends <paramref name="agent"/> to <paramref name="target"/> unless an agent of that name is already there.</summary>
+    /// <param name="target">The working list being built.</param>
+    /// <param name="agent">The agent just read.</param>
+    /// <param name="embedded">Whether it came from an embedded resource (for the log line).</param>
+    private void CheckAdd(List<AgentProfile> target, AgentProfile agent, bool embedded)
     {
-        if (_agents.Any(a => a.Name == agent.Name))
+        if (target.Any(a => a.Name == agent.Name))
         {
             _logger.LogInfo($"AgentManager: Duplicate agent name '{agent.Name}' — skipping.");
             return;
         }
 
-        _agents.Add(agent);
+        target.Add(agent);
         _logger.LogInfo(embedded
             ? $"AgentManager: Loaded embedded agent \"{agent.Name}\""
             : $"AgentManager: Loaded agent \"{agent.Name}\" from file system");

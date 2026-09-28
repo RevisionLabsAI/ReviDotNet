@@ -12,11 +12,16 @@ namespace Revi;
 /// Service implementation of <see cref="IToolManager"/>. Holds built-in and custom tools as instance state.
 /// Built-in tools are registered at construction time. <see cref="InvokeAgentTool"/> is registered with a
 /// <see cref="Lazy{T}"/> reference to <see cref="IAgentService"/> to avoid a circular DI dependency.
+/// Custom-tool reads never lock and are safe during a reload: every write builds a complete replacement list and
+/// publishes it with one reference swap, so a reader sees either the old list or the new one, never a partial one.
 /// </summary>
 public sealed class ToolManagerService : IToolManager
 {
     private readonly Dictionary<string, IBuiltInTool> _builtIns = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<ToolProfile> _customTools = [];
+    /// <summary>Serialises custom-tool writers so concurrent loads cannot lose each other's entries. Readers never take it.</summary>
+    private readonly object _writeLock = new();
+    /// <summary>The published custom tools. Never mutated once assigned; writers replace the whole array under <see cref="_writeLock"/>.</summary>
+    private volatile ToolProfile[] _customTools = [];
     private readonly IReviLogger<ToolManagerService> _logger;
 
     /// <summary>Initializes a new <see cref="ToolManagerService"/> and registers the default built-in tools.</summary>
@@ -47,21 +52,25 @@ public sealed class ToolManagerService : IToolManager
     /// <inheritdoc/>
     public Task LoadAsync(Assembly assembly, CancellationToken cancellationToken = default)
     {
-        _customTools.Clear();
-
         string path = AppDomain.CurrentDomain.BaseDirectory + "RConfigs/Tools/";
 
-        try
+        lock (_writeLock)
         {
-            LoadFromFileSystem(path);
-        }
-        catch (DirectoryNotFoundException)
-        {
-            LoadFromEmbeddedResources(assembly);
-        }
-        catch (Exception e)
-        {
-            _logger.LogError($"ToolManager: Error loading tools: {e.Message}");
+            List<ToolProfile> loaded = [];
+            try
+            {
+                ReadFileSystem(path, loaded);
+            }
+            catch (DirectoryNotFoundException)
+            {
+                ReadEmbeddedResources(assembly, loaded);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError($"ToolManager: Error loading tools: {e.Message}");
+            }
+
+            _customTools = [.. loaded];
         }
 
         return Task.CompletedTask;
@@ -111,7 +120,26 @@ public sealed class ToolManagerService : IToolManager
     public List<ToolProfile> GetAllCustom()
         => [.._customTools];
 
-    private void LoadFromFileSystem(string path)
+    /// <summary>Additively loads the <c>.tool</c> files under <paramref name="path"/>; existing tools win a name clash.</summary>
+    /// <param name="path">The directory to read.</param>
+    private void LoadFromFileSystem(string path) => Merge(loaded => ReadFileSystem(path, loaded));
+
+    /// <summary>Publishes the current custom tools plus whatever <paramref name="read"/> appends, as one swap.</summary>
+    /// <param name="read">Appends newly read tools to the working copy it is given.</param>
+    private void Merge(Action<List<ToolProfile>> read)
+    {
+        lock (_writeLock)
+        {
+            List<ToolProfile> merged = [.. _customTools];
+            read(merged);
+            _customTools = [.. merged];
+        }
+    }
+
+    /// <summary>Reads the <c>.tool</c> files under <paramref name="path"/> into <paramref name="target"/>.</summary>
+    /// <param name="path">The directory to read; a missing one throws <see cref="DirectoryNotFoundException"/>.</param>
+    /// <param name="target">The working list new tools are appended to.</param>
+    private void ReadFileSystem(string path, List<ToolProfile> target)
     {
         List<string> files = Directory
             .EnumerateFiles(path, "*.tool", SearchOption.AllDirectories)
@@ -130,7 +158,7 @@ public sealed class ToolManagerService : IToolManager
                 if (data.TryGetValue("mcp_capabilities", out string? caps))
                     tool.Capabilities = Util.SplitByCommaOrSpace(caps);
 
-                CheckAdd(tool, embedded: false);
+                CheckAdd(target, tool, embedded: false);
             }
             catch (Exception ex)
             {
@@ -140,9 +168,12 @@ public sealed class ToolManagerService : IToolManager
     }
 
     /// <inheritdoc/>
-    public void LoadAssembly(Assembly assembly) => LoadFromEmbeddedResources(assembly);
+    public void LoadAssembly(Assembly assembly) => Merge(loaded => ReadEmbeddedResources(assembly, loaded));
 
-    private void LoadFromEmbeddedResources(Assembly assembly)
+    /// <summary>Reads the tool profiles embedded in <paramref name="assembly"/> into <paramref name="target"/>.</summary>
+    /// <param name="assembly">The assembly whose <c>.Tools.</c> resources are read; null reads nothing.</param>
+    /// <param name="target">The working list new tools are appended to.</param>
+    private void ReadEmbeddedResources(Assembly assembly, List<ToolProfile> target)
     {
         try
         {
@@ -169,7 +200,7 @@ public sealed class ToolManagerService : IToolManager
                     if (data.TryGetValue("mcp_capabilities", out string? caps))
                         tool.Capabilities = Util.SplitByCommaOrSpace(caps);
 
-                    CheckAdd(tool, embedded: true);
+                    CheckAdd(target, tool, embedded: true);
                 }
                 catch (Exception ex)
                 {
@@ -183,15 +214,19 @@ public sealed class ToolManagerService : IToolManager
         }
     }
 
-    private void CheckAdd(ToolProfile tool, bool embedded)
+    /// <summary>Appends <paramref name="tool"/> to <paramref name="target"/> unless a tool of that name is already there.</summary>
+    /// <param name="target">The working list being built.</param>
+    /// <param name="tool">The tool just read.</param>
+    /// <param name="embedded">Whether it came from an embedded resource (for the log line).</param>
+    private void CheckAdd(List<ToolProfile> target, ToolProfile tool, bool embedded)
     {
-        if (_customTools.Any(t => t.Name == tool.Name))
+        if (target.Any(t => t.Name == tool.Name))
         {
             _logger.LogInfo($"ToolManager: Duplicate tool name '{tool.Name}' — skipping.");
             return;
         }
 
-        _customTools.Add(tool);
+        target.Add(tool);
         _logger.LogInfo(embedded
             ? $"ToolManager: Loaded embedded tool \"{tool.Name}\""
             : $"ToolManager: Loaded tool \"{tool.Name}\" from file system");
