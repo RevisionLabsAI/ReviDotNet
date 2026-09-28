@@ -87,14 +87,16 @@ public sealed class EmbeddingManagerService : IEmbeddingManager
     /// <inheritdoc/>
     public EmbeddingProfile? Find(string? minTier)
     {
-        Enum.TryParse(minTier ?? "", out ModelTier foundTier);
+        // Case-insensitive so a lowercase a/b/c resolves correctly instead of silently defaulting to C.
+        Enum.TryParse(minTier ?? "", ignoreCase: true, out ModelTier foundTier);
         return Find(foundTier);
     }
 
     /// <inheritdoc/>
     public EmbeddingProfile? Find(string? minTier, List<string>? blockedModels)
     {
-        Enum.TryParse(minTier ?? "", out ModelTier foundTier);
+        // Case-insensitive so a lowercase a/b/c resolves correctly instead of silently defaulting to C.
+        Enum.TryParse(minTier ?? "", ignoreCase: true, out ModelTier foundTier);
         return Find(foundTier, blockedModels);
     }
 
