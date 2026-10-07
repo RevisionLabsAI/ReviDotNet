@@ -67,6 +67,21 @@ public class StepJsonParserTests
         r.ToolCalls[0].Name.Should().Be("web-search");
     }
 
+    [Fact]
+    public void Parses_NullCollectionsAndFields_AsEmpty()
+    {
+        // A model may write null where the contract asks for [] or a string; the runner enumerates
+        // tool_calls and passes each input straight to a tool, so neither may come back null.
+        string raw = "{\"signal\":\"DONE\",\"tool_calls\":null,\"content\":null}";
+        var r = StepJsonParser.Parse(raw);
+        r.Should().NotBeNull();
+        r!.ToolCalls.Should().BeEmpty();
+        r.Content.Should().BeEmpty();
+
+        var withNulls = StepJsonParser.Parse("{\"signal\":null,\"tool_calls\":[null,{\"name\":\"web-search\",\"input\":null}],\"content\":\"x\"}");
+        withNulls!.ToolCalls.Should().ContainSingle().Which.Input.Should().BeEmpty();
+    }
+
     [Theory]
     [InlineData("I'm sorry, I can't help with that.")]
     [InlineData("")]
