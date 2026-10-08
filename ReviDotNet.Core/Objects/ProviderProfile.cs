@@ -26,6 +26,27 @@ public class ProviderProfile : IDisposable
     public bool? Enabled { get; set; }
     
     public InferClient? InferenceClient;
+
+    /// <summary>
+    /// Optional host hook: supplies the <see cref="HttpClient"/> a profile's <see cref="InferenceClient"/> sends
+    /// its requests through. <see cref="Init"/> calls it once per profile, every time it builds the client,
+    /// and passes the result to <see cref="InferClient"/> as its <c>httpClientOverride</c>; a null result (or
+    /// no factory, the default) keeps the built-in client.
+    /// <para>
+    /// It exists so a host can put a <see cref="DelegatingHandler"/> in front of every model request a
+    /// profile makes — metering, an admission check, a test transport — including the requests an agent
+    /// makes on its own steps, which never pass through <c>IInferService</c>. An exception the handler
+    /// throws that is not an <see cref="HttpRequestException"/> or a <see cref="TimeoutException"/> is not
+    /// retried by the client and surfaces to the caller.
+    /// </para>
+    /// <para>
+    /// Return a new client for each call. <see cref="InferClient"/> sets the base address, the timeout and
+    /// the authentication headers on the client it is given, and disposes it with itself, so a shared
+    /// client would carry one profile's credentials into another's requests. Set this once, at startup,
+    /// before the registries load. Embedding and decision clients are not affected.
+    /// </para>
+    /// </summary>
+    public static Func<ProviderProfile, HttpClient?>? InferenceHttpClientFactory { get; set; }
     public EmbedClient? EmbeddingClient;
 
     /// <summary>Decision capability, independent of inference and embedding clients.</summary>
@@ -274,6 +295,7 @@ public class ProviderProfile : IDisposable
             defaultGuidanceString: DefaultGuidanceString ?? "",
             jsonSchemaMode: JsonSchemaMode ?? global::Revi.JsonSchemaMode.JsonSchema,
             apiVersionPath: APIVersionPath,
+            httpClientOverride: InferenceHttpClientFactory?.Invoke(this),
             providerName: Name ?? string.Empty,
             routingPolicy: BuildRoutingPolicy());
         
