@@ -72,6 +72,14 @@ public class AgentProfile
     public decimal? RunCostBudget { get; set; }
 
     /// <summary>
+    /// Optional run-wide cap on LLM calls across every state. Null means the runner's default
+    /// (<see cref="AgentRunner.DefaultMaxTotalSteps"/>), so a run always ends even when no state sets
+    /// a guardrail of its own. State-level <c>max-steps</c> applies independently.
+    /// </summary>
+    [RConfigProperty("settings_max-total-steps")]
+    public int? MaxTotalSteps { get; set; }
+
+    /// <summary>
     /// How the agent may be driven from the workshop: <c>fixed</c> (autonomous run), <c>chat</c>
     /// (interactive), or <c>both</c>. Null when unspecified — see <see cref="EffectiveInteractionMode"/>,
     /// which defaults to <see cref="Revi.InteractionMode.Fixed"/> for backward compatibility.
