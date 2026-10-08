@@ -275,7 +275,7 @@ review. Score rubrics require task-specific policies rather than an invented
 universal score cutoff. The caller owns traffic-slice applicability; the library
 cannot infer whether a request belongs to a calibration population.
 
-Refinery's `DecisionCalibration.Analyze` computes Brier score, ten-bin expected
+`DecisionCalibration.Analyze` (in ReviDotNet.Core, so a host can run it without the Refinery) computes Brier score, ten-bin expected
 calibration error, threshold coverage, error among accepted predictions, and error
 per incoming sample. `DistributionShift` compares probability histograms.
 Labels must refer to the exact predicted event (for boolean, whether yes is true;

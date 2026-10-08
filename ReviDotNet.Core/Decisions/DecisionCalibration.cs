@@ -1,4 +1,4 @@
-namespace Revi.Refinery;
+namespace Revi;
 
 /// <summary>A labelled decision with a probability of its predicted event and an independent correctness label.</summary>
 public sealed record DecisionCalibrationSample(string Id, string Model, string PromptHash, string TrafficSlice, double Probability, bool Correct);
