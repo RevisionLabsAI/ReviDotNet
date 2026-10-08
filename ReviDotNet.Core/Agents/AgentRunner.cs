@@ -4,7 +4,6 @@
 //  See LICENSE.txt in the project root for full license information.
 // ===================================================================
 
-using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 
 namespace Revi;
@@ -68,8 +67,11 @@ public class AgentRunner
     private string _currentStateName = "";
     private AgentState _currentState = null!;
 
+    // Activations per state across the run (a `-> self` transition counts as a re-activation)
+    private readonly Dictionary<string, int> _stateCycles = new(StringComparer.OrdinalIgnoreCase);
+    private int _currentStateCycles => _stateCycles.GetValueOrDefault(_currentStateName);
+
     // Per-activation counters (reset on state transition)
-    private int _currentStateCycles;   // number of times the current state has been activated
     private int _currentStateSteps;    // LLM calls in the current activation
     private int _currentStateToolCalls; // tool calls dispatched in the current activation
     private int _signalsCorrectedThisActivation; // unknown-signal nudges sent in the current activation
@@ -81,6 +83,9 @@ public class AgentRunner
     // Run-wide tracking
     private readonly List<Message> _conversationHistory = new();
     private readonly List<string> _stateTraversalHistory = new();
+    // What the model did in each activation of _stateTraversalHistory (same indexing): the signal and
+    // tool calls of every step, so loop detection can tell a repeated round from a stuck one.
+    private readonly List<string> _activationActivity = new();
     private int _totalSteps;
     private decimal _runTotalCost; // run-wide cumulative USD cost across all states
     private bool _runBudgetWarned; // whether the run-wide 80% warning has been emitted
@@ -143,7 +148,10 @@ public class AgentRunner
         _selectionRequest = _conversationHistory.LastOrDefault(m => m.Role == "user")?.Content ?? "";
         while (true)
         {
-            _token.ThrowIfCancellationRequested();
+            // A cancelled run ends the same way wherever the cancellation lands: between steps
+            // (here), during the model call, or during a tool call.
+            if (_token.IsCancellationRequested)
+                return Terminate(AgentExitReason.Cancelled);
 
             // ── Guardrail check ──────────────────────────────────────────────
             var (violated, violationMsg) = CheckGuardrails();
@@ -266,6 +274,11 @@ public class AgentRunner
             }
 
             _lastContent = stepResponse.Content;
+            _activationActivity[^1] += JsonConvert.SerializeObject(new object?[]
+            {
+                stepResponse.Signal?.Trim().ToUpperInvariant(),
+                stepResponse.ToolCalls.Select(tc => new[] { tc.Name, tc.Input })
+            });
 
             // ── Surface optional thinking output ─────────────────────────────
             if (!string.IsNullOrWhiteSpace(stepResponse.Thinking))
@@ -428,7 +441,7 @@ public class AgentRunner
             {
                 // Self-loop: stay in the same activation context (keep accumulating step/tool/cost counters),
                 // but count it as a re-activation so cycle-limit bounds self-looping states as documented.
-                _currentStateCycles++;
+                _stateCycles[_currentStateName] = _currentStateCycles + 1;
                 continue;
             }
 
@@ -464,7 +477,7 @@ public class AgentRunner
             string.Equals(s.Name, stateName, StringComparison.OrdinalIgnoreCase));
 
         // Increment cycle count (how many times this state has been activated)
-        _currentStateCycles++;
+        _stateCycles[stateName] = _currentStateCycles + 1;
 
         // Reset per-activation counters
         _currentStateSteps = 0;
@@ -476,6 +489,7 @@ public class AgentRunner
         _stateActivatedAt = DateTime.UtcNow;
 
         _stateTraversalHistory.Add(stateName);
+        _activationActivity.Add("");
         Util.Log($"AgentRunner '{_profile.Name}': Entered state '{stateName}' (cycle {_currentStateCycles}).");
     }
 
@@ -628,20 +642,26 @@ public class AgentRunner
     }
 
     /// <summary>
-    /// Sliding-window loop detection. Checks whether the most recent state traversal history
-    /// contains a repeated sub-sequence of any length (1 to n/2).
+    /// Loop detection over the state traversal history. A loop is the most recent round of states
+    /// (of any length) having just run twice in a row with the same signals and the same tool calls,
+    /// and the run now starting that round a third time. Rounds that revisit the same states but do
+    /// different work — a new search query, say — are not a loop.
     /// </summary>
     private bool DetectLoop()
     {
+        // The last entry is the activation now starting; everything before it has finished.
         int n = _stateTraversalHistory.Count;
-        if (n < 4) return false; // Need at least 2 repetitions of length-2
 
-        for (int len = 1; len <= n / 2; len++)
+        for (int len = 1; 2 * len < n; len++)
         {
+            if (_stateTraversalHistory[n - 1] != _stateTraversalHistory[n - 1 - len])
+                continue;
+
             bool repeats = true;
-            for (int i = 0; i < len; i++)
+            for (int i = n - 2; i > n - 2 - len; i--)
             {
-                if (_stateTraversalHistory[n - 1 - i] != _stateTraversalHistory[n - 1 - i - len])
+                if (_stateTraversalHistory[i] != _stateTraversalHistory[i - len]
+                    || _activationActivity[i] != _activationActivity[i - len])
                 {
                     repeats = false;
                     break;
@@ -903,7 +923,7 @@ public class AgentRunner
         {
             string placeholder = "{" + Util.Identifierize(key) + "}";
             if (text.Contains(placeholder, StringComparison.OrdinalIgnoreCase))
-                text = Regex.Replace(text, Regex.Escape(placeholder), value?.ToString() ?? "", RegexOptions.IgnoreCase);
+                text = text.Replace(placeholder, value?.ToString() ?? "", StringComparison.OrdinalIgnoreCase);
         }
 
         return text;
@@ -1016,8 +1036,8 @@ public class AgentRunner
             ToolCallResult result;
             // Carry the current state's max-agent-depth guardrail so InvokeAgentTool enforces the
             // per-state override rather than only the runner-wide default.
-            AgentRunContext childCtx = _ctx.Child(toolCallRlog, _currentState.Guardrails.MaxAgentDepth, _authorizedContext);
-            using (AgentRunContext.Push(childCtx))
+            AgentRunContext dispatchCtx = _ctx.ForToolDispatch(toolCallRlog, _currentState.Guardrails.MaxAgentDepth, _authorizedContext);
+            using (AgentRunContext.Push(dispatchCtx))
             {
                 result = await ExecuteToolAsync(tc.Name, tc.Input);
             }
@@ -1054,6 +1074,8 @@ public class AgentRunner
         if (builtIn != null)
         {
             try { return await builtIn.ExecuteAsync(input, _token); }
+            // The run being cancelled is not a tool failure to hand back to the model.
+            catch (OperationCanceledException) when (_token.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
                 return new ToolCallResult { ToolName = toolName, Failed = true, ErrorMessage = ex.Message };

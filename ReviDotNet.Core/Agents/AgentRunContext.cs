@@ -75,6 +75,17 @@ public sealed class AgentRunContext
         new() { ParentLog = parentLog, Depth = Depth + 1, MaxAgentDepthOverride = maxAgentDepthOverride, Files = Files, Documents = Documents, DocumentSearchOptions = DocumentSearchOptions, AuthorizedContext = authorizedContext ?? [] };
 
     /// <summary>
+    /// Builds the context a tool call runs under: this run's own depth, with the tool-call Rlog as the
+    /// parent a sub-agent should attach to. A tool call is not a nesting level, so depth is unchanged;
+    /// <see cref="Child"/> is what adds one, when InvokeAgentTool starts a sub-agent.
+    /// </summary>
+    /// <param name="toolCallLog">The tool-call Rlog of the dispatch.</param>
+    /// <param name="maxAgentDepthOverride">The dispatching state's max-agent-depth guardrail, if any.</param>
+    /// <param name="authorizedContext">The tools the dispatching state may see.</param>
+    public AgentRunContext ForToolDispatch(Rlog toolCallLog, int? maxAgentDepthOverride, IReadOnlyList<ContextCandidate> authorizedContext) =>
+        new() { ParentLog = toolCallLog, Depth = Depth, MaxAgentDepthOverride = maxAgentDepthOverride, Files = Files, Documents = Documents, DocumentSearchOptions = DocumentSearchOptions, AuthorizedContext = authorizedContext };
+
+    /// <summary>
     /// Sets the ambient context for the duration of the returned scope. AgentRunner
     /// uses this around each tool dispatch so InvokeAgentTool can recover the parent
     /// log without modifying the IBuiltInTool interface.

@@ -32,7 +32,22 @@ internal static class StepJsonParser
 
     private static AgentStepResponse? TryDeserialize(string json)
     {
-        try { return JsonConvert.DeserializeObject<AgentStepResponse>(json); }
+        try { return Normalize(JsonConvert.DeserializeObject<AgentStepResponse>(json)); }
         catch { return null; }
+    }
+
+    /// <summary>
+    /// Replaces the nulls a model may write where the contract asks for an array or a string, so the
+    /// runner can enumerate tool calls and hand each input to a tool without null checks.
+    /// </summary>
+    private static AgentStepResponse? Normalize(AgentStepResponse? step)
+    {
+        if (step is null) return null;
+
+        step.Content ??= "";
+        step.ToolCalls = (step.ToolCalls ?? []).Where(call => call is not null).ToList();
+        foreach (AgentToolCall call in step.ToolCalls)
+            call.Input ??= "";
+        return step;
     }
 }
