@@ -52,7 +52,7 @@ public sealed class EvaluatorPromptContractTests
     }
 
     [Theory]
-    [InlineData("AgentRunJudge.pmt", 3000)]
+    [InlineData("AgentRunJudge.pmt", 8000)]   // Opus 5.5 always thinks, and thinking counts against the budget
     [InlineData("PairwiseJudge.pmt", 2000)]
     [InlineData("Proposer.pmt", 8000)]
     [InlineData("ScenarioGenerator.pmt", 8000)]
@@ -64,7 +64,7 @@ public sealed class EvaluatorPromptContractTests
     }
 
     [Theory]
-    [InlineData("AgentRunJudge.pmt", "claude-sonnet-4-6")]    // volume call (1× per scored run) — cost-pinned
+    [InlineData("AgentRunJudge.pmt", "claude-opus-5-5")]      // volume call (1× per scored run) — owner chose Opus 5.5 on 2026-10-15
     [InlineData("PairwiseJudge.pmt", "claude-sonnet-4-6")]    // volume call (≤8× per candidate) — cost-pinned
     [InlineData("Proposer.pmt", "claude-opus-4-8")]           // 1× per round — depth-pinned
     [InlineData("ScenarioGenerator.pmt", "claude-opus-4-8")]  // rare authoring call — depth-pinned
