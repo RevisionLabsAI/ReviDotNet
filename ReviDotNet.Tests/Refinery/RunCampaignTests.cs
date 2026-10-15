@@ -400,6 +400,98 @@ public class RunCampaignTests
         result.Iterations.Should().BeEmpty("no improvement round may start once the cap has stopped the baseline");
     }
 
+    // ── Runs that never reach a model ─────────────────────────────────────────────────────────────────
+
+    /// <summary>One run at a time, as every capped campaign runs; in parallel the runs already started when a refusal lands still finish.</summary>
+    private static CampaignSpec Sequential() => Spec() with { MaxParallelRuns = 1 };
+
+    private static RefinementController DeadRunController(MetaLlmUsageBroker meta, DeadAgentService agentService) =>
+        Controller(new NullProposer(), agentService, new RefineryCaptureBroker(), new StubPairwiseInfer(),
+            meta, new MeteredJudge(meta, quality: 5, metaTokensPerCall: 100_000));
+
+    [Fact]
+    public async Task MeasureBaseline_RunsThatFailBeforeAnyModelAnswers_AreNotJudged()
+    {
+        MetaLlmUsageBroker meta = new();
+        DeadAgentService agentService = new(reportBilling: false);
+
+        Campaign result = await DeadRunController(meta, agentService).MeasureBaselineAsync(Spec(), FiveScenarios(), "def", checkers: []);
+
+        result.Status.Should().Be(CampaignStatus.Converged);
+        result.Baseline!.RunCount.Should().Be(5);
+        result.Baseline.FailedBeforeModelRuns.Should().Be(5);
+        result.Baseline.QualityScoredRuns.Should().Be(0);
+        result.Baseline.QualityJudgeFailures.Should().Be(0, "a run with nothing to grade is not a judge failure");
+        result.CostSpentUsd.Should().Be(0m, "the judge was never paid to grade a failed run");
+    }
+
+    [Fact]
+    public async Task MeasureBaseline_ABillingRefusal_StopsTheCampaignAfterTheRunThatHitIt()
+    {
+        MetaLlmUsageBroker meta = new();
+        DeadAgentService agentService = new(reportBilling: true);
+
+        Func<Task> act = () => DeadRunController(meta, agentService).MeasureBaselineAsync(Sequential(), FiveScenarios(), "def", checkers: []);
+
+        (await act.Should().ThrowAsync<ProviderHaltException>()).Which.Message.Should().Contain("Billing").And.Contain("openai");
+        agentService.Runs.Should().Be(1, "every later run would fail on the same exhausted account");
+        meta.SpentUsd.Should().Be(0m);
+    }
+
+    [Fact]
+    public async Task RunCampaign_ABillingRefusal_StopsTheBaselineAfterTheRunThatHitIt()
+    {
+        MetaLlmUsageBroker meta = new();
+        DeadAgentService agentService = new(reportBilling: true);
+
+        Func<Task> act = () => DeadRunController(meta, agentService).RunCampaignAsync(Sequential(), FiveScenarios(), AgentDefinition, checkers: []);
+
+        await act.Should().ThrowAsync<ProviderHaltException>();
+        agentService.Runs.Should().Be(1);
+    }
+
+    /// <summary>
+    /// An agent service whose every run fails before any model answers: exit reason Error, no tokens. With
+    /// <c>reportBilling</c> it also reports what the HTTP client reports for an account out of credit.
+    /// </summary>
+    private sealed class DeadAgentService(bool reportBilling) : IAgentService
+    {
+        private int _runs;
+
+        /// <summary>How many runs were started.</summary>
+        public int Runs => _runs;
+
+        private AgentResult Fail()
+        {
+            Interlocked.Increment(ref _runs);
+            if (reportBilling)
+                InferenceProviderMonitor.ReportFailure("OpenAI", "gpt-test",
+                    new InferenceFailure(InferenceFailureKind.Billing, 429, "insufficient_quota", "no credit"), streaming: false);
+            return new AgentResult
+            {
+                FinalOutput = null,
+                ExitReason = AgentExitReason.Error,
+                TotalSteps = 0,
+                SessionId = Guid.NewGuid().ToString("n"),
+                StateHistory = ["start"]
+            };
+        }
+
+        public Task<AgentResult> Run(string agentName, Dictionary<string, object>? inputs = null, CancellationToken token = default) =>
+            Task.FromResult(Fail());
+        public Task<AgentResult> Run(AgentProfile profile, IReadOnlyDictionary<string, object> inputs, AgentRunContext? context = null,
+            CancellationToken token = default, IToolManager? toolOverride = null, ModelProfile? modelOverride = null) =>
+            Task.FromResult(Fail());
+        public Task<AgentResult> Run(string agentName, Dictionary<string, object>? inputs, AgentRunContext ctx, CancellationToken token = default) =>
+            Run(agentName, inputs, token);
+        public Task<AgentResult> Run(string agentName, string input, CancellationToken token = default) =>
+            Run(agentName, new Dictionary<string, object> { ["input"] = input }, token);
+        public Task<string?> ToString(string agentName, Dictionary<string, object>? inputs = null, CancellationToken token = default) =>
+            Task.FromResult<string?>(null);
+        public Task<string?> ToString(string agentName, string input, CancellationToken token = default) =>
+            Task.FromResult<string?>(null);
+    }
+
     private sealed class NullProposer : IProposalStrategy
     {
         public Task<Proposal?> ProposeAsync(string agentName, string currentDefinition, SuiteAggregate scores,

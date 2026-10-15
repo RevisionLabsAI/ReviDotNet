@@ -111,6 +111,13 @@ public sealed record SuiteAggregate
     public int QualityJudgeFailures { get; init; }
 
     /// <summary>
+    /// How many runs ended in an error before any model call answered (see
+    /// <see cref="ScoreCard.FailedBeforeModel"/>). They are not judged, so they count neither as quality
+    /// nor as judge failures; a nonzero value usually means a provider key or account is broken.
+    /// </summary>
+    public int FailedBeforeModelRuns { get; init; }
+
+    /// <summary>
     /// How many of the runs actually had at least one invariant evaluated. When 0, the structural
     /// <see cref="InvariantPassRate"/> is meaningless (nothing was gated) — surface this so a suite that
     /// checks nothing can't masquerade as 100% passing.

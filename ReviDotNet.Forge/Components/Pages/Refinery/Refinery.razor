@@ -498,7 +498,8 @@ else
     private static string AggSummary(SuiteAggregate? a) =>
         a is null ? "—"
             : $"inv {a.InvariantPassRate:P0} · q {a.QualityMean:F1} (p10 {a.QualityP10:F1}) · judged {a.QualityScoredRuns}/{a.RunCount}"
-              + (a.QualityJudgeFailures > 0 ? $" · ⚠ {a.QualityJudgeFailures} judge failure(s)" : "");
+              + (a.QualityJudgeFailures > 0 ? $" · ⚠ {a.QualityJudgeFailures} judge failure(s)" : "")
+              + (a.FailedBeforeModelRuns > 0 ? $" · ⚠ {a.FailedBeforeModelRuns} run(s) never reached a model" : "");
 
     private static Color StatusChipColor(CampaignStatus s) => s switch
     {

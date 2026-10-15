@@ -64,6 +64,7 @@ public static class Aggregator
             GatedRunCount = gatedCount,
             QualityScoredRuns = qualities.Count,
             QualityJudgeFailures = qualityJudgeFailures,
+            FailedBeforeModelRuns = cards.Count(c => c.FailedBeforeModel),
             InvariantPassRateById = byId
         };
     }
