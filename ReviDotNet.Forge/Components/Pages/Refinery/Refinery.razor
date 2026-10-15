@@ -86,6 +86,8 @@ else
                         <MudNumericField T="int" Label="Parallel" Dense="true" Min="1" Max="16" Style="width: 90px;" @bind-Value="_startParallel" />
                         <MudNumericField T="long?" Label="Agent budget" Dense="true" Style="width: 140px;" Clearable="true" @bind-Value="_startBudget" />
                         <MudNumericField T="long?" Label="Meta budget" Dense="true" Style="width: 140px;" Clearable="true" @bind-Value="_startMetaBudget" />
+                        <MudNumericField T="decimal?" Label="Cost cap ($)" Min="0.01m" Style="width: 120px;" Clearable="true" @bind-Value="_startMaxCost"
+                                         HelperText="Agent + judge, checked before each run" />
                         <MudSwitch T="bool" Label="Screen candidates" Color="Color.Primary" @bind-Value="_startScreen" />
                     </MudStack>
                     <MudStack Row="true" Spacing="2" Class="mt-2">
@@ -135,6 +137,7 @@ else
                     <th>Quality (judged)</th>
                     <th>Agent tok</th>
                     <th>Meta tok</th>
+                    <th>Cost</th>
                 </tr>
             </thead>
             <tbody>
@@ -151,6 +154,7 @@ else
                         <td>@QualityCell(c.Current)</td>
                         <td>@c.TokensSpent.ToString("N0")</td>
                         <td>@c.MetaTokensSpent.ToString("N0")</td>
+                        <td>@CostCell(c)</td>
                     </tr>
                 }
             </tbody>
@@ -204,6 +208,15 @@ else
                 @if (_selected.Spec.MetaTokenBudget is { } mbb && mbb > 0)
                 {
                     <MudProgressLinear Color="@BudgetColor(_selected.MetaTokensSpent, mbb)" Value="@Percent(_selected.MetaTokensSpent, mbb)" Class="my-1" />
+                }
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudText Typo="Typo.caption">
+                    Cost (agent + judge/gate/proposer): <b>@CostCell(_selected)</b>
+                </MudText>
+                @if (_selected.Spec.MaxCostUsd is { } cap && cap > 0)
+                {
+                    <MudProgressLinear Color="@CostColor(_selected.CostSpentUsd, cap)" Value="@CostPercent(_selected.CostSpentUsd, cap)" Class="my-1" />
                 }
             </MudItem>
         </MudGrid>
@@ -333,6 +346,7 @@ else
     private int _startParallel = 4;
     private long? _startBudget;
     private long? _startMetaBudget;
+    private decimal? _startMaxCost;
     private bool _startScreen = true;
 
     protected override async Task OnInitializedAsync()
@@ -385,6 +399,7 @@ else
                 MaxParallelRuns = _startParallel,
                 TokenBudget = _startBudget,
                 MetaTokenBudget = _startMetaBudget,
+                MaxCostUsd = _startMaxCost is > 0 ? _startMaxCost : null,
                 ScreenCandidates = _startScreen,
                 AutoPropose = refine
             };
@@ -463,6 +478,16 @@ else
 
     private static Color BudgetColor(long spent, long budget) =>
         Percent(spent, budget) switch { >= 90 => Color.Error, >= 70 => Color.Warning, _ => Color.Info };
+
+    /// <summary>What a campaign has cost, and its dollar cap when it has one.</summary>
+    private static string CostCell(Campaign c) =>
+        $"${c.CostSpentUsd:0.00}" + (c.Spec.MaxCostUsd is { } cap ? $" / ${cap:0.00}" : " (no cap)");
+
+    private static double CostPercent(decimal spent, decimal cap) =>
+        cap <= 0 ? 0 : Math.Min(100.0, (double)(100m * spent / cap));
+
+    private static Color CostColor(decimal spent, decimal cap) =>
+        CostPercent(spent, cap) switch { >= 90 => Color.Error, >= 70 => Color.Warning, _ => Color.Info };
 
     private static string ScoreSummary(VariantRecord v)
     {
