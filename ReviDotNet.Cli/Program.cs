@@ -624,7 +624,7 @@ static void PrintAggregate(string label, SuiteAggregate? agg)
     if (agg is null) { Console.WriteLine($"  {label}: (not yet available)"); return; }
     Console.WriteLine($"  {label}:");
     Console.WriteLine($"    Inv pass-rate : {agg.InvariantPassRate:P1}  (gated runs: {agg.GatedRunCount}/{agg.RunCount})");
-    Console.WriteLine($"    Quality mean  : {agg.QualityMean:F2}  p10={agg.QualityP10:F2}  (judged: {agg.QualityScoredRuns}/{agg.RunCount}{(agg.QualityJudgeFailures > 0 ? $", JUDGE FAILURES: {agg.QualityJudgeFailures}" : "")})");
+    Console.WriteLine($"    Quality mean  : {agg.QualityMean:F2}  p10={agg.QualityP10:F2}  (judged: {agg.QualityScoredRuns}/{agg.RunCount}{(agg.QualityJudgeFailures > 0 ? $", JUDGE FAILURES: {agg.QualityJudgeFailures}" : "")}{(agg.FailedBeforeModelRuns > 0 ? $", FAILED BEFORE ANY MODEL: {agg.FailedBeforeModelRuns}" : "")})");
     Console.WriteLine($"    Cost mean     : ${agg.CostMean:F4}  latency p90={agg.LatencyP90Ms} ms");
     if (agg.InvariantPassRateById.Count > 0)
     {

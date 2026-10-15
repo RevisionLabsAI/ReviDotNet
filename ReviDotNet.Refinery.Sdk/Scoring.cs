@@ -94,6 +94,13 @@ public sealed record ScoreCard
     /// </summary>
     public bool QualityExpected { get; init; }
 
+    /// <summary>
+    /// True when the run ended in an error before any model call answered: it did not complete and
+    /// reported no tokens. There is nothing for a judge to grade, so it is not judged and
+    /// <see cref="QualityExpected"/> is false.
+    /// </summary>
+    public bool FailedBeforeModel { get; init; }
+
     /// <summary>Efficiency metrics (null if not extracted).</summary>
     public EfficiencyMetrics? Efficiency { get; init; }
 

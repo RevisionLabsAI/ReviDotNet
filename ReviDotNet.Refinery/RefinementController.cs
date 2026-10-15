@@ -98,6 +98,7 @@ public sealed class RefinementController(
         using MetaLlmUsageBroker.Scope metaScope = _metaUsage.BeginScope();
         long agentTokens = 0;
         CostGovernor cost = new(spec.MaxCostUsd, () => _metaUsage.SpentUsd);
+        using ProviderHaltWatch halt = new();
 
         try
         {
@@ -119,6 +120,8 @@ public sealed class RefinementController(
 
             async Task RunOneAsync((Scenario Scenario, int Sample, int Index) item, CancellationToken innerCt)
             {
+                // A provider that refused on billing or the key fails every later run the same way.
+                halt.ThrowIfHalted();
                 decimal metaBefore = _metaUsage.SpentUsd;
                 ScoreCard card = await ScoreOnceAsync(item.Scenario, spec.AgentName, agentDefinition, checkers, spec.Mode, item.Sample, innerCt, seedScenario, toolManager);
                 results[item.Index] = card;
@@ -175,19 +178,20 @@ public sealed class RefinementController(
                 progress?.Report(new RefineryProgress($"baseline: {cost.Describe()} after {cards.Count} of {total} run(s)"));
             progress?.Report(new RefineryProgress(
                 $"baseline: invariant pass-rate {aggregate.InvariantPassRate:P0}, quality mean {aggregate.QualityMean:F1} (p10 {aggregate.QualityP10:F1}) over {aggregate.RunCount} runs" +
-                (aggregate.QualityJudgeFailures > 0 ? $" — WARNING: {aggregate.QualityJudgeFailures} judge verdict(s) missing/unparsed" : ""),
+                (aggregate.QualityJudgeFailures > 0 ? $" — WARNING: {aggregate.QualityJudgeFailures} judge verdict(s) missing/unparsed" : "") +
+                FailedBeforeModelWarning(aggregate),
                 cards));
             return campaign;
         }
         catch (OperationCanceledException)
         {
-            campaign = campaign with { Status = CampaignStatus.Stopped, TokensSpent = agentTokens, MetaTokensSpent = _metaUsage.Spent };
+            campaign = campaign with { Status = CampaignStatus.Stopped, TokensSpent = agentTokens, MetaTokensSpent = _metaUsage.Spent, CostSpentUsd = cost.Spent };
             await _store.SaveAsync(campaign, ct: default);
             throw;
         }
         catch (Exception ex)
         {
-            campaign = campaign with { Status = CampaignStatus.Failed, Error = ex.Message, TokensSpent = agentTokens, MetaTokensSpent = _metaUsage.Spent };
+            campaign = campaign with { Status = CampaignStatus.Failed, Error = ex.Message, TokensSpent = agentTokens, MetaTokensSpent = _metaUsage.Spent, CostSpentUsd = cost.Spent };
             await _store.SaveAsync(campaign, ct: default);
             throw;
         }
@@ -268,6 +272,7 @@ public sealed class RefinementController(
         long metaSpentLastSnapshot = 0;
         CostGovernor cost = new(spec.MaxCostUsd, () => _metaUsage.SpentUsd);
         CurrentCost.Value = cost;
+        using ProviderHaltWatch halt = new();
 
         // Persist the live meters after every scored run so `refine status` answers "how much have I
         // spent?" and "is the judge working?" WHILE the campaign runs, not only at round boundaries.
@@ -320,7 +325,8 @@ public sealed class RefinementController(
             await _store.SaveAsync(campaign, ct);
             progress?.Report(new RefineryProgress(
                 $"baseline: invariant pass-rate {baselineTrain.InvariantPassRate:P0}, quality p10 {baselineTrain.QualityP10:F1} over {baselineTrain.RunCount} train runs" +
-                (baselineTrain.QualityJudgeFailures > 0 ? $" — WARNING: {baselineTrain.QualityJudgeFailures} judge verdict(s) missing/unparsed" : ""),
+                (baselineTrain.QualityJudgeFailures > 0 ? $" — WARNING: {baselineTrain.QualityJudgeFailures} judge verdict(s) missing/unparsed" : "") +
+                FailedBeforeModelWarning(baselineTrain),
                 baselineTrainCards));
 
             List<ScoreCard> currentTrainCards = baselineTrainCards;
@@ -554,13 +560,13 @@ public sealed class RefinementController(
         }
         catch (OperationCanceledException)
         {
-            campaign = campaign with { Status = CampaignStatus.Stopped, TokensSpent = governor.Spent, MetaTokensSpent = _metaUsage.Spent };
+            campaign = campaign with { Status = CampaignStatus.Stopped, TokensSpent = governor.Spent, MetaTokensSpent = _metaUsage.Spent, CostSpentUsd = cost.Spent };
             await _store.SaveAsync(campaign, ct: default);
             throw;
         }
         catch (Exception ex)
         {
-            campaign = campaign with { Status = CampaignStatus.Failed, Error = ex.Message, TokensSpent = governor.Spent, MetaTokensSpent = _metaUsage.Spent };
+            campaign = campaign with { Status = CampaignStatus.Failed, Error = ex.Message, TokensSpent = governor.Spent, MetaTokensSpent = _metaUsage.Spent, CostSpentUsd = cost.Spent };
             await _store.SaveAsync(campaign, ct: default);
             throw;
         }
@@ -704,12 +710,37 @@ public sealed class RefinementController(
         if (seedScenario != null) await seedScenario(scenario, ct);
         AgentRun run = await RunScenarioAsync(scenario, agentName, agentProfile: null, toolManager, mode, ct);
         IReadOnlyList<InvariantResult> invariants = StructuralScorer.Score(run.Trace, scenario, checkers);
-        QualityScore? quality = scenario.Rubric.Count > 0
-            ? await _judge.JudgeAsync(run.Trace, agentDefinition, scenario, invariants, ct)
-            : null;
+        QualityScore? quality = await JudgeIfGradableAsync(run.Trace, agentDefinition, scenario, invariants, ct);
         EfficiencyMetrics efficiency = EfficiencyExtractor.Extract(run.Trace, run.LatencyMs);
         return ScoreCardBuilder.Build(scenario, run.Trace, invariants, quality, efficiency, sampleIndex, mode);
     }
+
+    /// <summary>
+    /// Asks the judge for a quality score when the scenario has a rubric and the run reached a model. A run
+    /// that failed before any model answered (<see cref="ScoreCardBuilder.FailedBeforeModel"/>) has nothing
+    /// to grade, so the judge is not paid to grade it.
+    /// </summary>
+    /// <param name="trace">The run's trace.</param>
+    /// <param name="agentDefinition">The agent definition shown to the judge.</param>
+    /// <param name="scenario">The scenario that ran.</param>
+    /// <param name="invariants">The run's invariant results.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The judge's score, or null when the run was not judged.</returns>
+    private async Task<QualityScore?> JudgeIfGradableAsync(
+        AgentTrace trace, string agentDefinition, Scenario scenario, IReadOnlyList<InvariantResult> invariants, CancellationToken ct)
+    {
+        if (scenario.Rubric.Count == 0 || ScoreCardBuilder.FailedBeforeModel(trace))
+            return null;
+        return await _judge.JudgeAsync(trace, agentDefinition, scenario, invariants, ct);
+    }
+
+    /// <summary>The progress-line warning for runs that never reached a model, or empty when there were none.</summary>
+    /// <param name="aggregate">The aggregate being reported.</param>
+    /// <returns>The warning text.</returns>
+    private static string FailedBeforeModelWarning(SuiteAggregate aggregate) =>
+        aggregate.FailedBeforeModelRuns > 0
+            ? $" — WARNING: {aggregate.FailedBeforeModelRuns} run(s) failed before any model answered and were not judged"
+            : "";
 
     /// <summary>
     /// Like <see cref="ScoreOnceAsync"/> but ALSO returns the run's final output text (needed for the pairwise
@@ -736,9 +767,7 @@ public sealed class RefinementController(
         if (seedScenario != null) await seedScenario(scenario, ct);
         AgentRun run = await RunScenarioAsync(scenario, agentName, agentProfile, toolManager, mode, ct);
         IReadOnlyList<InvariantResult> invariants = StructuralScorer.Score(run.Trace, scenario, checkers);
-        QualityScore? quality = scenario.Rubric.Count > 0
-            ? await _judge.JudgeAsync(run.Trace, agentDefinition, scenario, invariants, ct)
-            : null;
+        QualityScore? quality = await JudgeIfGradableAsync(run.Trace, agentDefinition, scenario, invariants, ct);
         EfficiencyMetrics efficiency = EfficiencyExtractor.Extract(run.Trace, run.LatencyMs);
         ScoreCard card = ScoreCardBuilder.Build(
             scenario, run.Trace, invariants, quality, efficiency, sampleIndex, mode, cardAgentVersion, cardAgentName);
@@ -894,9 +923,12 @@ public sealed class RefinementController(
         using SemaphoreSlim persistLock = new(1, 1);
 
         CostGovernor? cost = CurrentCost.Value;
+        ProviderHaltWatch? halt = ProviderHaltWatch.Current;
 
         async Task RunOneAsync((Scenario Scenario, int Sample, int Index) item, CancellationToken innerCt)
         {
+            // A provider that refused on billing or the key fails every later run the same way.
+            halt?.ThrowIfHalted();
             decimal metaBefore = _metaUsage.SpentUsd;
             (ScoreCard card, string output) = await RunAndScoreAsync(
                 item.Scenario, agentName, agentProfile, agentDefinition, checkers, mode, item.Sample,

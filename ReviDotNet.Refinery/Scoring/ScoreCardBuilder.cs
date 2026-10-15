@@ -36,11 +36,21 @@ public static class ScoreCardBuilder
             Outcome = trace.ExitReason,
             Invariants = invariants,
             Quality = quality,
-            QualityExpected = scenario.Rubric.Count > 0,
+            QualityExpected = scenario.Rubric.Count > 0 && !FailedBeforeModel(trace),
+            FailedBeforeModel = FailedBeforeModel(trace),
             Efficiency = efficiency,
             SessionId = trace.SessionId,
             FactCheckerDetermination = ParseDetermination(trace.FinalOutput)
         };
+
+    /// <summary>
+    /// Whether a run ended in an error before any model call answered: it did not complete and reported no
+    /// tokens. Such a run (a revoked key, an account out of credit) has nothing a judge could grade.
+    /// </summary>
+    /// <param name="trace">The run's trace.</param>
+    /// <returns>True when the run never reached a model.</returns>
+    public static bool FailedBeforeModel(AgentTrace trace) =>
+        !trace.Completed && trace.InputTokens == 0 && trace.OutputTokens == 0;
 
     /// <summary>
     /// Best-effort parse of a fact-checker determination from a run's final output. Scans for the first
