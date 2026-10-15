@@ -26,7 +26,24 @@ namespace Revi.Refinery;
 /// </summary>
 public sealed class MetaLlmUsageBroker
 {
+    /// <summary>
+    /// The rate a meta call is priced at, per million input tokens, when its model has no configured
+    /// rate. Deliberately high (the top of current list prices), so an unpriced model makes a dollar cap
+    /// stop early rather than late.
+    /// </summary>
+    public const decimal FallbackCostPerMillionInputTokens = 10m;
+
+    /// <summary>The output-token counterpart of <see cref="FallbackCostPerMillionInputTokens"/>.</summary>
+    public const decimal FallbackCostPerMillionOutputTokens = 50m;
+
     private static readonly AsyncLocal<Accumulator?> Current = new();
+
+    private readonly IModelManager? _models;
+
+    /// <summary>Creates the broker.</summary>
+    /// <param name="models">Where a meta call's model rates are looked up to price it; null prices every
+    /// call at the fallback rates.</param>
+    public MetaLlmUsageBroker(IModelManager? models = null) => _models = models;
 
     /// <summary>Begin accumulating meta-LLM tokens into a fresh counter for the current async flow.</summary>
     public Scope BeginScope()
@@ -49,6 +66,29 @@ public sealed class MetaLlmUsageBroker
         long tokens = (usage.InputTokens ?? 0) + (usage.OutputTokens ?? 0);
         if (tokens > 0)
             Interlocked.Add(ref acc.Spent, tokens);
+
+        decimal cost = Price(usage);
+        if (cost > 0)
+            Interlocked.Add(ref acc.SpentMicroUsd, (long)Math.Ceiling(cost * 1_000_000m));
+    }
+
+    /// <summary>Meta-LLM spend in the current scope, in USD (0 when no scope is open).</summary>
+    public decimal SpentUsd => Current.Value is { } acc ? Interlocked.Read(ref acc.SpentMicroUsd) / 1_000_000m : 0m;
+
+    /// <summary>
+    /// Prices one meta call from its model's configured rates, falling back to the deliberately high
+    /// <see cref="FallbackCostPerMillionInputTokens"/> / <see cref="FallbackCostPerMillionOutputTokens"/> for a
+    /// model with no rates or one the registry does not know.
+    /// </summary>
+    /// <param name="usage">The call's completion, carrying its model and token counts.</param>
+    /// <returns>The cost in USD.</returns>
+    public decimal Price(Revi.CompletionResult usage)
+    {
+        ArgumentNullException.ThrowIfNull(usage);
+        ModelProfile? model = string.IsNullOrWhiteSpace(usage.Model) ? null : _models?.Get(usage.Model);
+        decimal input = model?.CostPerMillionInputTokens ?? FallbackCostPerMillionInputTokens;
+        decimal output = model?.CostPerMillionOutputTokens ?? FallbackCostPerMillionOutputTokens;
+        return (usage.InputTokens ?? 0) / 1_000_000m * input + (usage.OutputTokens ?? 0) / 1_000_000m * output;
     }
 
     /// <summary>Total meta-LLM tokens recorded in the current scope (0 when no scope is open).</summary>
@@ -60,6 +100,7 @@ public sealed class MetaLlmUsageBroker
     private sealed class Accumulator
     {
         public long Spent;
+        public long SpentMicroUsd;
     }
 
     /// <summary>A scoped meta-usage accumulation; disposal stops routing to it.</summary>

@@ -285,8 +285,10 @@ public class PayloadTransformer
                     };
                 }
 
-                outPayload["temperature"] = 1;   // required with thinking enabled
-                outPayload.Remove("top_p");      // not permitted with thinking enabled
+                // Thinking needs the default temperature and forbids top_p; Claude Opus 5.5 and later
+                // reject any sampling parameter at all. Leaving both out is the default on every model.
+                outPayload.Remove("temperature");
+                outPayload.Remove("top_p");
             }
         }
 

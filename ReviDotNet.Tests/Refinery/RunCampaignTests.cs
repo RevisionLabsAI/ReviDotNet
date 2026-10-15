@@ -338,6 +338,68 @@ public class RunCampaignTests
     // ── Fakes ───────────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>An <see cref="IProposalStrategy"/> that never proposes a change.</summary>
+    // ── Dollar cap (CampaignSpec.MaxCostUsd) ────────────────────────────────────────
+
+    /// <summary>Five scenarios, each judged; every judge call costs $1.00 at the unpriced-model fallback rate.</summary>
+    private static ScenarioSuite FiveScenarios() => new()
+    {
+        Name = "chatbot-core",
+        AgentName = "chatbot",
+        Scenarios = [.. Enumerable.Range(1, 5).Select(i => new Scenario
+        {
+            Id = $"c{i}",
+            AgentName = "chatbot",
+            Inputs = new Dictionary<string, string> { ["q"] = $"question {i}" },
+            Rubric = ["Groundedness"]
+        })]
+    };
+
+    private static RefinementController CappedController(MetaLlmUsageBroker meta)
+    {
+        RefineryCaptureBroker broker = new();
+        return Controller(new NullProposer(), new FakeAgentService(broker, quality: 5), broker, new StubPairwiseInfer(),
+            meta, new MeteredJudge(meta, quality: 5, metaTokensPerCall: 100_000));
+    }
+
+    [Fact]
+    public async Task MeasureBaseline_WithACostCap_StopsBeforeTheRunThatWouldCrossIt()
+    {
+        MetaLlmUsageBroker meta = new();
+        CampaignSpec spec = Spec() with { MaxCostUsd = 2.50m, MaxParallelRuns = 4 };
+
+        Campaign result = await CappedController(meta).MeasureBaselineAsync(spec, FiveScenarios(), "def", checkers: []);
+
+        // $1.00 per run: two fit under $2.50; the third would cross it.
+        result.Status.Should().Be(CampaignStatus.BudgetExhausted);
+        result.Baseline!.RunCount.Should().Be(2);
+        result.CostSpentUsd.Should().Be(2.00m);
+    }
+
+    [Fact]
+    public async Task MeasureBaseline_WithoutACostCap_RunsEveryScenarioAndReportsItsCost()
+    {
+        MetaLlmUsageBroker meta = new();
+
+        Campaign result = await CappedController(meta).MeasureBaselineAsync(Spec(), FiveScenarios(), "def", checkers: []);
+
+        result.Status.Should().Be(CampaignStatus.Converged);
+        result.Baseline!.RunCount.Should().Be(5);
+        result.CostSpentUsd.Should().Be(5.00m);
+    }
+
+    [Fact]
+    public async Task RunCampaign_WithACostCap_StopsAfterABaselineTheCapCutShort()
+    {
+        MetaLlmUsageBroker meta = new();
+        CampaignSpec spec = Spec() with { MaxCostUsd = 2.50m };
+
+        Campaign result = await CappedController(meta).RunCampaignAsync(spec, FiveScenarios(), AgentDefinition, checkers: []);
+
+        result.Status.Should().Be(CampaignStatus.BudgetExhausted);
+        result.Baseline!.RunCount.Should().Be(2);
+        result.Iterations.Should().BeEmpty("no improvement round may start once the cap has stopped the baseline");
+    }
+
     private sealed class NullProposer : IProposalStrategy
     {
         public Task<Proposal?> ProposeAsync(string agentName, string currentDefinition, SuiteAggregate scores,

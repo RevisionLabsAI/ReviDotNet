@@ -187,6 +187,7 @@ static async Task<int> HandleRefineRunAsync(string[] args, RefineryClient client
     string? samplesStr   = GetFlag(args, "--samples");
     string? budgetStr    = GetFlag(args, "--budget");
     string? metaBudgetStr = GetFlag(args, "--meta-budget");
+    string? maxCostStr   = GetFlag(args, "--max-cost-usd");
     string? maxRoundsStr = GetFlag(args, "--max-rounds");
     string? mode         = GetFlag(args, "--mode") ?? "live";
     string? parallelStr  = GetFlag(args, "--parallel");
@@ -200,6 +201,8 @@ static async Task<int> HandleRefineRunAsync(string[] args, RefineryClient client
     int samples   = samplesStr  is not null && int.TryParse(samplesStr,  out int s) ? s : 3;
     long? budget  = budgetStr   is not null && long.TryParse(budgetStr,  out long b) ? b : null;
     long? metaBudget = metaBudgetStr is not null && long.TryParse(metaBudgetStr, out long mb) ? mb : null;
+    decimal? maxCost = maxCostStr is not null && decimal.TryParse(maxCostStr, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out decimal mc) && mc > 0 ? mc : null;
+    if (maxCostStr is not null && maxCost is null) return Usage("--max-cost-usd takes a positive number of US dollars, e.g. 10 or 7.50.");
     int maxRounds = maxRoundsStr is not null && int.TryParse(maxRoundsStr, out int m) ? m : 10;
     int parallel  = parallelStr is not null && int.TryParse(parallelStr, out int p) ? p : 4;
 
@@ -211,6 +214,7 @@ static async Task<int> HandleRefineRunAsync(string[] args, RefineryClient client
         SamplesPerScenario = samples,
         TokenBudget        = budget,
         MetaTokenBudget    = metaBudget,
+        MaxCostUsd         = maxCost,
         MaxRounds          = maxRounds,
         Mode               = mode,
         AutoPropose        = !baselineOnly,
@@ -488,7 +492,7 @@ static async Task<Campaign> PollUntilTerminalAsync(string id, RefineryClient cli
             if (IsTerminal(c.Status)) return c;
 
             if (!quiet)
-                Console.Write($"\r  status={c.Status,-20} agent-tokens={c.TokensSpent,10}  meta-tokens={c.MetaTokensSpent,10}  rounds={c.Iterations.Count,3}  ");
+                Console.Write($"\r  status={c.Status,-20} agent-tokens={c.TokensSpent,10}  meta-tokens={c.MetaTokensSpent,10}  cost=${c.CostSpentUsd,8:0.0000}  rounds={c.Iterations.Count,3}  ");
 
             if (DateTime.UtcNow >= deadline)
             {
@@ -558,6 +562,7 @@ static void PrintCampaignSummary(Campaign c)
     Console.WriteLine($"Agent     : {c.Spec.AgentName}");
     Console.WriteLine($"Suite     : {c.Spec.SuiteName}");
     Console.WriteLine($"Tokens    : {c.TokensSpent:N0} agent + {c.MetaTokensSpent:N0} meta (judge/gate/proposer)");
+    Console.WriteLine($"Cost      : ${c.CostSpentUsd:0.0000}" + (c.Spec.MaxCostUsd is { } cap ? $" of a ${cap:0.00} cap" : " (no cap)"));
     Console.WriteLine($"Rounds    : {c.Iterations.Count}");
     if (c.Error is not null) Console.WriteLine($"Error     : {c.Error}");
 
@@ -730,6 +735,8 @@ static void PrintHelp()
                 --samples N       Samples per scenario (default 3)
                 --budget N        Agent token budget (long, default: no limit)
                 --meta-budget N   Meta-LLM token budget for judge/gate/proposer (long, default: no limit)
+                --max-cost-usd N  Dollar cap on agent runs plus judge/gate/proposer calls, checked before every
+                                  run (decimal; default: no cap). Forces --parallel 1.
                 --max-rounds N    Maximum improvement rounds (default 10)
                 --parallel N      Max concurrent scenario runs (default 4; forced 1 for seeded suites)
                 --no-screen       Disable the cheap 1-sample candidate screen before full evaluation

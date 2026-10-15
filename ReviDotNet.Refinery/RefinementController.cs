@@ -50,6 +50,12 @@ public sealed class RefinementController(
     private const int MaxPairwiseScenarios = 8;
 
     /// <summary>
+    /// The running campaign's dollar cap. Ambient (per async flow) rather than threaded through every
+    /// scoring overload, like <see cref="MetaLlmUsageBroker"/>'s scope; null outside a campaign.
+    /// </summary>
+    private static readonly AsyncLocal<CostGovernor?> CurrentCost = new();
+
+    /// <summary>
     /// Hard ceiling on candidates evaluated per round (the LLM proposal + every typed mutator). Defends the
     /// per-round cost even if the mutator registry grows; with the current registry the natural bound is
     /// already well under this.
@@ -91,6 +97,7 @@ public sealed class RefinementController(
         // live meter instead of 0 until the end.
         using MetaLlmUsageBroker.Scope metaScope = _metaUsage.BeginScope();
         long agentTokens = 0;
+        CostGovernor cost = new(spec.MaxCostUsd, () => _metaUsage.SpentUsd);
 
         try
         {
@@ -98,6 +105,9 @@ public sealed class RefinementController(
             // (sequential when a seeding hook exists), reassemble deterministically. Progress and the
             // per-run campaign save mutate shared state, so they run under a lock.
             int maxParallel = seedScenario is null ? Math.Max(1, spec.MaxParallelRuns) : 1;
+            // A dollar cap is checked before each run against the largest run so far, which only means
+            // something when runs happen one after another.
+            if (cost.Cap is not null) maxParallel = 1;
             List<(Scenario Scenario, int Sample, int Index)> work = [];
             int nextIndex = 0;
             foreach (Scenario scenario in suite.Scenarios)
@@ -109,15 +119,17 @@ public sealed class RefinementController(
 
             async Task RunOneAsync((Scenario Scenario, int Sample, int Index) item, CancellationToken innerCt)
             {
+                decimal metaBefore = _metaUsage.SpentUsd;
                 ScoreCard card = await ScoreOnceAsync(item.Scenario, spec.AgentName, agentDefinition, checkers, spec.Mode, item.Sample, innerCt, seedScenario, toolManager);
                 results[item.Index] = card;
+                cost.RecordRun(card.Efficiency?.CostUsd ?? 0m, _metaUsage.SpentUsd - metaBefore);
 
                 await stateLock.WaitAsync(innerCt);
                 try
                 {
                     agentTokens += card.Efficiency is { } e ? e.InputTokens + e.OutputTokens : 0;
                     progress?.Report(new RefineryProgress($"[{++done}/{total}] {item.Scenario.Id} sample {item.Sample + 1}"));
-                    campaign = campaign with { TokensSpent = agentTokens, MetaTokensSpent = _metaUsage.Spent };
+                    campaign = campaign with { TokensSpent = agentTokens, MetaTokensSpent = _metaUsage.Spent, CostSpentUsd = cost.Spent };
                     await _store.SaveAsync(campaign, innerCt);
                 }
                 finally
@@ -131,6 +143,8 @@ public sealed class RefinementController(
                 foreach ((Scenario Scenario, int Sample, int Index) item in work)
                 {
                     ct.ThrowIfCancellationRequested();
+                    // The dollar cap is asked before every run; the rest of the set is skipped once it says no.
+                    if (!cost.TryStartRun()) break;
                     await RunOneAsync(item, ct);
                 }
             }
@@ -142,19 +156,23 @@ public sealed class RefinementController(
                     async (item, innerCt) => await RunOneAsync(item, innerCt));
             }
 
-            cards.AddRange(results);
+            // A run the dollar cap skipped leaves an empty slot.
+            cards.AddRange(results.Where(card => card is not null));
 
             await PersistScoreCardsAsync(id, cards, ct);
             SuiteAggregate aggregate = Aggregator.Aggregate(cards);
             campaign = campaign with
             {
-                Status = CampaignStatus.Converged,
+                Status = cost.Stopped ? CampaignStatus.BudgetExhausted : CampaignStatus.Converged,
                 Baseline = aggregate,
                 Current = aggregate,
                 TokensSpent = agentTokens,
-                MetaTokensSpent = _metaUsage.Spent
+                MetaTokensSpent = _metaUsage.Spent,
+                CostSpentUsd = cost.Spent
             };
             await _store.SaveAsync(campaign, ct);
+            if (cost.Stopped)
+                progress?.Report(new RefineryProgress($"baseline: {cost.Describe()} after {cards.Count} of {total} run(s)"));
             progress?.Report(new RefineryProgress(
                 $"baseline: invariant pass-rate {aggregate.InvariantPassRate:P0}, quality mean {aggregate.QualityMean:F1} (p10 {aggregate.QualityP10:F1}) over {aggregate.RunCount} runs" +
                 (aggregate.QualityJudgeFailures > 0 ? $" — WARNING: {aggregate.QualityJudgeFailures} judge verdict(s) missing/unparsed" : ""),
@@ -239,17 +257,23 @@ public sealed class RefinementController(
         // stay sequential; everything else parallelizes up to the spec's cap.
         int maxParallel = seedScenario is null ? Math.Max(1, spec.MaxParallelRuns) : 1;
 
+        // A dollar cap is checked before each run against the largest run so far, which only means
+        // something when runs happen one after another.
+        if (spec.MaxCostUsd is not null) maxParallel = 1;
+
         // (a) Open a meta-LLM usage scope for the whole campaign; the judge/pairwise/proposer accumulate into
         // it via MetaLlmUsageBroker. We sample the scope's running total per round and charge the DELTA to
         // metaGovernor so the dedicated meta budget is enforced alongside the agent-token governor.
         using MetaLlmUsageBroker.Scope metaScope = _metaUsage.BeginScope();
         long metaSpentLastSnapshot = 0;
+        CostGovernor cost = new(spec.MaxCostUsd, () => _metaUsage.SpentUsd);
+        CurrentCost.Value = cost;
 
         // Persist the live meters after every scored run so `refine status` answers "how much have I
         // spent?" and "is the judge working?" WHILE the campaign runs, not only at round boundaries.
         async Task PersistSpendAsync()
         {
-            campaign = campaign with { TokensSpent = governor.Spent, MetaTokensSpent = _metaUsage.Spent };
+            campaign = campaign with { TokensSpent = governor.Spent, MetaTokensSpent = _metaUsage.Spent, CostSpentUsd = cost.Spent };
             await _store.SaveAsync(campaign, ct);
         }
 
@@ -275,6 +299,23 @@ public sealed class RefinementController(
             // Roll any meta tokens spent measuring the baseline into the meta governor.
             ChargeMetaDelta(metaGovernor, ref metaSpentLastSnapshot);
 
+            // The dollar cap stopped the baseline part-way: what was measured is kept, nothing more runs.
+            if (cost.Stopped)
+            {
+                campaign = campaign with
+                {
+                    Status = CampaignStatus.BudgetExhausted,
+                    Baseline = baselineTrain,
+                    Current = baselineTrain,
+                    TokensSpent = governor.Spent,
+                    MetaTokensSpent = _metaUsage.Spent,
+                    CostSpentUsd = cost.Spent
+                };
+                await _store.SaveAsync(campaign, ct);
+                progress?.Report(new RefineryProgress($"baseline: {cost.Describe()} after {baselineTrain.RunCount} run(s)"));
+                return campaign;
+            }
+
             campaign = campaign with { Baseline = baselineTrain, Current = baselineTrain, TokensSpent = governor.Spent, MetaTokensSpent = _metaUsage.Spent };
             await _store.SaveAsync(campaign, ct);
             progress?.Report(new RefineryProgress(
@@ -290,8 +331,8 @@ public sealed class RefinementController(
             {
                 ct.ThrowIfCancellationRequested();
 
-                // Budget gate at the top of the round — either budget exhausting stops the campaign.
-                if (BudgetsExhausted(governor, metaGovernor, out string topReason))
+                // Budget gate at the top of the round — any budget exhausting stops the campaign.
+                if (BudgetsExhausted(governor, metaGovernor, out string topReason) || !CostAllowsRun(cost, out topReason))
                 {
                     campaign = campaign with { Status = CampaignStatus.BudgetExhausted, TokensSpent = governor.Spent, MetaTokensSpent = _metaUsage.Spent };
                     await _store.SaveAsync(campaign, ct);
@@ -572,6 +613,17 @@ public sealed class RefinementController(
         a.Train.QualityP10 > b.Train.QualityP10 ||
         (a.Train.QualityP10 == b.Train.QualityP10 && a.PairwiseNet > b.PairwiseNet);
 
+    /// <summary>Whether the dollar cap leaves room for another run; <paramref name="reason"/> says why not.</summary>
+    /// <param name="cost">The campaign's dollar cap.</param>
+    /// <param name="reason">Why no run may start, or empty.</param>
+    /// <returns>True when another run may start.</returns>
+    private static bool CostAllowsRun(CostGovernor cost, out string reason)
+    {
+        bool allowed = cost.TryStartRun();
+        reason = allowed ? "" : cost.Describe();
+        return allowed;
+    }
+
     /// <summary>True when the agent OR meta token budget is exhausted; <paramref name="reason"/> names which.</summary>
     private static bool BudgetsExhausted(BudgetGovernor governor, BudgetGovernor metaGovernor, out string reason)
     {
@@ -841,13 +893,17 @@ public sealed class RefinementController(
         // persistSpend mutates and saves the campaign record — serialize those calls across runners.
         using SemaphoreSlim persistLock = new(1, 1);
 
+        CostGovernor? cost = CurrentCost.Value;
+
         async Task RunOneAsync((Scenario Scenario, int Sample, int Index) item, CancellationToken innerCt)
         {
+            decimal metaBefore = _metaUsage.SpentUsd;
             (ScoreCard card, string output) = await RunAndScoreAsync(
                 item.Scenario, agentName, agentProfile, agentDefinition, checkers, mode, item.Sample,
                 innerCt, seedScenario, toolManager, cardAgentName, cardAgentVersion);
             results[item.Index] = (card, output);
             governor.Record(card.Efficiency is { } e ? e.InputTokens + e.OutputTokens : 0);
+            cost?.RecordRun(card.Efficiency?.CostUsd ?? 0m, _metaUsage.SpentUsd - metaBefore);
 
             // Publish the live spend meters after every run (see PersistSpendAsync in RunCampaignAsync).
             if (persistSpend is not null)
@@ -863,6 +919,8 @@ public sealed class RefinementController(
             foreach ((Scenario Scenario, int Sample, int Index) item in work)
             {
                 ct.ThrowIfCancellationRequested();
+                // The dollar cap is asked before every run; the rest of the set is skipped once it says no.
+                if (cost is not null && !cost.TryStartRun()) break;
                 await RunOneAsync(item, ct);
             }
         }
@@ -882,6 +940,7 @@ public sealed class RefinementController(
         foreach ((Scenario Scenario, int Sample, int Index) item in work)
         {
             (ScoreCard card, string output) = results[item.Index];
+            if (card is null) continue; // skipped: the dollar cap stopped the set before this run
             cards.Add(card);
             outputs[item.Scenario.Id] = output; // last sample wins — a representative output for pairwise
         }

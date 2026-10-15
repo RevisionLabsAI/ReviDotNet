@@ -44,6 +44,14 @@ public sealed record CampaignSpec
     /// </summary>
     public long? MetaTokenBudget { get; init; }
 
+    /// <summary>
+    /// A cap in USD on the whole campaign: the agent under test plus every meta-LLM call. Unlike the token
+    /// budgets it is checked before each scenario run, so it also bounds a baseline-only campaign; a run
+    /// starts only while the spend plus the most expensive run so far stays within it. Setting it runs the
+    /// campaign's scenarios one at a time. Null = no dollar cap.
+    /// </summary>
+    public decimal? MaxCostUsd { get; init; }
+
     /// <summary>Maximum improvement rounds.</summary>
     public int MaxRounds { get; init; } = 10;
 
@@ -163,6 +171,9 @@ public sealed record Campaign
 
     /// <summary>Meta-LLM tokens (judge / pairwise / proposer) spent so far — the other half of the bill.</summary>
     public long MetaTokensSpent { get; init; }
+
+    /// <summary>What the campaign has cost so far in USD: agent runs plus meta-LLM calls.</summary>
+    public decimal CostSpentUsd { get; init; }
 
     public string? Error { get; init; }
 }

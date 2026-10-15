@@ -90,6 +90,40 @@ public class PayloadTransformerGuidanceTests
         outputConfig.Should().ContainKey("format", "structured outputs must coexist with effort");
     }
 
+    [Theory]
+    [InlineData("medium")]
+    [InlineData("4096")]
+    public void Claude_WithThinking_SendsNoSamplingParameters(string thinkingMode)
+    {
+        // Thinking requires the default temperature, and Claude Opus 5.5 rejects any temperature or top_p
+        // at all, so neither is sent: leaving them out is the default on every model.
+        Dictionary<string, object> payload = new()
+        {
+            ["messages"] = new List<Message> { new("user", "hi") },
+            ["temperature"] = 0.2f,
+            ["top_p"] = 0.9f,
+            ["thinking_mode"] = thinkingMode
+        };
+
+        Dictionary<string, object> claude = Transformer(Protocol.Claude).TransformToClaudePayload(payload);
+
+        claude.Should().NotContainKey("temperature");
+        claude.Should().NotContainKey("top_p");
+        claude.Should().ContainKey("thinking");
+    }
+
+    [Fact]
+    public void Claude_WithoutThinking_KeepsTheConfiguredTemperature()
+    {
+        Dictionary<string, object> payload = new()
+        {
+            ["messages"] = new List<Message> { new("user", "hi") },
+            ["temperature"] = 0.2f
+        };
+
+        Transformer(Protocol.Claude).TransformToClaudePayload(payload)["temperature"].Should().Be(0.2f);
+    }
+
     [Fact]
     public void Claude_GuidanceUnsupported_EmitsNothing()
     {

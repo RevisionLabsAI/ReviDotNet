@@ -9,14 +9,16 @@ request-json = true
 # for and the consumer deserializes. Keeping guidance off makes the contract provider-independent.
 guidance-schema-type = disabled
 # Explicit fallback chain so the judge model is CHOSEN, never silently substituted (FindModel logs any
-# skip down this list). Sonnet FIRST, deliberately: the run judge is the highest-volume meta call (one per
-# scored run), so it dominates meta cost — and with anchored score bands + a slim contract sonnet judges
-# reliably. The once-per-round Proposer keeps opus for depth. Reorder here to trade cost for judging depth.
-preferred-models = claude-sonnet-4-6, claude-sonnet-4-5, claude-opus-4-8
+# skip down this list). Claude Opus 5.5 FIRST (2026-10-15): the run judge is the highest-volume meta call (one
+# per scored run), chosen by the owner on that date; it costs $4 / $20 per million input / output tokens
+# against Sonnet 4.6's $3 / $15. The Sonnet entries remain the fallback. Reorder here to trade cost for depth.
+preferred-models = claude-opus-5-5, claude-sonnet-4-6, claude-sonnet-4-5, claude-opus-4-8
 min-tier = A
 # The verdict must never be truncatable: an unfinished JSON object loses the quality score entirely.
 # Defense-in-depth alongside the provider payload fix — do not remove.
-output-budget = 3000
+# Opus 5.5 always thinks, and its thinking counts against this budget, so 3,000 (enough for the verdict
+# alone) could cut the verdict off; 8,000 leaves room for both. At most $0.16 of output per verdict.
+output-budget = 8000
 # The _exout examples are deliberately JSON, not the YAML .pmt files usually prefer: this output is
 # machine-parsed and is the refinement loop's single point of failure, so the examples must demonstrate
 # the exact JSON shape and scalar types the consumer deserializes (JsonifyExample passes them through).
