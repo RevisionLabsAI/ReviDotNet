@@ -54,7 +54,12 @@ internal class InferenceHttpClient : IDisposable
         try
         {
             await _rateLimiter.EnsureRateLimit();
-            
+
+            // Read before the protocol transform: the Gemini payload drops "model" (Gemini takes it
+            // from the URL), so reading afterwards credited every Gemini call to the provider's
+            // default model.
+            string modelName = ModelNameOf(payload);
+
             // Handle protocol-specific payload transformation
             if (_config.Protocol == Protocol.Gemini)
             {
@@ -66,9 +71,8 @@ internal class InferenceHttpClient : IDisposable
             {
                 payload = _payloadTransformer.TransformToClaudePayload(payload);
             }
-            
+
             string body = JsonConvert.SerializeObject(payload);
-            string modelName = ModelNameOf(payload);
             return await MakeRequestAsync(endpoint, body, cancellationToken, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds, modelName);
         }
         finally
@@ -191,8 +195,9 @@ internal class InferenceHttpClient : IDisposable
 
     /// <summary>
     /// The model a payload names, so an outcome is attributed to the model that was actually
-    /// called rather than the provider's default. Gemini carries the model in the URL rather than
-    /// the body, so the default is the fallback there.
+    /// called rather than the provider's default. Must be read from the payload as built, before
+    /// the protocol transform: the Gemini transform drops "model" because Gemini carries it in the
+    /// URL. The provider default is only the fallback for a payload that never named a model.
     /// </summary>
     /// <param name="payload">The request payload.</param>
     /// <returns>The model name.</returns>
