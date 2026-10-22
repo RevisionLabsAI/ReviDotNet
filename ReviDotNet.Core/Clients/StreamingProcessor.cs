@@ -245,7 +245,14 @@ internal class StreamingProcessor
         try
         {
             await _rateLimiter.EnsureRateLimit();
-            
+
+            // Read before the protocol transform: the Gemini payload drops "model" (Gemini takes it
+            // from the URL), so reading afterwards credited every Gemini call to the provider's
+            // default model.
+            string modelName = payload.TryGetValue("model", out object? model) && model is string name && !string.IsNullOrWhiteSpace(name)
+                ? name
+                : _config.DefaultModel;
+
             // Handle protocol-specific payload transformation
             if (_config.Protocol == Protocol.Gemini)
             {
@@ -257,11 +264,8 @@ internal class StreamingProcessor
             {
                 payload = _payloadTransformer.TransformToClaudePayload(payload);
             }
-            
+
             string body = JsonConvert.SerializeObject(payload);
-            string modelName = payload.TryGetValue("model", out object? model) && model is string name && !string.IsNullOrWhiteSpace(name)
-                ? name
-                : _config.DefaultModel;
             int chunkCount = 0;
             await foreach (string chunk in MakeStreamingRequestAsync(endpoint, body, cancellationToken, inactivityTimeoutSeconds ?? _config.InactivityTimeoutSeconds, modelName))
             {
