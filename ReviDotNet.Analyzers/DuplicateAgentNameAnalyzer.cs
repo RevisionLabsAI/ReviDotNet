@@ -34,7 +34,8 @@ namespace ReviDotNet.Analyzers
             Category,
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true,
-            description: Description);
+            description: Description,
+            customTags: [WellKnownDiagnosticTags.CompilationEnd]);
 
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
 

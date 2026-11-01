@@ -18,6 +18,8 @@ public sealed class AgentService(
     IReviLogger<AgentService> logger,
     IContextSelector? contextSelector = null) : IAgentService
 {
+    /// <summary>The validated logger dependency retained by the service constructor.</summary>
+    private readonly IReviLogger<AgentService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     /// <inheritdoc/>
     public Task<AgentResult> Run(
         string agentName,

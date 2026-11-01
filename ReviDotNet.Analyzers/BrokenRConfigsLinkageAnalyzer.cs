@@ -46,7 +46,8 @@ namespace ReviDotNet.Analyzers
             Category,
             DiagnosticSeverity.Error,
             isEnabledByDefault: true,
-            description: "Prompts should reference existing model configurations defined in RConfigs/Models.");
+            description: "Prompts should reference existing model configurations defined in RConfigs/Models.",
+            customTags: [WellKnownDiagnosticTags.CompilationEnd]);
 
         private static readonly DiagnosticDescriptor MissingProviderRule = new DiagnosticDescriptor(
             DiagnosticId,
@@ -55,7 +56,8 @@ namespace ReviDotNet.Analyzers
             Category,
             DiagnosticSeverity.Error,
             isEnabledByDefault: true,
-            description: "Prompts should reference existing provider configurations defined in RConfigs/Providers.");
+            description: "Prompts should reference existing provider configurations defined in RConfigs/Providers.",
+            customTags: [WellKnownDiagnosticTags.CompilationEnd]);
 
         /// <inheritdoc />
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(MissingModelRule, MissingProviderRule);

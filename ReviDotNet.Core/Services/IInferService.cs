@@ -43,7 +43,7 @@ public interface IInferService
         ModelProfile? modelProfile = null,
         string? modelName = null,
         Type? outputType = null,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default,
+        CancellationToken cancellationToken = default,
         bool directRoute = false);
 
     // ── Type converters ─────────────────────────────────────────────────

@@ -47,15 +47,18 @@ namespace ReviDotNet.Analyzers
 
         private static readonly DiagnosticDescriptor MissingSchemaRule = new DiagnosticDescriptor(
             DiagnosticId, TitleMissingSchema, MessageMissingSchema, Category,
-            DiagnosticSeverity.Warning, isEnabledByDefault: true);
+            DiagnosticSeverity.Warning, isEnabledByDefault: true,
+            customTags: [WellKnownDiagnosticTags.CompilationEnd]);
 
         private static readonly DiagnosticDescriptor OrphanSchemaRule = new DiagnosticDescriptor(
             DiagnosticId, TitleOrphanSchema, MessageOrphanSchema, Category,
-            DiagnosticSeverity.Warning, isEnabledByDefault: true);
+            DiagnosticSeverity.Warning, isEnabledByDefault: true,
+            customTags: [WellKnownDiagnosticTags.CompilationEnd]);
 
         private static readonly DiagnosticDescriptor InvalidJsonRule = new DiagnosticDescriptor(
             DiagnosticId, TitleInvalidJson, MessageInvalidJson, Category,
-            DiagnosticSeverity.Warning, isEnabledByDefault: true);
+            DiagnosticSeverity.Warning, isEnabledByDefault: true,
+            customTags: [WellKnownDiagnosticTags.CompilationEnd]);
 
         private static readonly Regex SectionHeader =
             new Regex(@"^\s*\[\[(?<name>[A-Za-z0-9_\-]+)\]\]\s*$", RegexOptions.Compiled);

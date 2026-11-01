@@ -28,7 +28,7 @@
 else
 {
     <div class="d-flex align-center gap-2 mb-3" style="flex-wrap: wrap;">
-        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/workshop" Title="Back to Workshop" />
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/workshop" title="Back to Workshop" />
         <MudIcon Icon="@(_session.Mode == InteractionMode.Chat ? Icons.Material.Filled.Chat : Icons.Material.Filled.PlayArrow)"
                  Color="@(_session.Mode == InteractionMode.Chat ? Color.Tertiary : Color.Primary)" />
         <MudText Typo="Typo.h5">@_session.AgentName</MudText>

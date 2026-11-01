@@ -21,11 +21,11 @@
                 <MudSpacer />
                 <MudIconButton Icon="@Icons.Material.Filled.Add"
                                Size="Size.Small"
-                               Title="New prompt"
+                               title="New prompt"
                                OnClick="@GoToNewPrompt" />
                 <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
                                Size="Size.Small"
-                               Title="Fork current as new version"
+                               title="Fork current as new version"
                                Disabled="@string.IsNullOrWhiteSpace(_selectedPromptName)"
                                OnClick="@ForkCurrentPrompt" />
             </div>

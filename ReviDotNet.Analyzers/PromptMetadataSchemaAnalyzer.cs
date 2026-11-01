@@ -18,7 +18,7 @@ using Microsoft.CodeAnalysis.Text;
 namespace ReviDotNet.Analyzers
 {
     /// <summary>
-    /// Analyzer REVI006 (implements REVI008 spec): validates <c>.pmt</c> prompt files' metadata and schema
+    /// Analyzer REVI030 (implements REVI008 spec): validates <c>.pmt</c> prompt files' metadata and schema
     /// against <c>ReviDotNet.Core/Docs/prompt-files.md</c>.
     ///
     /// Checks performed:
@@ -45,7 +45,10 @@ namespace ReviDotNet.Analyzers
         /// <summary>
         /// Diagnostic ID exposed for this analyzer.
         /// </summary>
-        public const string DiagnosticId = "REVI006";
+        public const string DiagnosticId = "REVI030";
+
+        /// <summary>Non-fatal prompt metadata advisories.</summary>
+        public const string AdvisoryId = "REVI031";
 
         private const string Category = "Configuration";
 
@@ -54,7 +57,7 @@ namespace ReviDotNet.Analyzers
         private static readonly LocalizableString DescriptionMissingRequired = "Prompt .pmt files must contain required sections/keys per documentation.";
 
         private static readonly LocalizableString TitleInvalidEnum = "Invalid option value";
-        private static readonly LocalizableString MessageInvalidEnum = "'{0}' is not a valid value for {1}. Allowed: {2}";
+        private static readonly LocalizableString MessageInvalidEnum = "'{0}' is not a valid value for {1}; allowed values: {2}";
         private static readonly LocalizableString DescriptionInvalidEnum = "Option must be one of the documented values.";
 
         private static readonly LocalizableString TitleOutOfRange = "Value out of recommended range";
@@ -79,7 +82,8 @@ namespace ReviDotNet.Analyzers
             Category,
             DiagnosticSeverity.Error,
             isEnabledByDefault: true,
-            description: DescriptionMissingRequired);
+            description: DescriptionMissingRequired,
+            customTags: [WellKnownDiagnosticTags.CompilationEnd]);
 
         private static readonly DiagnosticDescriptor InvalidEnumRule = new DiagnosticDescriptor(
             DiagnosticId,
@@ -88,34 +92,38 @@ namespace ReviDotNet.Analyzers
             Category,
             DiagnosticSeverity.Error,
             isEnabledByDefault: true,
-            description: DescriptionInvalidEnum);
+            description: DescriptionInvalidEnum,
+            customTags: [WellKnownDiagnosticTags.CompilationEnd]);
 
         private static readonly DiagnosticDescriptor OutOfRangeRule = new DiagnosticDescriptor(
-            DiagnosticId,
+            AdvisoryId,
             TitleOutOfRange,
             MessageOutOfRange,
             Category,
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true,
-            description: DescriptionOutOfRange);
+            description: DescriptionOutOfRange,
+            customTags: [WellKnownDiagnosticTags.CompilationEnd]);
 
         private static readonly DiagnosticDescriptor UnknownKeyRule = new DiagnosticDescriptor(
-            DiagnosticId,
+            AdvisoryId,
             TitleUnknownKey,
             MessageUnknownKey,
             Category,
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true,
-            description: DescriptionUnknownKey);
+            description: DescriptionUnknownKey,
+            customTags: [WellKnownDiagnosticTags.CompilationEnd]);
 
         private static readonly DiagnosticDescriptor GuidanceDefaultRule = new DiagnosticDescriptor(
-            DiagnosticId,
+            AdvisoryId,
             TitleGuidanceDefault,
             MessageGuidanceDefault,
             Category,
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true,
-            description: DescriptionGuidanceDefault);
+            description: DescriptionGuidanceDefault,
+            customTags: [WellKnownDiagnosticTags.CompilationEnd]);
 
         /// <inheritdoc />
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>

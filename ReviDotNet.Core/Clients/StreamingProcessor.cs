@@ -235,6 +235,7 @@ internal class StreamingProcessor
     /// <param name="payload">The payload to be sent to the AI inference service.</param>
     /// <param name="cancellationToken">A cancellation token that can be used to cancel the request.</param>
     /// <returns>An async enumerable that yields streaming text chunks.</returns>
+    /// <param name="inactivityTimeoutSeconds">Overrides the maximum interval without provider data, in seconds.</param>
     public async IAsyncEnumerable<string> ExecuteStreamingRequest(
         string endpoint,
         Dictionary<string, object> payload,
@@ -283,9 +284,11 @@ internal class StreamingProcessor
     /// Sends a streaming HTTP POST request to the specified API endpoint and processes the Server-Sent Events (SSE) response.
     /// </summary>
     /// <param name="endpoint">The API endpoint to which the request is sent.</param>
-    /// <param name="content">The HTTP request content to be sent in the POST request.</param>
     /// <param name="cancellationToken">A token that can be used to cancel the operation.</param>
     /// <returns>An async enumerable that yields text chunks from the streaming response.</returns>
+    /// <param name="body">The serialized JSON request body.</param>
+    /// <param name="inactivityTimeoutSeconds">Overrides the maximum interval without provider data, in seconds.</param>
+    /// <param name="modelName">The model identifier used for routing and reporting.</param>
     private async IAsyncEnumerable<string> MakeStreamingRequestAsync(
         string endpoint,
         string body,
@@ -407,7 +410,7 @@ internal class StreamingProcessor
                 response?.Dispose();
                 throw;
             }
-            catch (Exception ex) when (retryAttempt < _config.RetryAttemptLimit)
+            catch (Exception) when (retryAttempt < _config.RetryAttemptLimit)
             {
                 //Util.Log($"[DEBUG] Exception during connection attempt: {ex.Message}");
                 response?.Dispose();

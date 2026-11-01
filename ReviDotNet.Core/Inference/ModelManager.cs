@@ -34,7 +34,7 @@ internal static class ModelManager
     /// If the specified directory is not found, it attempts to load models from embedded resources.
     /// Logs the process of loading models and handles potential exceptions.
     /// </summary>
-    public static void Load(Assembly assembly = null)
+    public static void Load(Assembly? assembly = null)
     {
         // Clear existing models
         _models.Clear();
@@ -47,7 +47,7 @@ internal static class ModelManager
         {
             LoadFromFileSystem(path);
         }
-        catch (DirectoryNotFoundException e)
+        catch (DirectoryNotFoundException)
         {
             //Util.Log($"Directory not found: {e.Message}. Attempting to load from embedded resources.");
             LoadFromEmbeddedResources(assembly);
@@ -87,7 +87,7 @@ internal static class ModelManager
     /// and attempts to add them to the existing collection of models. It specifically
     /// looks for resources with names containing ".Models.Inference." and ending with ".rcfg".
     /// </summary>
-    private static void LoadFromEmbeddedResources(Assembly assembly)
+    private static void LoadFromEmbeddedResources(Assembly? assembly)
     {
         try
         {
@@ -151,6 +151,7 @@ internal static class ModelManager
     /// Logs the action of loading a new model.
     /// </summary>
     /// <param name="newModel">The new ModelProfile to consider adding to the existing models.</param>
+    /// <param name="embedded">Whether this configuration came from embedded resources.</param>
     private static void CheckAdd(ModelProfile newModel, bool embedded)
     {
         var existingModel = _models.FirstOrDefault(p => p.Name == newModel.Name);

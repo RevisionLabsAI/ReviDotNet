@@ -56,6 +56,14 @@ public class InferClient : IDisposable
     /// without a profile (tests, ad-hoc callers) reports as "unknown".
     /// </param>
     /// <param name="routingPolicy">Optional adapter-neutral gateway routing policy.</param>
+    /// <param name="protocol">The provider protocol used to encode the request.</param>
+    /// <param name="supportsResponseCompletion">Whether the provider supports the Responses completion endpoint.</param>
+    /// <param name="supportsGuidance">Whether the provider supports constrained output guidance.</param>
+    /// <param name="defaultGuidanceType">The optional provider-default guidance mode.</param>
+    /// <param name="defaultGuidanceString">The optional provider-default guidance schema or expression.</param>
+    /// <param name="jsonSchemaMode">Selects strict JSON schema or JSON object guidance.</param>
+    /// <param name="apiVersionPath">The optional API version path prepended to provider endpoints.</param>
+    /// <param name="httpClientOverride">An optional caller-owned HTTP client.</param>
     public InferClient(
         string apiUrl,
         string apiKey = "",
@@ -234,6 +242,13 @@ public class InferClient : IDisposable
     /// <param name="cancellationToken">Token to observe cancellation requests, allowing the operation to be aborted. Default is none.</param>
     /// <returns>Returns a <see cref="CompletionResult"/> containing the generated text completion and related information.</returns>
     /// <exception cref="Exception">Throws an exception if the client does not support prompt completion.</exception>
+    /// <param name="minP">The optional minimum-probability sampling threshold.</param>
+    /// <param name="maxTokenType">Selects how the output token budget is interpreted.</param>
+    /// <param name="repetitionPenalty">The optional penalty for repeated tokens.</param>
+    /// <param name="useSearchGrounding">Whether provider-native search grounding is requested.</param>
+    /// <param name="geminiSafetyThreshold">The optional Gemini safety threshold.</param>
+    /// <param name="thinking">The optional provider reasoning configuration.</param>
+    /// <param name="inactivityTimeoutSeconds">Overrides the maximum interval without provider data, in seconds.</param>
     public async Task<CompletionResult> GenerateAsync(
         string prompt,
         string model = "default",
@@ -373,6 +388,13 @@ public class InferClient : IDisposable
     /// <param name="guidanceString">Additional guidance instructions for customizing the behavior of the AI model during generation.</param>
     /// <param name="cancellationToken">A cancellation token to observe for cancellation requests during execution.</param>
     /// <returns>A task that represents the asynchronous operation and resolves with a <see cref="CompletionResult"/> containing the generated output.</returns>
+    /// <param name="minP">The optional minimum-probability sampling threshold.</param>
+    /// <param name="maxTokenType">Selects how the output token budget is interpreted.</param>
+    /// <param name="repetitionPenalty">The optional penalty for repeated tokens.</param>
+    /// <param name="useSearchGrounding">Whether provider-native search grounding is requested.</param>
+    /// <param name="geminiSafetyThreshold">The optional Gemini safety threshold.</param>
+    /// <param name="thinking">The optional provider reasoning configuration.</param>
+    /// <param name="inactivityTimeoutSeconds">Overrides the maximum interval without provider data, in seconds.</param>
     public async Task<CompletionResult> GenerateAsync(
         List<Message> messages,
         string model = "default",
@@ -504,6 +526,12 @@ public class InferClient : IDisposable
     /// <param name="inactivityTimeoutSeconds">Optional inactivity timeout in seconds for the request.</param>
     /// <returns>A task that represents the asynchronous operation and resolves with a <see cref="CompletionResult"/> containing the generated output.</returns>
     /// <exception cref="Exception">Throws an exception if the provider does not support the Responses API.</exception>
+    /// <param name="minP">The optional minimum-probability sampling threshold.</param>
+    /// <param name="maxTokenType">Selects how the output token budget is interpreted.</param>
+    /// <param name="repetitionPenalty">The optional penalty for repeated tokens.</param>
+    /// <param name="useSearchGrounding">Whether provider-native search grounding is requested.</param>
+    /// <param name="geminiSafetyThreshold">The optional Gemini safety threshold.</param>
+    /// <param name="thinking">The optional provider reasoning configuration.</param>
     public async Task<CompletionResult> GenerateAsync(
         List<Item> items,
         string model = "default",
@@ -629,6 +657,13 @@ public class InferClient : IDisposable
     /// <param name="cancellationToken">Token to observe cancellation requests, allowing the operation to be aborted. Default is none.</param>
     /// <returns>Returns an async enumerable that yields streaming text chunks as they are generated.</returns>
     /// <exception cref="Exception">Throws an exception if the client does not support prompt completion.</exception>
+    /// <param name="minP">The optional minimum-probability sampling threshold.</param>
+    /// <param name="maxTokenType">Selects how the output token budget is interpreted.</param>
+    /// <param name="repetitionPenalty">The optional penalty for repeated tokens.</param>
+    /// <param name="useSearchGrounding">Whether provider-native search grounding is requested.</param>
+    /// <param name="geminiSafetyThreshold">The optional Gemini safety threshold.</param>
+    /// <param name="thinking">The optional provider reasoning configuration.</param>
+    /// <param name="inactivityTimeoutSeconds">Overrides the maximum interval without provider data, in seconds.</param>
     public StreamingResult<string> GenerateStreamAsync(
         string prompt,
         string model = "default",
@@ -762,6 +797,13 @@ public class InferClient : IDisposable
     /// <param name="guidanceString">Additional guidance instructions for customizing the behavior of the AI model during generation.</param>
     /// <param name="cancellationToken">A cancellation token to observe for cancellation requests during execution.</param>
     /// <returns>An async enumerable that yields streaming text chunks as they are generated.</returns>
+    /// <param name="minP">The optional minimum-probability sampling threshold.</param>
+    /// <param name="maxTokenType">Selects how the output token budget is interpreted.</param>
+    /// <param name="repetitionPenalty">The optional penalty for repeated tokens.</param>
+    /// <param name="useSearchGrounding">Whether provider-native search grounding is requested.</param>
+    /// <param name="geminiSafetyThreshold">The optional Gemini safety threshold.</param>
+    /// <param name="thinking">The optional provider reasoning configuration.</param>
+    /// <param name="inactivityTimeoutSeconds">Overrides the maximum interval without provider data, in seconds.</param>
     public StreamingResult<string> GenerateStreamAsync(
         List<Message> messages,
         string model = "default",

@@ -38,6 +38,7 @@ internal static class Agent
     /// Delegates to the DI-registered <see cref="IAgentService"/> when running inside a host;
     /// falls back to direct <see cref="AgentRunner"/> construction (test / standalone path).
     /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "REVI008", Justification = "The runtime facade forwards an already selected agent name to its registered service.") ]
     public static async Task<AgentResult> Run(
         string agentName,
         Dictionary<string, object>? inputs,

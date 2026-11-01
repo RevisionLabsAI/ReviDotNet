@@ -56,7 +56,7 @@
         {
             <MudItem xs="12" md="6">
                 <MudCard>
-                    <MudCardHeader><MudCardHeaderContent><MudText Typo="Typo.subtitle1">By Provider</MudText></MudCardHeaderContent></MudCardHeader>
+                    <MudCardHeader><CardHeaderContent><MudText Typo="Typo.subtitle1">By Provider</MudText></CardHeaderContent></MudCardHeader>
                     <MudCardContent>
                         <MudTable T="KeyValuePair<string,int>" Items="@_summary.ByProvider" Dense="true" Hover="false" Elevation="0">
                             <HeaderContent>
@@ -76,7 +76,7 @@
         {
             <MudItem xs="12" md="6">
                 <MudCard>
-                    <MudCardHeader><MudCardHeaderContent><MudText Typo="Typo.subtitle1">By Model</MudText></MudCardHeaderContent></MudCardHeader>
+                    <MudCardHeader><CardHeaderContent><MudText Typo="Typo.subtitle1">By Model</MudText></CardHeaderContent></MudCardHeader>
                     <MudCardContent>
                         <MudTable T="KeyValuePair<string,int>" Items="@_summary.ByModel" Dense="true" Hover="false" Elevation="0">
                             <HeaderContent>

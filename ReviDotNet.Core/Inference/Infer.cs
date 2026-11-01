@@ -29,8 +29,9 @@ internal class Infer
 	/// <param name="promptObject">The prompt object to use for inference.</param>
 	/// <param name="prompt">The prompt information.</param>
 	/// <param name="model">The model profile to use for inference.</param>
-	/// <param name="outputObject">The optional output object.</param>
 	/// <returns>The completion response from the inference process.</returns>
+	/// <param name="outputType">The optional output type used to generate structured guidance.</param>
+	/// <param name="token">Cancels the operation.</param>
 	private static async Task<CompletionResult?> CallInference(
 		object promptObject,
 		Prompt prompt,
@@ -51,7 +52,7 @@ internal class Infer
 		
 			// Prompt needs to be compatible
 			// Provider needs to be enabled and have an inferenceclient that is active
-			if (model.Provider.InferenceClient is null)
+			if (model.Provider?.InferenceClient is null)
 				throw new Exception("InferenceClient is null!");
 		
 			// Model needs to be enabled and compatible
@@ -358,8 +359,8 @@ internal class Infer
 	/// <param name="prompt">The prompt information.</param>
 	/// <param name="model">The model profile to use for inference.</param>
 	/// <param name="outputType">The optional output object type.</param>
-	/// <param name="cancellationToken">Cancellation token for the operation.</param>
 	/// <returns>An async enumerable that yields text chunks as they are generated.</returns>
+	/// <param name="token">Cancels the operation.</param>
 	private static async IAsyncEnumerable<string> CallStreamingInference(
 		object promptObject,
 		Prompt prompt,
@@ -375,7 +376,7 @@ internal class Infer
 		StreamingResult<string> streamResult;
 		
 		// Sanity checks
-		if (model.Provider.InferenceClient is null)
+		if (model.Provider?.InferenceClient is null)
 			throw new Exception("InferenceClient is null!");
 	
 		// Figure out our guidance strategy here
@@ -1167,6 +1168,7 @@ internal class Infer
 	/// <param name="modelName">The name of the model to use for completion. Default is null.</param>
 	/// <param name="outputType">The output object to deserialize the completion response into. Default is null.</param>
 	/// <returns>The completion response, or null if the completion request fails.</returns>
+	/// <param name="token">Cancels the operation.</param>
 	public static async Task<CompletionResult?> Completion(
 		string promptName,
 		List<Input>? inputs = null,
@@ -1242,7 +1244,7 @@ internal class Infer
 			
 			return lines;
 		}
-		catch (Exception e)
+		catch (Exception)
 		{
 			// Otherwise, check if we're going to retry
 			if (originalRetryLimit is null)
@@ -1659,9 +1661,9 @@ internal class Infer
 	/// </summary>
 	/// <param name="prompt">The prompt object.</param>
 	/// <param name="model">The model profile.</param>
-	/// <param name="obj">The input object.</param>
 	/// <param name="guidanceType">The guidance type.</param>
 	/// <param name="guidanceString">The guidance string.</param>
+	/// <param name="outputType">The optional output type used to generate structured guidance.</param>
 	private static void GetGuidance(
 		Prompt prompt, 
 		ModelProfile model,
@@ -1676,9 +1678,11 @@ internal class Infer
 		if (outputType is null)
 			return;
 
-		if (!model.Provider.SupportsGuidance ?? false)
+		ProviderProfile? provider = model.Provider;
+		if (provider is null) return;
+		if (!provider.SupportsGuidance ?? false)
 		{
-			Util.Log($"GetGuidance: Provider {model.Provider.Name} does not support guidance");
+			Util.Log($"GetGuidance: Provider {provider.Name} does not support guidance");
 			GuidanceCapability.WarnIfIneffective(prompt, model, guidanceType, guidanceString);
 			return;
 		}
@@ -1699,11 +1703,11 @@ internal class Infer
 				case GuidanceSchemaType.Default:
 				{
 					// Defer to the provider's default schema strategy (which may itself be auto or manual).
-					GuidanceSchemaType? providerDefault = model.Provider.DefaultGuidanceType;
+					GuidanceSchemaType? providerDefault = provider.DefaultGuidanceType;
 					if (providerDefault is not null and not GuidanceSchemaType.Default)
 						GuidanceResolver.Resolve(
 							providerDefault.Value,
-							model.Provider.DefaultGuidanceString,
+							provider.DefaultGuidanceString,
 							outputType,
 							prompt.ChainOfThought ?? false,
 							out guidanceType,

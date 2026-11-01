@@ -19,7 +19,7 @@ public class ModelProfile
     
     // Identifier
     [RConfigProperty("general_name")]
-    public string Name { get; set; } 
+    public string Name { get; set; } = string.Empty;
     
     [RConfigProperty("general_enabled")]
     public bool Enabled { get; set; } 
@@ -36,12 +36,13 @@ public class ModelProfile
     
     // Model and Provider
     [RConfigProperty("general_model-string")]
-    public string ModelString { get; set; }
+    public string ModelString { get; set; } = string.Empty;
 
     [RConfigProperty("general_provider-name")]
-    public string ProviderName { get; set; }
+    public string ProviderName { get; set; } = string.Empty;
     
-    public ProviderProfile Provider { get; set; } 
+    /// <summary>The resolved provider, or null before resolution or when no provider matches.</summary>
+    public ProviderProfile? Provider { get; set; }
     
     
     // Overall Options

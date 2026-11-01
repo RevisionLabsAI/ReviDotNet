@@ -21,7 +21,7 @@
 @if (_busy)
 {
     <div class="d-flex align-center gap-2 mb-3">
-        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/workshop?tab=1" Title="Back" />
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/workshop?tab=1" title="Back" />
         <MudText Typo="Typo.h5">New evaluation</MudText>
     </div>
     <MudPaper Class="pa-4" Outlined="true">
@@ -42,7 +42,7 @@ else
 {
     var ev = _selected;
     <div class="d-flex align-center gap-2 mb-3" style="flex-wrap: wrap;">
-        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/workshop?tab=1" Title="Back to Evaluations" />
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/workshop?tab=1" title="Back to Evaluations" />
         <MudIcon Icon="@Icons.Material.Filled.RateReview" Color="@ScoreColor(ev.Result.Score)" />
         <MudText Typo="Typo.h5">@ev.AgentName</MudText>
         <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@VersionLabel(ev.AgentVersion)</MudChip>

@@ -71,6 +71,7 @@ public sealed class AgentRunContext
     /// </summary>
     /// <param name="parentLog">The parent Rlog the child run should attach to.</param>
     /// <param name="maxAgentDepthOverride">The dispatching state's max-agent-depth guardrail, if any.</param>
+    /// <param name="authorizedContext">The context that authorizes the nested agent call.</param>
     public AgentRunContext Child(Rlog parentLog, int? maxAgentDepthOverride = null, IReadOnlyList<ContextCandidate>? authorizedContext = null) =>
         new() { ParentLog = parentLog, Depth = Depth + 1, MaxAgentDepthOverride = maxAgentDepthOverride, Files = Files, Documents = Documents, DocumentSearchOptions = DocumentSearchOptions, AuthorizedContext = authorizedContext ?? [] };
 

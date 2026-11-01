@@ -243,7 +243,10 @@ public sealed class RegexGeneratorContractKindCompatibilityTests
         public static int PublicStaticField;
 
         [JsonProperty("private_static_field", Order = 2)]
+        // This field is intentionally referenced only by reflection in the schema exclusion contract.
+#pragma warning disable CS0169
         private static int PrivateStaticField;
+#pragma warning restore CS0169
 
         [JsonProperty("public_static_property", Order = 3)]
         public static int PublicStaticProperty { get; set; }

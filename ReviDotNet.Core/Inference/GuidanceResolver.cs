@@ -71,7 +71,7 @@ public static class GuidanceResolver
 
             case GuidanceSchemaType.JsonAuto:
                 guidanceType = GuidanceType.Json;
-                guidanceString = Util.JsonStringFromType(outputType);
+                guidanceString = Util.JsonStringFromType(outputType ?? throw new ArgumentException("JSON auto guidance requires an output type.", nameof(outputType)));
                 break;
 
             case GuidanceSchemaType.RegexManual:
@@ -81,7 +81,7 @@ public static class GuidanceResolver
 
             case GuidanceSchemaType.RegexAuto:
                 guidanceType = GuidanceType.Regex;
-                guidanceString = RegexGenerator.FromObject(outputType, chainOfThought, "<|eot_id|>");
+                guidanceString = RegexGenerator.FromObject(outputType ?? throw new ArgumentException("Regex auto guidance requires an output type.", nameof(outputType)), chainOfThought, "<|eot_id|>");
                 break;
 
             // GuidanceSchemaType.Default and the GNBF variants are intentionally left unresolved.

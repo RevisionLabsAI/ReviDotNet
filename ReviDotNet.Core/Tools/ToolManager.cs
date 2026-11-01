@@ -74,7 +74,7 @@ internal static class ToolManager
     /// Clears existing custom tools and loads tool profiles from the default path.
     /// Built-in tools are never cleared.
     /// </summary>
-    public static void Load(Assembly assembly = null)
+    public static void Load(Assembly? assembly = null)
     {
         _customTools.Clear();
 
@@ -124,7 +124,7 @@ internal static class ToolManager
         }
     }
 
-    private static void LoadFromEmbeddedResources(Assembly assembly)
+    private static void LoadFromEmbeddedResources(Assembly? assembly)
     {
         try
         {

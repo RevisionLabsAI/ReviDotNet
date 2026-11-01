@@ -27,6 +27,8 @@ public sealed class InferService(
     IProviderManager providers,
     IReviLogger<InferService> logger) : IInferService
 {
+    /// <summary>The validated logger dependency retained by the service constructor.</summary>
+    private readonly IReviLogger<InferService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     // ===================
     //  Inference Calling
     // ===================
@@ -643,7 +645,7 @@ public sealed class InferService(
                 .Select(line => line.Trim())
                 .ToList();
         }
-        catch (Exception e)
+        catch (Exception)
         {
             if (originalRetryLimit is null)
                 originalRetryLimit = prompt.RetryAttempts;
@@ -837,7 +839,7 @@ public sealed class InferService(
         string inputString = "";
         for (int num = 0; num < inputs.Count; ++num)
         {
-            string line = templateLine;
+            string line = templateLine ?? throw new InvalidOperationException($"Model '{model.Name}' is missing its {(inputs.Count == 1 ? "single-item" : "multi-item")} input template.");
             line = line.Replace("{iterator}", (num + 1).ToString());
             line = line.Replace("{label}", inputs[num].Label);
             line = line.Replace("{text}", inputs[num].Text);
@@ -870,7 +872,7 @@ public sealed class InferService(
         {
             int totalLength;
 
-            if (model.Provider.InferenceClient is null)
+            if (model.Provider?.InferenceClient is null)
                 throw new Exception("InferenceClient is null!");
 
             GetGuidance(prompt, model, outputType, out GuidanceType? guidanceType, out string? guidanceString);
@@ -974,7 +976,7 @@ public sealed class InferService(
         int totalLength;
         StreamingResult<string> streamResult;
 
-        if (model.Provider.InferenceClient is null)
+        if (model.Provider?.InferenceClient is null)
             throw new Exception("InferenceClient is null!");
 
         GetGuidance(prompt, model, outputType, out GuidanceType? guidanceType, out string? guidanceString);
@@ -1172,9 +1174,11 @@ public sealed class InferService(
         if (outputType is null)
             return;
 
-        if (!model.Provider.SupportsGuidance ?? false)
+        ProviderProfile? provider = model.Provider;
+        if (provider is null) return;
+        if (!provider.SupportsGuidance ?? false)
         {
-            Util.Log($"GetGuidance: Provider {model.Provider.Name} does not support guidance");
+            Util.Log($"GetGuidance: Provider {provider.Name} does not support guidance");
             GuidanceCapability.WarnIfIneffective(prompt, model, guidanceType, guidanceString);
             return;
         }
@@ -1194,11 +1198,11 @@ public sealed class InferService(
                 case GuidanceSchemaType.Default:
                 {
                     // Defer to the provider's default schema strategy (which may itself be auto or manual).
-                    GuidanceSchemaType? providerDefault = model.Provider.DefaultGuidanceType;
+                    GuidanceSchemaType? providerDefault = provider.DefaultGuidanceType;
                     if (providerDefault is not null and not GuidanceSchemaType.Default)
                         GuidanceResolver.Resolve(
                             providerDefault.Value,
-                            model.Provider.DefaultGuidanceString,
+                            provider.DefaultGuidanceString,
                             outputType,
                             prompt.ChainOfThought ?? false,
                             out guidanceType,

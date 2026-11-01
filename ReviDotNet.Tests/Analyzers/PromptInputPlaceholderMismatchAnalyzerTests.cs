@@ -43,7 +43,7 @@ public sealed class PromptInputPlaceholderMismatchAnalyzerTests
             ("C:/proj/RConfigs/Prompts/p.pmt", "[[information]]\nname = p\n\n[[_instruction]]\nHello {user}!")
         ];
 
-        DiagnosticResult expected = new DiagnosticResult(PromptInputPlaceholderMismatchAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+        DiagnosticResult expected = new DiagnosticResult(PromptInputPlaceholderMismatchAnalyzer.AdvisoryId, DiagnosticSeverity.Warning)
             .WithSpan("/0/Test1.cs", 1, 118, 1, 124)
             .WithArguments("extra", "p");
 

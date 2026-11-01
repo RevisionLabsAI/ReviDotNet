@@ -17,7 +17,8 @@ public sealed class DecisionFileAnalyzer : DiagnosticAnalyzer
     public const string HeaderId = "REVI060";
     /// <summary>Unknown decision prompt reference.</summary>
     public const string MissingId = "REVI061";
-    private static readonly DiagnosticDescriptor Header = new(HeaderId, "Invalid decision header", "Decision file '{0}' requires valid [[information]], [[settings]], and [[_decision]] RConfig sections", "Configuration", DiagnosticSeverity.Error, true);
+    private static readonly DiagnosticDescriptor Header = new(HeaderId, "Invalid decision header", "Decision file '{0}' requires valid [[information]], [[settings]], and [[_decision]] RConfig sections", "Configuration", DiagnosticSeverity.Error, true,
+            customTags: [WellKnownDiagnosticTags.CompilationEnd]);
     private static readonly DiagnosticDescriptor Missing = new(MissingId, "Missing decision prompt", "Decision prompt '{0}' is not present in AdditionalFiles", "Usage", DiagnosticSeverity.Error, true);
     /// <inheritdoc/>
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Header, Missing);

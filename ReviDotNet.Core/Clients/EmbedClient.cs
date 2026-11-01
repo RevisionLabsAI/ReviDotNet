@@ -294,6 +294,8 @@ public class EmbedClient : IDisposable
     /// <param name="content">The HTTP content to send with the request.</param>
     /// <param name="cancellationToken">A token to cancel the request.</param>
     /// <returns>An EmbeddingResponse containing the embedding vectors from the API.</returns>
+    /// <param name="endpoint">The provider endpoint receiving the request.</param>
+    /// <param name="retryAttemptLimitOverride">Overrides the configured number of retries for this call.</param>
     private async Task<EmbeddingResponse> MakeRequestAsync(
         string endpoint,
         StringContent content,
@@ -343,6 +345,8 @@ public class EmbedClient : IDisposable
     /// <param name="payload">The payload to be sent to the AI embeddings service. It should contain the necessary parameters for the request.</param>
     /// <param name="cancellationToken">A cancellation token that can be used to cancel the request.</param>
     /// <returns>A task that represents the asynchronous operation. The task result contains an EmbeddingResponse.</returns>
+    /// <param name="timeoutSecondsOverride">Overrides the total request timeout, in seconds.</param>
+    /// <param name="retryAttemptLimitOverride">Overrides the configured number of retries for this call.</param>
     private async Task<EmbeddingResponse> ExecuteRequest(
         string endpoint,
         Dictionary<string, object> payload,
@@ -390,6 +394,9 @@ public class EmbedClient : IDisposable
     /// <param name="encodingFormat">The format of the encoding (e.g., "float" or "base64").</param>
     /// <param name="cancellationToken">Cancellation token to cancel the request.</param>
     /// <returns>A task that represents the asynchronous operation. The task result contains the <see cref="EmbeddingResponse"/> object.</returns>
+    /// <param name="taskType">The optional embedding task type.</param>
+    /// <param name="timeoutSecondsOverride">Overrides the total request timeout, in seconds.</param>
+    /// <param name="retryAttemptLimitOverride">Overrides the configured number of retries for this call.</param>
     public async Task<EmbeddingResponse> GenerateEmbeddingAsync(
         string input,
         string model = "default",
@@ -412,6 +419,9 @@ public class EmbedClient : IDisposable
     /// <param name="encodingFormat">The format of the encoding (e.g., "float" or "base64").</param>
     /// <param name="cancellationToken">Cancellation token to cancel the request.</param>
     /// <returns>A task that represents the asynchronous operation. The task result contains the <see cref="EmbeddingResponse"/> object.</returns>
+    /// <param name="taskType">The optional embedding task type.</param>
+    /// <param name="timeoutSecondsOverride">Overrides the total request timeout, in seconds.</param>
+    /// <param name="retryAttemptLimitOverride">Overrides the configured number of retries for this call.</param>
     public async Task<EmbeddingResponse> GenerateEmbeddingsAsync(
         string[] inputs,
         string model = "default",

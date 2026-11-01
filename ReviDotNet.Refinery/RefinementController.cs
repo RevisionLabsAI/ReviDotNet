@@ -863,7 +863,7 @@ public sealed class RefinementController(
         => ScoreSetCoreAsync(scenarios, agentName, agentProfile: null, agentDefinition, checkers, mode, samples, governor, ct, seedScenario, toolManager, persistSpend: persistSpend, maxParallel: maxParallel);
 
     /// <summary>
-    /// Candidate overload of <see cref="ScoreSetAsync(IReadOnlyList{Scenario}, string, string, IReadOnlyList{IInvariantChecker}, string, int, BudgetGovernor, CancellationToken, Func{Scenario, CancellationToken, Task}?, IToolManager?)"/>:
+    /// Candidate overload of <see cref="ScoreSetAsync(IReadOnlyList{Scenario}, string, string, IReadOnlyList{IInvariantChecker}, string, int, BudgetGovernor, CancellationToken, Func{Scenario, CancellationToken, Task}, IToolManager, Func{Task}, int)"/>:
     /// scores the whole set by running the parsed candidate <paramref name="agentProfile"/> DIRECTLY (via the
     /// per-run profile overload, no shared registry slot), carrying the per-run <paramref name="toolManager"/>.
     /// The produced cards are filed under <paramref name="realAgentName"/> + <paramref name="variantId"/> (the

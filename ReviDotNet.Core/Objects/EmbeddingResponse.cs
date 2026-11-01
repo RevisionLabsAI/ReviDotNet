@@ -14,7 +14,7 @@ public class EmbeddingData
     /// <summary>
     /// The embedding vector as an array of floats.
     /// </summary>
-    public float[] Embedding { get; set; }
+    public float[] Embedding { get; set; } = [];
     
     /// <summary>
     /// The index of this embedding in the response (for batch requests).
@@ -24,7 +24,7 @@ public class EmbeddingData
     /// <summary>
     /// The object type (typically "embedding").
     /// </summary>
-    public string Object { get; set; }
+    public string Object { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -35,22 +35,22 @@ public class EmbeddingResponse
     /// <summary>
     /// The input text(s) that were embedded.
     /// </summary>
-    public List<string> Inputs { get; set; }
+    public List<string> Inputs { get; set; } = [];
     
     /// <summary>
     /// List of embedding data objects containing the vectors.
     /// </summary>
-    public List<EmbeddingData> Data { get; set; }
+    public List<EmbeddingData> Data { get; set; } = [];
     
     /// <summary>
     /// The model used to generate the embeddings.
     /// </summary>
-    public string Model { get; set; }
+    public string Model { get; set; } = string.Empty;
     
     /// <summary>
     /// The object type (typically "list").
     /// </summary>
-    public string Object { get; set; }
+    public string Object { get; set; } = string.Empty;
     
     /// <summary>
     /// Usage information (token counts, if available).

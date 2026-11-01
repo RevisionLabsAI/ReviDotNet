@@ -35,32 +35,48 @@ namespace ReviDotNet.Analyzers
 
         private const string Category = "Configuration";
 
-        private static readonly DiagnosticDescriptor StateNameRule = Rule(
+        private static readonly DiagnosticDescriptor StateNameRule = new DiagnosticDescriptor(
+            DiagnosticId,
             "Invalid state name",
-            "State name '{0}' contains an underscore; state names must be letters, digits, and hyphens (underscores break state discovery)");
+            "State name '{0}' contains an underscore; state names must be letters, digits, and hyphens (underscores break state discovery)",
+            Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+            customTags: [WellKnownDiagnosticTags.CompilationEnd]);
 
-        private static readonly DiagnosticDescriptor UndefinedNodeRule = Rule(
+        private static readonly DiagnosticDescriptor UndefinedNodeRule = new DiagnosticDescriptor(
+            DiagnosticId,
             "Loop state has no definition",
-            "Loop declares state '{0}' which has no matching [[state.{0}]] section");
+            "Loop declares state '{0}' which has no matching [[state.{0}]] section",
+            Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+            customTags: [WellKnownDiagnosticTags.CompilationEnd]);
 
-        private static readonly DiagnosticDescriptor UndefinedTargetRule = Rule(
+        private static readonly DiagnosticDescriptor UndefinedTargetRule = new DiagnosticDescriptor(
+            DiagnosticId,
             "Transition to undefined state",
-            "Loop transition target '{0}' has no matching [[state.{0}]] section");
+            "Loop transition target '{0}' has no matching [[state.{0}]] section",
+            Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+            customTags: [WellKnownDiagnosticTags.CompilationEnd]);
 
-        private static readonly DiagnosticDescriptor UndefinedEntryRule = Rule(
+        private static readonly DiagnosticDescriptor UndefinedEntryRule = new DiagnosticDescriptor(
+            DiagnosticId,
             "Loop entry has no definition",
-            "Loop entry state '{0}' has no matching [[state.{0}]] section");
+            "Loop entry state '{0}' has no matching [[state.{0}]] section",
+            Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+            customTags: [WellKnownDiagnosticTags.CompilationEnd]);
 
-        private static readonly DiagnosticDescriptor DeadEdgeRule = Rule(
+        private static readonly DiagnosticDescriptor DeadEdgeRule = new DiagnosticDescriptor(
+            DiagnosticId,
             "Unreachable transition (dead edge)",
-            "Transition to '{0}' is unreachable — it follows an unconditional (no [when:]) fallback");
+            "Transition to '{0}' is unreachable — it follows an unconditional (no [when:]) fallback",
+            Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+            customTags: [WellKnownDiagnosticTags.CompilationEnd]);
 
-        private static readonly DiagnosticDescriptor DuplicateSignalRule = Rule(
+        private static readonly DiagnosticDescriptor DuplicateSignalRule = new DiagnosticDescriptor(
+            DiagnosticId,
             "Duplicate signal",
-            "Signal '{0}' is declared more than once in this state — only the first transition for it is reachable");
+            "Signal '{0}' is declared more than once in this state — only the first transition for it is reachable",
+            Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+            customTags: [WellKnownDiagnosticTags.CompilationEnd]);
 
-        private static DiagnosticDescriptor Rule(string title, string message) =>
-            new DiagnosticDescriptor(DiagnosticId, title, message, Category, DiagnosticSeverity.Warning, isEnabledByDefault: true);
 
         private static readonly Regex SectionHeader =
             new Regex(@"^\s*\[\[(?<name>[^\]]+)\]\]\s*$", RegexOptions.Compiled);

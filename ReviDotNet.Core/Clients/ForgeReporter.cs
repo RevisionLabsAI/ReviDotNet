@@ -10,7 +10,7 @@ namespace Revi;
 
 /// <summary>
 /// Represents a usage report sent from a client that bypassed Forge routing and called a provider directly.
-/// Mirrors the fields Forge needs to populate a <see cref="ReviDotNet.Forge.Models.ForgeUsageRecord"/>.
+/// Mirrors the fields Forge needs to populate a <c>ReviDotNet.Forge.Models.ForgeUsageRecord</c>.
 /// </summary>
 internal record ForgeDirectUsageReport
 {

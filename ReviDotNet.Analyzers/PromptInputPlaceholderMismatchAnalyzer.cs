@@ -31,6 +31,9 @@ namespace ReviDotNet.Analyzers
         /// </summary>
         public const string DiagnosticId = "REVI003";
 
+        /// <summary>The advisory diagnostic, independently configurable from errors.</summary>
+        public const string AdvisoryId = "REVI012";
+
         private static readonly LocalizableString MissingTitle = "Missing required prompt input";
         private static readonly LocalizableString MissingMessage = "Prompt '{0}' requires input '{1}'";
         private static readonly LocalizableString MissingDescription = "All placeholders declared in the .pmt file must have corresponding Input entries.";
@@ -51,7 +54,7 @@ namespace ReviDotNet.Analyzers
             description: MissingDescription);
 
         private static readonly DiagnosticDescriptor ExtraRule = new DiagnosticDescriptor(
-            DiagnosticId,
+            AdvisoryId,
             ExtraTitle,
             ExtraMessage,
             Category,

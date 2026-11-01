@@ -32,7 +32,7 @@
               @foreach (var t in _tags)
               {
                   var display = t.Length <= 10 ? t : t[..10] + "…";
-                  <MudChip T="string" DisableRipple="true" Variant="Variant.Filled" Size="Size.Small" Color="Color.Default" Class="tag-chip" Title="@t">@display</MudChip>
+                  <MudChip T="string" Ripple="false" Variant="Variant.Filled" Size="Size.Small" Color="Color.Default" Class="tag-chip" title="@t">@display</MudChip>
               }
           </MudChipSet>
       </div>

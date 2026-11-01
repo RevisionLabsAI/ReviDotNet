@@ -52,7 +52,7 @@ context-window = -1
 ")
             };
 
-            DiagnosticResult expected = DiagnosticResult.CompilerWarning(ModelProfileSchemaAnalyzer.DiagnosticId)
+            DiagnosticResult expected = DiagnosticResult.CompilerWarning(ModelProfileSchemaAnalyzer.AdvisoryId)
                 .WithSpan("RConfigs/Models/Inference/neg.rcfg", 7, 1, 7, 1)
                 .WithArguments("-1", "settings.context-window", " (>= 0)");
 
@@ -121,7 +121,7 @@ default-instruction-input-type = listed
 ")
             };
 
-            DiagnosticResult expected = DiagnosticResult.CompilerWarning(ModelProfileSchemaAnalyzer.DiagnosticId)
+            DiagnosticResult expected = DiagnosticResult.CompilerWarning(ModelProfileSchemaAnalyzer.AdvisoryId)
                 .WithSpan("RConfigs/Models/Inference/notmpl.rcfg", 7, 1, 7, 1)
                 .WithArguments("single-item and multi-item");
 

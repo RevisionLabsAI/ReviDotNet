@@ -34,7 +34,7 @@ internal static class AgentManager
     /// Clears existing agents and loads agent profiles from the default path.
     /// Falls back to embedded resources if the directory is not found.
     /// </summary>
-    public static void Load(Assembly assembly = null)
+    public static void Load(Assembly? assembly = null)
     {
         _agents.Clear();
 
@@ -80,7 +80,7 @@ internal static class AgentManager
         }
     }
 
-    private static void LoadFromEmbeddedResources(Assembly assembly)
+    private static void LoadFromEmbeddedResources(Assembly? assembly)
     {
         try
         {
