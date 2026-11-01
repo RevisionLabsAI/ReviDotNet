@@ -96,7 +96,7 @@ timeout-seconds = -10
 ")
             };
 
-            DiagnosticResult expected = DiagnosticResult.CompilerWarning(ProviderProfileSchemaAnalyzer.DiagnosticId)
+            DiagnosticResult expected = DiagnosticResult.CompilerWarning(ProviderProfileSchemaAnalyzer.AdvisoryId)
                 .WithSpan("RConfigs/Providers/neg.rcfg", 7, 1, 7, 1)
                 .WithArguments("-10", "limiting.timeout-seconds", " (>= 0)");
 

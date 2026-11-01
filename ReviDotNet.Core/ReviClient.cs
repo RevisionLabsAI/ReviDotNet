@@ -10,7 +10,7 @@ namespace Revi;
 
 /// <summary>
 /// Provides access to all primary ReviDotNet services when using the standalone builder path
-/// (<see cref="Revi.CreateBuilder"/>). Dispose to release the underlying service provider.
+/// (<see cref="ReviBuilder.Create"/>). Dispose to release the underlying service provider.
 /// </summary>
 /// <remarks>
 /// In host-based applications, inject <see cref="IInferService"/>, <see cref="IAgentService"/>,

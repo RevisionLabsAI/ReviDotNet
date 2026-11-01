@@ -36,7 +36,7 @@ internal static class ProviderManager
     /// This method will clear the existing provider profiles before loading new ones.
     /// It handles exceptions related to directory access and general loading errors.
     /// </remarks>
-    public static void Load(Assembly assembly = null)
+    public static void Load(Assembly? assembly = null)
     {
         _providers.Clear();
 
@@ -47,7 +47,7 @@ internal static class ProviderManager
         {
             LoadFromFileSystem(path);
         }
-        catch (DirectoryNotFoundException e)
+        catch (DirectoryNotFoundException)
         {
             //Util.Log($"Directory not found: {e.Message}. Attempting to load from embedded resources.");
             LoadFromEmbeddedResources(assembly);
@@ -91,7 +91,7 @@ internal static class ProviderManager
     /// This method handles exceptions related to resource access and parsing errors.
     /// Successfully loaded provider profiles are added to the existing collection.
     /// </remarks>
-    private static void LoadFromEmbeddedResources(Assembly assembly)
+    private static void LoadFromEmbeddedResources(Assembly? assembly)
     {
         try
         {
@@ -141,6 +141,7 @@ internal static class ProviderManager
     /// Logs the addition if the provider is successfully added.
     /// </summary>
     /// <param name="newProvider">The provider profile to be added to the collection.</param>
+    /// <param name="embedded">Whether this configuration came from embedded resources.</param>
     private static void CheckAdd(ProviderProfile newProvider, bool embedded)
     {
         var existingProvider = _providers.FirstOrDefault(p => p.Name == newProvider.Name);

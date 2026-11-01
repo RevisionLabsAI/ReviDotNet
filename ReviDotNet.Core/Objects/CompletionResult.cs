@@ -14,22 +14,22 @@ public class CompletionResult
     /// <summary>
     /// The entire prompt string for the inference request.
     /// </summary>
-    public string FullPrompt { get; set; }
+    public string FullPrompt { get; set; } = string.Empty;
     
     /// <summary>
     /// List of output strings from the inference request.
     /// </summary>
-    public List<string> Outputs { get; set; }
+    public List<string> Outputs { get; set; } = [];
 
     /// <summary>
     /// The selected or main output string from the inference.
     /// </summary>
-    public string Selected { get; set; }
+    public string Selected { get; set; } = string.Empty;
 
     /// <summary>
     /// Reason the model finished generating the response.
     /// </summary>
-    public string FinishReason { get; set; }
+    public string FinishReason { get; set; } = string.Empty;
 
     /// <summary>
     /// Number of input (prompt) tokens as reported by the provider. Null if the provider did not return usage data.

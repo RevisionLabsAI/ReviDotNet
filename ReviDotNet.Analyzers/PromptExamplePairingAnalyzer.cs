@@ -44,7 +44,8 @@ namespace ReviDotNet.Analyzers
             Category,
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true,
-            description: Description);
+            description: Description,
+            customTags: [WellKnownDiagnosticTags.CompilationEnd]);
 
         // Matches a raw example section header on its own line: [[_exin_3]] / [[_exout_3]].
         private static readonly Regex ExampleHeader =

@@ -554,6 +554,9 @@ public class ReviLogger : IReviLogger
 	/// </summary>
 	/// <param name="level">The log level to check</param>
 	/// <returns>True if the level should print to console, false otherwise</returns>
+	/// <param name="className">The originating class, when known.</param>
+	/// <param name="methodName">The originating method, when known.</param>
+	/// <param name="lineNumber">The originating source line, when known.</param>
 	private bool ShouldPrintToConsole(LogLevel level, string? className, string? methodName, int? lineNumber)
 	{
 		// First, honor limiter overrides
@@ -880,11 +883,7 @@ public class ReviLogger : IReviLogger
 		return false;
 	}
 
-	/// <summary>
-	/// Writes a colorized log message to the console with appropriate prefix and colors based on log level.
-	/// </summary>
-	/// <param name="level">The log level</param>
-	/// <param name="message">The message to write</param>
+	/// <summary>Finds the application assembly name for console log prefixes.</summary>
 	private static string TryGetAppName()
 	{
 		try
@@ -1144,7 +1143,8 @@ public class ReviLogger : IReviLogger
 			while (File.Exists(fullFilePath));
 
 			// Ensure that the directory exists
-			Directory.CreateDirectory(Path.GetDirectoryName(fullFilePath));
+			string? directory = Path.GetDirectoryName(fullFilePath);
+			if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
 
 			// Writing text to the file
 			await File.WriteAllTextAsync(fullFilePath, textToDump);
@@ -1193,7 +1193,8 @@ public class ReviLogger : IReviLogger
 			}
 			while (File.Exists(fullFilePath));
 
-			Directory.CreateDirectory(Path.GetDirectoryName(fullFilePath));
+			string? directory = Path.GetDirectoryName(fullFilePath);
+			if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
 			await File.WriteAllBytesAsync(fullFilePath, imageBytes);
 		}
 		catch (Exception ex)
@@ -1238,7 +1239,7 @@ public class ReviLogger : IReviLogger
 
 		foreach (PropertyInfo property in properties)
 		{
-			object value = property.GetValue(obj);
+			object? value = property.GetValue(obj);
 			string propertyName = property.Name;
 
 			if (value != null)

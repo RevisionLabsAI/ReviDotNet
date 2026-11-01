@@ -6,9 +6,9 @@ namespace Revi;
 internal static class ConfigName
 {
     /// <summary>Uses the declared name verbatim. Folders and file names do not form part of identity.</summary>
-    public static string Resolve(string declaredName)
+    public static string Resolve(string? declaredName)
     {
-        if (string.IsNullOrWhiteSpace(declaredName)) throw new ArgumentException("A configuration name is required.", nameof(declaredName));
+        if (declaredName is null || string.IsNullOrWhiteSpace(declaredName)) throw new ArgumentException("A configuration name is required.", nameof(declaredName));
         return declaredName;
     }
 }

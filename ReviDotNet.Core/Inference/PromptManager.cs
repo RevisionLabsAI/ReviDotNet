@@ -67,7 +67,7 @@ namespace Revi
                     }
                 }
             }
-            catch (DirectoryNotFoundException e)
+            catch (DirectoryNotFoundException)
             {
                 //Util.Log($"Directory not found: {e.Message}. Attempting to load from embedded resources.");
                 LoadFromEmbeddedResources(assembly);
@@ -184,6 +184,7 @@ namespace Revi
         /// based on name matching and version or update time comparison.
         /// </summary>
         /// <param name="newPrompt">The new prompt to evaluate for addition or update.</param>
+        /// <param name="embedded">Whether this configuration came from embedded resources.</param>
         private static void CheckAdd(Prompt newPrompt, bool embedded)
         {
             var existingPrompt = _prompts.FirstOrDefault(p => p.Name == newPrompt.Name);

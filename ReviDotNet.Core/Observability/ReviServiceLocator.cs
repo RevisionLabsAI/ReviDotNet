@@ -47,7 +47,7 @@ public static class ReviServiceLocator
     }
 
     /// <summary>
-    /// Try to retrieve a typed IReviLogger<T> from the assigned provider.
+    /// Try to retrieve a typed <see cref="IReviLogger{T}"/> from the assigned provider.
     /// </summary>
     public static bool TryGetLogger<T>(out IReviLogger<T>? logger)
     {

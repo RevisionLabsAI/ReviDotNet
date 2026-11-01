@@ -12,7 +12,7 @@ namespace Revi;
 /// Tolerant parser for the per-step <see cref="AgentStepResponse"/> JSON. Providers with enforced
 /// structured output (e.g. Gemini's responseSchema) return clean JSON, but providers without it
 /// (e.g. Claude) sometimes wrap the object in ```json fences or surround it with a sentence. This
-/// tries the raw text first, then reuses <see cref="Json.ExtractJson"/> (markdown-fence stripping,
+/// tries the raw text first, then reuses <see cref="Util.ExtractJson"/> (markdown-fence stripping,
 /// bracket-region isolation, and lightweight repairs) before giving up.
 /// </summary>
 internal static class StepJsonParser

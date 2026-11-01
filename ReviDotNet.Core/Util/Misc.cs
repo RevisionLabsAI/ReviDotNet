@@ -147,7 +147,7 @@ public static partial class Util
 	// Helper for getting a string value safely
 	public static string? GetDictionaryString(Dictionary<string, string> dictionary, string key, string? defaultValue = "")
 	{
-		if (dictionary.TryGetValue(key, out string value))
+		if (dictionary.TryGetValue(key, out string? value))
 			return value;
 		return defaultValue;
 	}
@@ -155,7 +155,7 @@ public static partial class Util
 	// Helper for getting an int value safely
 	public static int? GetDictionaryInt(Dictionary<string, string> dictionary, string key, int? defaultValue = 0)
 	{
-		if (dictionary.TryGetValue(key, out string value) && int.TryParse(value, out int result))
+		if (dictionary.TryGetValue(key, out string? value) && int.TryParse(value, out int result))
 			return result;
 		return defaultValue;
 	}
@@ -163,7 +163,7 @@ public static partial class Util
 	// Helper for getting a DateTime value safely
 	public static DateTime? GetDictionaryDateTime(Dictionary<string, string> dictionary, string key, DateTime? defaultValue = default(DateTime?))
 	{
-		if (dictionary.TryGetValue(key, out string value) && DateTime.TryParse(value, out DateTime result))
+		if (dictionary.TryGetValue(key, out string? value) && DateTime.TryParse(value, out DateTime result))
 			return result;
 		return defaultValue;
 	}
@@ -171,14 +171,14 @@ public static partial class Util
 	// Helper for getting a bool value safely
 	public static bool? GetDictionaryBool(Dictionary<string, string> dictionary, string key, bool? defaultValue = false)
 	{
-		if (dictionary.TryGetValue(key, out string value) && bool.TryParse(value, out bool result))
+		if (dictionary.TryGetValue(key, out string? value) && bool.TryParse(value, out bool result))
 			return result;
 		return defaultValue;
 	}
 	
 	public static bool GetDictionaryBool(Dictionary<string, string> dictionary, string key, bool defaultValue = false)
 	{
-		if (dictionary.TryGetValue(key, out string value) && bool.TryParse(value, out bool result))
+		if (dictionary.TryGetValue(key, out string? value) && bool.TryParse(value, out bool result))
 			return result;
 		return defaultValue;
 	}
@@ -186,7 +186,7 @@ public static partial class Util
 	// Helper for getting a nullable float value safely
 	public static float? GetDictionaryFloat(Dictionary<string, string> dictionary, string key, float? defaultValue = 0)
 	{
-		if (dictionary.TryGetValue(key, out string value) && float.TryParse(value, out float result))
+		if (dictionary.TryGetValue(key, out string? value) && float.TryParse(value, out float result))
 			return result;
 		return defaultValue;
 	}
@@ -361,10 +361,11 @@ public static partial class Util
     public class LazyWithNoExceptionCaching<T>
 	{
 		private Func<T> valueFactory;
-		private T value = default;
+		// The initialized flag is published only after valueFactory assigns this field.
+		private T value = default!;
 		private readonly object lockObject = new object();
 		private bool initialized = false;
-		private static readonly Func<T> ALREADY_INVOKED_SENTINEL = () => default;
+		private static readonly Func<T> ALREADY_INVOKED_SENTINEL = () => throw new InvalidOperationException("The value factory has already completed.");
 
 		public LazyWithNoExceptionCaching(Func<T> valueFactory)
 		{

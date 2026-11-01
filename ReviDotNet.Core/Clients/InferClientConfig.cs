@@ -14,12 +14,12 @@ public class InferClientConfig
     /// <summary>
     /// The base URL of the inference API.
     /// </summary>
-    public string ApiUrl { get; set; }
+    public string ApiUrl { get; set; } = string.Empty;
 
     /// <summary>
     /// The API key used for authentication, if required.
     /// </summary>
-    public string ApiKey { get; set; }
+    public string ApiKey { get; set; } = string.Empty;
 
     /// <summary>
     /// Whether an API key should be applied to requests.
@@ -41,7 +41,7 @@ public class InferClientConfig
     /// <summary>
     /// The default model identifier to use for requests.
     /// </summary>
-    public string DefaultModel { get; set; }
+    public string DefaultModel { get; set; } = string.Empty;
 
     /// <summary>
     /// Overall request timeout in seconds for non-streaming operations.

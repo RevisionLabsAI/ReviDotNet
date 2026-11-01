@@ -87,16 +87,16 @@ else
                 <div class="pa-2">
                     <MudGrid Spacing="2">
                         <MudItem xs="6">
-                            <MudCheckBox @bind-Value="_requestJson" Label="request-json" Color="Color.Primary" CheckedChanged="@((bool _) => MarkDirty())" />
+                            <MudCheckBox @bind-Value="_requestJson" Label="request-json" Color="Color.Primary" @bind-Value:after="MarkDirty" />
                         </MudItem>
                         <MudItem xs="6">
-                            <MudCheckBox @bind-Value="_chainOfThought" Label="chain-of-thought" Color="Color.Primary" CheckedChanged="@((bool _) => MarkDirty())" />
+                            <MudCheckBox @bind-Value="_chainOfThought" Label="chain-of-thought" Color="Color.Primary" @bind-Value:after="MarkDirty" />
                         </MudItem>
                         <MudItem xs="6">
-                            <MudCheckBox @bind-Value="_requireValidOutput" Label="require-valid-output" Color="Color.Primary" CheckedChanged="@((bool _) => MarkDirty())" />
+                            <MudCheckBox @bind-Value="_requireValidOutput" Label="require-valid-output" Color="Color.Primary" @bind-Value:after="MarkDirty" />
                         </MudItem>
                         <MudItem xs="6">
-                            <MudCheckBox @bind-Value="_useSearchGrounding" Label="use-search-grounding" Color="Color.Primary" CheckedChanged="@((bool _) => MarkDirty())" />
+                            <MudCheckBox @bind-Value="_useSearchGrounding" Label="use-search-grounding" Color="Color.Primary" @bind-Value:after="MarkDirty" />
                         </MudItem>
                         <MudItem xs="12">
                             <MudSelect T="GuidanceSchemaType?"

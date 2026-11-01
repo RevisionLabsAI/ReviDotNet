@@ -12,7 +12,7 @@
     </header>
     <div class="modal-content-split">
       <section class="modal-left-panel">
-        <MudTable T="(string Key, string? Value)" Items="@_details" Dense="true" Bordered="true" Hover="false">
+        <MudTable T="DetailRow" Items="@_details" Dense="true" Bordered="true" Hover="false">
           <HeaderContent>
             <MudTh>Field</MudTh>
             <MudTh>Value</MudTh>
@@ -47,7 +47,11 @@
   private RlogEvent? _evt;
   private MudTextField<string?>? _obj1Ref;
   private MudTextField<string?>? _obj2Ref;
-  private List<(string Key, string? Value)> _details = new();
+  /// <summary>One event-detail row, including fields whose value is absent.</summary>
+  /// <param name="Key">The detail label.</param>
+  /// <param name="Value">The detail value, when present.</param>
+  private sealed record DetailRow(string Key, string? Value);
+  private List<DetailRow> _details = new();
 
   public void Show(RlogEvent e) { _evt = e; BuildDetails(); _open = true; StateHasChanged(); }
   private void Close() => _open = false;
@@ -85,19 +89,19 @@
   {
     _details.Clear();
     if (_evt is null) return;
-    _details.Add(("Message", _evt.Message));
-    _details.Add(("Id", _evt.Id));
-    _details.Add(("ParentId", _evt.ParentId));
-    _details.Add(("Timestamp (Local ISO)", _evt.Timestamp.ToLocalTime().ToString("O")));
-    _details.Add(("Timestamp (UTC)", _evt.Timestamp.ToUniversalTime().ToString("O")));
-    _details.Add(("Level", _evt.Level.ToString()));
-    _details.Add(("Identifier", _evt.Identifier));
-    _details.Add(("Cycle", _evt.Cycle.ToString()));
-    _details.Add(("Source (Class.Member:Line)", GetSourceDisplay()));
-    _details.Add(("File", _evt.File));
-    _details.Add(("MachineId", _evt.MachineId));
-    _details.Add(("InstanceId", _evt.InstanceId));
+    _details.Add(new DetailRow("Message", _evt.Message));
+    _details.Add(new DetailRow("Id", _evt.Id));
+    _details.Add(new DetailRow("ParentId", _evt.ParentId));
+    _details.Add(new DetailRow("Timestamp (Local ISO)", _evt.Timestamp.ToLocalTime().ToString("O")));
+    _details.Add(new DetailRow("Timestamp (UTC)", _evt.Timestamp.ToUniversalTime().ToString("O")));
+    _details.Add(new DetailRow("Level", _evt.Level.ToString()));
+    _details.Add(new DetailRow("Identifier", _evt.Identifier));
+    _details.Add(new DetailRow("Cycle", _evt.Cycle.ToString()));
+    _details.Add(new DetailRow("Source (Class.Member:Line)", GetSourceDisplay()));
+    _details.Add(new DetailRow("File", _evt.File));
+    _details.Add(new DetailRow("MachineId", _evt.MachineId));
+    _details.Add(new DetailRow("InstanceId", _evt.InstanceId));
     if (!string.IsNullOrWhiteSpace(_evt.Tags))
-      _details.Add(("Tags", _evt.Tags));
+      _details.Add(new DetailRow("Tags", _evt.Tags));
   }
 }

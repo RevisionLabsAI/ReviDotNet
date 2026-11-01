@@ -485,9 +485,9 @@ public static object AddAdditionalPropertiesToSchema(string schemaString)
     }
 }
 
-private static Dictionary<string, object> ConvertToCleanDictionary(JsonElement element)
+private static Dictionary<string, object?> ConvertToCleanDictionary(JsonElement element)
 {
-    var result = new Dictionary<string, object>();
+    var result = new Dictionary<string, object?>();
     
     foreach (var property in element.EnumerateObject())
     {
@@ -497,7 +497,7 @@ private static Dictionary<string, object> ConvertToCleanDictionary(JsonElement e
     return result;
 }
 
-private static object ConvertJsonElementToCleanValue(JsonElement element)
+private static object? ConvertJsonElementToCleanValue(JsonElement element)
 {
     return element.ValueKind switch
     {
@@ -514,7 +514,7 @@ private static object ConvertJsonElementToCleanValue(JsonElement element)
     };
 }
 
-private static void ProcessSchemaForOpenAI(Dictionary<string, object> schema)
+private static void ProcessSchemaForOpenAI(Dictionary<string, object?> schema)
 {
     // Add additionalProperties: false for object types
     if (schema.TryGetValue("type", out var typeValue) && typeValue?.ToString() == "object")
@@ -526,7 +526,7 @@ private static void ProcessSchemaForOpenAI(Dictionary<string, object> schema)
         
         // For OpenAI: ensure required array includes ALL properties
         if (schema.TryGetValue("properties", out var propertiesObj) && 
-            propertiesObj is Dictionary<string, object> properties)
+            propertiesObj is Dictionary<string, object?> properties)
         {
             // Get all property keys
             var allPropertyKeys = properties.Keys.ToList();
@@ -535,7 +535,7 @@ private static void ProcessSchemaForOpenAI(Dictionary<string, object> schema)
             schema["required"] = allPropertyKeys;
             
             // Process nested properties
-            foreach (var prop in properties.Values.OfType<Dictionary<string, object>>())
+            foreach (var prop in properties.Values.OfType<Dictionary<string, object?>>())
             {
                 ProcessSchemaForOpenAI(prop);
             }
@@ -549,7 +549,7 @@ private static void ProcessSchemaForOpenAI(Dictionary<string, object> schema)
     
     // Process items for arrays
     if (schema.TryGetValue("items", out var itemsObj) && 
-        itemsObj is Dictionary<string, object> items)
+        itemsObj is Dictionary<string, object?> items)
     {
         ProcessSchemaForOpenAI(items);
     }
@@ -558,9 +558,9 @@ private static void ProcessSchemaForOpenAI(Dictionary<string, object> schema)
     foreach (var keyword in new[] { "oneOf", "anyOf", "allOf" })
     {
         if (schema.TryGetValue(keyword, out var arrayObj) && 
-            arrayObj is List<object> schemaArray)
+            arrayObj is List<object?> schemaArray)
         {
-            foreach (var item in schemaArray.OfType<Dictionary<string, object>>())
+            foreach (var item in schemaArray.OfType<Dictionary<string, object?>>())
             {
                 ProcessSchemaForOpenAI(item);
             }
@@ -609,12 +609,12 @@ private static void ProcessSchemaForOpenAI(Dictionary<string, object> schema)
 		return "";
 	}*/
 	
-	/// <summary>
-	/// Extracts and attempts to auto-correct JSON from a given string, optionally searching for JSON data after specified output markers.
-	/// </summary>
-	/// <param name="input">The input string from which to extract and auto-correct JSON.</param>
-	/// <param name="searchAfterOutputMarker">Specifies whether to search for JSON after an output marker.</param>
-	/// <returns>The extracted and auto-corrected JSON string, or an empty string if no valid JSON data is found.</returns>
+	// <summary>
+	// Extracts and attempts to auto-correct JSON from a given string, optionally searching for JSON data after specified output markers.
+	// </summary>
+	// <param name="input">The input string from which to extract and auto-correct JSON.</param>
+	// <param name="searchAfterOutputMarker">Specifies whether to search for JSON after an output marker.</param>
+	// <returns>The extracted and auto-corrected JSON string, or an empty string if no valid JSON data is found.</returns>
 	/*public static string ExtractAndCorrectJSON(string input, bool searchAfterOutputMarker = false)
 	{
 		string rawJson = ExtractJSON(input, searchAfterOutputMarker);
@@ -634,12 +634,12 @@ private static void ProcessSchemaForOpenAI(Dictionary<string, object> schema)
 		}
 	}*/
 	
-	/// <summary>
-    /// Extracts JSON from a given string, optionally searching for JSON data after specified output markers.
-    /// </summary>
-    /// <param name="input">The input string from which to extract JSON.</param>
-    /// <param name="chainOfThought">Specifies whether to search for JSON after an output marker.</param>
-    /// <returns>The extracted JSON string, or an empty string if no JSON data is found following the specified criteria.</returns>
+	// <summary>
+    // Extracts JSON from a given string, optionally searching for JSON data after specified output markers.
+    // </summary>
+    // <param name="input">The input string from which to extract JSON.</param>
+    // <param name="chainOfThought">Specifies whether to search for JSON after an output marker.</param>
+    // <returns>The extracted JSON string, or an empty string if no JSON data is found following the specified criteria.</returns>
     /*public static string ExtractJSON(string input, bool chainOfThought = false)
     {
         string searchText = input;
@@ -704,11 +704,11 @@ private static void ProcessSchemaForOpenAI(Dictionary<string, object> schema)
         return ""; // No JSON structure found; return an empty string
     }*/
 	
-	/// <summary>
-	/// Attempts to correct common JSON formatting errors.
-	/// </summary>
-	/// <param name="json">The JSON string to correct.</param>
-	/// <returns>The corrected JSON string, or an empty string if the JSON cannot be corrected.</returns>
+	// <summary>
+	// Attempts to correct common JSON formatting errors.
+	// </summary>
+	// <param name="json">The JSON string to correct.</param>
+	// <returns>The corrected JSON string, or an empty string if the JSON cannot be corrected.</returns>
 	/*private static string TryFix(string json)
 	{
 		// Remove illegal characters like trailing commas at the end of lists and objects

@@ -1,4 +1,4 @@
-﻿// ===================================================================
+// ===================================================================
 //  Copyright © 2026 Revision Labs and contributors
 //  SPDX-License-Identifier: MIT
 //  See LICENSE.txt in the project root for full license information.
@@ -9,7 +9,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.CSharp.Testing;
 using Microsoft.CodeAnalysis.Testing;
-using Microsoft.CodeAnalysis.Testing.Verifiers;
+
 
 namespace ReviDotNet.Tests.Analyzers;
 
@@ -78,7 +78,7 @@ public class Input { public Input(string label, string text) { } }
         params DiagnosticResult[] expected)
         where TAnalyzer : DiagnosticAnalyzer, new()
     {
-        CSharpAnalyzerTest<TAnalyzer, XUnitVerifier> test = new CSharpAnalyzerTest<TAnalyzer, XUnitVerifier>
+        CSharpAnalyzerTest<TAnalyzer, DefaultVerifier> test = new CSharpAnalyzerTest<TAnalyzer, DefaultVerifier>
         {
             ReferenceAssemblies = ReferenceAssemblies.Net.Net90,
         };

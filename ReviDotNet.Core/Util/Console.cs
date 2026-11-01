@@ -49,76 +49,62 @@ public static partial class Util
 		Console.WriteLine();
 	}
 
-	public static string ReadOpenEnded(string prompt, bool required = false)
-	{
-		string input;
-		
-		while (true)
-		{
-			Console.WriteLine(prompt);
-			input = System.Console.ReadLine();
-			if (!string.IsNullOrEmpty(input) || !required)
-				return input;
-		}
-	}
+    /// <summary>Reads a line of text, requiring a value when requested.</summary>
+    /// <param name="prompt">The text displayed before each read.</param>
+    /// <param name="required">Whether an empty answer is rejected.</param>
+    /// <returns>The answer, or an empty string when optional input ends.</returns>
+    /// <exception cref="EndOfStreamException">Required input ended before an answer was supplied.</exception>
+    public static string ReadOpenEnded(string prompt, bool required = false)
+    {
+        while (true)
+        {
+            Console.WriteLine(prompt);
+            string? input = Console.ReadLine();
+            if (input is null)
+            {
+                if (required) throw new EndOfStreamException("Input ended before the required answer was supplied.");
+                return string.Empty;
+            }
+            if (input.Length > 0 || !required) return input;
+        }
+    }
 
-	public static bool ReadYesNo(string prompt, bool? recommendation)
-	{
-		string input;
-		
-		// (Y/n) for true, (y/N) for false, (y/n) for no recommendation
-		string defaultString;
-		if (recommendation.HasValue)
-			defaultString = recommendation.Value ? " (Y/n):" : " (y/N):";
-		else
-			defaultString = " (y/n):";
-		
-		while (true)
-		{
-			Console.WriteLine(prompt + defaultString);
-			input = Console.ReadLine();
-			switch (input.ToLower())
-			{
-				case "yes":
-				case "y":
-				case "true":
-					return true;
-				
-				case "no":
-				case "n":
-				case "false":
-					return false;
-			}
-		}
-	}
-	
-	public static int ReadInt(string prompt, int defaultValue = 0)
-	{
-		string input;
-    
-		while (true)
-		{
-			Console.WriteLine(prompt);
-			input = Console.ReadLine();
+    /// <summary>Reads a confirmation. Closed input always declines; only a submitted blank line uses the recommendation.</summary>
+    /// <param name="prompt">The question displayed before each read.</param>
+    /// <param name="recommendation">The default for a submitted blank line, or null to require an explicit answer.</param>
+    /// <returns>True for an affirmative answer; false for a negative answer or closed input.</returns>
+    public static bool ReadYesNo(string prompt, bool? recommendation)
+    {
+        string suffix = recommendation switch { true => " (Y/n):", false => " (y/N):", null => " (y/n):" };
+        while (true)
+        {
+            Console.WriteLine(prompt + suffix);
+            string? input = Console.ReadLine();
+            if (input is null) return false;
+            if (string.IsNullOrWhiteSpace(input) && recommendation.HasValue) return recommendation.Value;
+            switch (input.Trim().ToLowerInvariant())
+            {
+                case "yes": case "y": case "true": return true;
+                case "no": case "n": case "false": return false;
+            }
+        }
+    }
 
-			// Check if input is blank or represents "No"
-			if (string.IsNullOrWhiteSpace(input) || 
-			    input.Equals("n", StringComparison.OrdinalIgnoreCase) || 
-			    input.Equals("no", StringComparison.OrdinalIgnoreCase))
-			{
-				return defaultValue;
-			}
-
-			// Try to parse the input as an integer
-			if (int.TryParse(input, out int result))
-			{
-				return result;
-			}
-
-			// If input is invalid, prompt again
-			Console.WriteLine("Invalid input. Please enter a valid number, or leave blank for the default.");
-		}
-	}
+    /// <summary>Reads an integer, using the default for blank, declined or closed input.</summary>
+    /// <param name="prompt">The text displayed before each read.</param>
+    /// <param name="defaultValue">The value for a blank answer, a decline, or closed input.</param>
+    /// <returns>The submitted integer or the default value.</returns>
+    public static int ReadInt(string prompt, int defaultValue = 0)
+    {
+        while (true)
+        {
+            Console.WriteLine(prompt);
+            string? input = Console.ReadLine();
+            if (string.IsNullOrWhiteSpace(input) || input.Equals("n", StringComparison.OrdinalIgnoreCase) || input.Equals("no", StringComparison.OrdinalIgnoreCase)) return defaultValue;
+            if (int.TryParse(input, out int result)) return result;
+            Console.WriteLine("Invalid input. Please enter a valid number, or leave blank for the default.");
+        }
+    }
 
 	public static string ReadHintedLine(
 		List<string> list,

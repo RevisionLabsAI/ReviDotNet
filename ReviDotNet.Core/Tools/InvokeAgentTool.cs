@@ -37,6 +37,7 @@ public class InvokeAgentTool : IBuiltInTool
         "Input is JSON: { \"agent\": \"<agent-name>\", \"task\": \"<text>\", \"inputs\": { ... } }. " +
         "Returns the sub-agent's final output. Subject to MaxAgentDepth guardrail.";
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "REVI008", Justification = "The invoke_agent tool dispatches a runtime-selected name through the agent registry after validating its input and depth.") ]
     public async Task<ToolCallResult> ExecuteAsync(string input, CancellationToken token)
     {
         InvocationRequest? req;

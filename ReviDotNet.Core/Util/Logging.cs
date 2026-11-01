@@ -149,7 +149,8 @@ public static partial class Util
 			while (File.Exists(fullFilePath));
 
 			// Ensure that the directory exists
-			Directory.CreateDirectory(Path.GetDirectoryName(fullFilePath));
+			string? directory = Path.GetDirectoryName(fullFilePath);
+			if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
 
 			// Writing text to the file
 			await File.WriteAllTextAsync(fullFilePath, textToDump);
@@ -198,7 +199,8 @@ public static partial class Util
 			}
 			while (File.Exists(fullFilePath));
 
-			Directory.CreateDirectory(Path.GetDirectoryName(fullFilePath));
+			string? directory = Path.GetDirectoryName(fullFilePath);
+			if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
 			await File.WriteAllBytesAsync(fullFilePath, imageBytes);
 		}
 		catch (Exception ex)
@@ -229,7 +231,7 @@ public static partial class Util
 
 		foreach (PropertyInfo property in properties)
 		{
-			object value = property.GetValue(obj);
+			object? value = property.GetValue(obj);
 			string propertyName = property.Name;
 
 			if (value != null)

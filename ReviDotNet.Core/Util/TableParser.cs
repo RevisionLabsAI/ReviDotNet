@@ -13,12 +13,12 @@ namespace Revi;
 
 public static class TableParserExtensions
 {
-    public static string ToStringTable<T>(this IEnumerable<T> values, string[] columnHeaders, params Func<T, object>[] valueSelectors)
+    public static string ToStringTable<T>(this IEnumerable<T>? values, string[] columnHeaders, params Func<T, object>[] valueSelectors)
     {
         return ToStringTable(values?.ToArray(), columnHeaders, valueSelectors);
     }
 
-    public static string ToStringTable<T>(this T[] values, string[] columnHeaders, params Func<T, object>[] valueSelectors)
+    public static string ToStringTable<T>(this T[]? values, string[] columnHeaders, params Func<T, object>[] valueSelectors)
     {
         Debug.Assert(columnHeaders != null && valueSelectors != null);
         if (values == null || columnHeaders.Length != valueSelectors.Length)
@@ -40,7 +40,7 @@ public static class TableParserExtensions
             for (int colIndex = 0; colIndex < arrValues.GetLength(1); colIndex++)
             {
                 var valueSelector = valueSelectors[colIndex];
-                object value = valueSelector?.Invoke(values[rowIndex - 1]);
+                object? value = valueSelector?.Invoke(values[rowIndex - 1]);
 
                 arrValues[rowIndex, colIndex] = value?.ToString() ?? "null";
             }
@@ -117,7 +117,7 @@ public static class TableParserExtensions
         return ToStringTable(values, headers, selectors);
     }
 
-    private static PropertyInfo GetProperty<T>(Expression<Func<T, object>> expression)
+    private static PropertyInfo? GetProperty<T>(Expression<Func<T, object>> expression)
     {
         if (expression.Body is UnaryExpression unaryExpression)
         {

@@ -150,8 +150,9 @@ public static class RConfigParser
     /// </summary>
     private class PromptConfigComparer : IComparer<string>
     {
-        public int Compare(string x, string y)
+        public int Compare(string? x, string? y)
         {
+            if (x is null || y is null) return StringComparer.Ordinal.Compare(x, y);
             if (x.StartsWith("_ex") && y.StartsWith("_ex"))
             {
                 var xParts = x.Split('_');
@@ -167,8 +168,8 @@ public static class RConfigParser
 
             // Define explicit order for predefined categories
             var order = new List<string> { "information", "settings", "tuning", "_system", "_instruction" };
-            int indexX = order.IndexOf(order.Find(p => x.StartsWith(p)));
-            int indexY = order.IndexOf(order.Find(p => y.StartsWith(p)));
+            int indexX = order.FindIndex(p => x.StartsWith(p, StringComparison.Ordinal));
+            int indexY = order.FindIndex(p => y.StartsWith(p, StringComparison.Ordinal));
 
             if (indexX == -1) indexX = int.MaxValue; // Unknown items go to the end
             if (indexY == -1) indexY = int.MaxValue;
@@ -226,7 +227,7 @@ public static class RConfigParser
         try
         {
             using var reader = new StringReader(content);
-            string line;
+            string? line;
 
             while ((line = reader.ReadLine()) != null)
             {
@@ -428,17 +429,6 @@ public static class RConfigParser
         return serializedData;
     }
 
-    /// <summary>
-    /// Deserializes a dictionary of string key-value pairs into an object.
-    /// Only properties decorated with the RConfigPropertyAttribute will be deserialized.
-    /// </summary>
-    /// <typeparam name="T">The type of object to deserialize into.</typeparam>
-    /// <param name="data">The dictionary containing the serialized data.</param>
-    /// <param name="namePrefix">Optional prefix for the property name.</param>
-    /// <returns>An object of type T, deserialized from the dictionary.</returns>
-    /// <exception cref="ArgumentNullException">Thrown if the provided data is null.</exception>
-    /// <exception cref="FormatException">Thrown if a value in the provided data cannot
-    /// be converted to the type of the corresponding property in the object.</exception>
     /// <summary>
     /// Token-limit keys retired in the 2026-07 context/output naming cleanup, mapped to their canonical
     /// replacement. Deliberately BREAKING: unknown keys are normally ignored silently, which would turn a

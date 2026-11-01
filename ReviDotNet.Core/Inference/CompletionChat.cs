@@ -159,6 +159,7 @@ public static class CompletionChat
 	/// <param name="system">The output system string after processing inputs.</param>
 	/// <param name="instruction">The output instruction string after processing inputs.</param>
 	/// <param name="inputs">The list of inputs used for replacing placeholders in the prompt.</param>
+	/// <param name="validate">Whether required prompt inputs are validated.</param>
 	private static void ProcessInputs(
 		Prompt prompt,
 		ModelProfile model,

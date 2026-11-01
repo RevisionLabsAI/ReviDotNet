@@ -20,14 +20,14 @@ This is the full set of rules (most are on by default):
   - Uses the declared prompt `information.name`, case-sensitively. Neither organizational folders nor physical filenames alter it.
 - REVI002 — Non-constant prompt name (Warning)
   - Warns when a prompt-name argument to an inference method isn't a compile-time constant, so REVI001 can't validate it.
-- REVI003 — Prompt input/placeholder mismatch (Error for a missing required input; Warning for an unused input)
+- REVI003 / REVI012 — Prompt input/placeholder mismatch (REVI003: missing required input, Error; REVI012: unused input, Warning)
   - Cross-checks the `Input` labels you pass against the `{placeholders}` declared in the prompt's `[[_system]]`/`[[_instruction]]`. A missing required placeholder is an **Error**; an input with no matching placeholder is a **Warning**.
 - REVI004 — Duplicate prompt name (Warning)
   - Reports when multiple `.pmt` files resolve to the same effective prompt name.
 - REVI009 — Unpaired few-shot example (Warning)
   - Flags a `.pmt` file with an `[[_exin_N]]` that has no matching `[[_exout_N]]` (or vice versa). The runtime pairs examples by index and silently drops a half-pair, so an off-by-one or typo in the index would otherwise lose a whole exemplar with no feedback.
 - REVI010 — Guidance schema / strategy mismatch (Warning)
-  - Cross-checks a `.pmt` file's `[[_schema]]` block against its `settings.guidance-schema-type`: a `*-manual` strategy with no `[[_schema]]`, an orphaned `[[_schema]]` under a `*-auto`/`disabled` strategy, or a `json-manual` schema that isn't structurally valid JSON. (`PromptMetadataSchemaAnalyzer`/`REVI006` separately warns when `guidance-schema-type = default`, the skip sentinel.)
+  - Cross-checks a `.pmt` file's `[[_schema]]` block against its `settings.guidance-schema-type`: a `*-manual` strategy with no `[[_schema]]`, an orphaned `[[_schema]]` under a `*-auto`/`disabled` strategy, or a `json-manual` schema that isn't structurally valid JSON. (`PromptMetadataSchemaAnalyzer`/`REVI031` separately warns when `guidance-schema-type = default`, the skip sentinel.)
 - REVI011 — Agent state-graph validation (Warning)
   - Validates a `.agent` file's state graph: a state name with an underscore (undiscoverable), a loop node or transition target with no `[[state.*]]` definition, an entry state with no definition, a dead edge after an unconditional fallback, or a duplicate signal in one state. Mirrors the load-time warnings the runtime now emits from `AgentProfile`.
 - REVI006 — Agent not found
@@ -37,10 +37,12 @@ This is the full set of rules (most are on by default):
   - Reports when multiple `.agent` files resolve to the same effective name.
 - REVI008 — Non-constant agent name
   - Warns when `Agent.Run`, `Agent.ToString`, or `Agent.FindAgent` receives a non-constant first argument, which prevents static existence validation.
-- REVI040 — Model profile schema (Error/Warning)
+- REVI040 / REVI042 — Model profile schema (REVI040: Error; REVI042: advisory Warning)
   - Validates model `.rcfg` files under `RConfigs/Models` (required `[[general]]` keys; `tier` in A/B/C; numeric `token-limit`; booleans; numeric override-tuning). Also **warns** when an `[[input]]` input type is `listed`/`both` but the `single-item`/`multi-item` templates are missing (which throws at inference).
-- REVI041 — Provider profile schema (Error/Warning)
+- REVI041 / REVI043 — Provider profile schema (REVI041: Error; REVI043: advisory Warning)
   - Validates provider profiles, including SystemOne, OpenAI, OpenRouter, vLLM, Gemini, Perplexity, LLamaAPI, and Claude protocols, required name/API URL, guidance settings and limiting integers.
+- REVI030 / REVI031 — Prompt metadata (REVI030: structural Error; REVI031: advisory Warning)
+  - These checks formerly shared REVI006 with missing-agent errors. Configure REVI030 and REVI031 separately when migrating an old metadata suppression or severity override; REVI006 now controls only agent existence.
 - REVI060 — Invalid decision RConfig metadata or section structure (Error). Requires `[[information]]` (name/version), `[[settings]]` (model), and `[[_decision]]`.
 - REVI061 — Unknown named decision pack at an IDecisionService call (Error). Include .decision packs in AdditionalFiles; full validation of the YAML object inside `[[_decision]]` runs at startup. See [Decision guide](../../Docs/decisions.md).
 

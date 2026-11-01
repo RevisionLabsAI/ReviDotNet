@@ -14,6 +14,8 @@ public sealed class EmbedService(
     IEmbeddingManager embeddings,
     IReviLogger<EmbedService> logger) : IEmbedService
 {
+    /// <summary>The validated logger dependency retained by the service constructor.</summary>
+    private readonly IReviLogger<EmbedService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     // ===================
     //  Single Embedding Generation
     // ===================

@@ -5,6 +5,7 @@
 // ===================================================================
 
 using System;
+using System.Threading.Tasks;
 using FluentAssertions;
 using Revi;
 using Xunit;
@@ -22,7 +23,7 @@ public sealed class StreamingMetadataTrackerTests
 {
     /// <summary>The first outcome wins and later reports are ignored rather than thrown.</summary>
     [Fact]
-    public void A_second_completion_is_ignored_not_thrown()
+    public async Task A_second_completion_is_ignored_not_thrown()
     {
         StreamingMetadataTracker tracker = new(DateTime.UtcNow);
         tracker.CompleteCanceled(new OperationCanceledException());
@@ -31,13 +32,13 @@ public sealed class StreamingMetadataTrackerTests
 
         again.Should().NotThrow();
         tracker.IsCompleted.Should().BeTrue();
-        tracker.CompletionTask.Result.IsSuccess.Should().BeFalse("the cancellation was the real outcome");
-        tracker.CompletionTask.Result.Context.Should().Be("Streaming was canceled");
+        (await tracker.CompletionTask).IsSuccess.Should().BeFalse("the cancellation was the real outcome");
+        (await tracker.CompletionTask).Context.Should().Be("Streaming was canceled");
     }
 
     /// <summary>A stream that simply ran out is a success, reported once.</summary>
     [Fact]
-    public void A_stream_that_ran_out_is_a_success()
+    public async Task A_stream_that_ran_out_is_a_success()
     {
         StreamingMetadataTracker tracker = new(DateTime.UtcNow);
         tracker.IncrementChunkCount();
@@ -46,13 +47,13 @@ public sealed class StreamingMetadataTrackerTests
         tracker.CompleteSuccessfully();
 
         tracker.IsCompleted.Should().BeTrue();
-        tracker.CompletionTask.Result.IsSuccess.Should().BeTrue();
-        tracker.CompletionTask.Result.ChunkCount.Should().Be(2);
+        (await tracker.CompletionTask).IsSuccess.Should().BeTrue();
+        (await tracker.CompletionTask).ChunkCount.Should().Be(2);
     }
 
     /// <summary>An error after a success does not rewrite history either.</summary>
     [Fact]
-    public void An_error_after_success_is_ignored()
+    public async Task An_error_after_success_is_ignored()
     {
         StreamingMetadataTracker tracker = new(DateTime.UtcNow);
         tracker.CompleteSuccessfully();
@@ -60,6 +61,6 @@ public sealed class StreamingMetadataTrackerTests
         Action late = () => tracker.CompleteWithError(new InvalidOperationException("late"));
 
         late.Should().NotThrow();
-        tracker.CompletionTask.Result.IsSuccess.Should().BeTrue();
+        (await tracker.CompletionTask).IsSuccess.Should().BeTrue();
     }
 }

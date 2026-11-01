@@ -360,7 +360,7 @@ public class Prompt
             ? string.Empty
             : value.Trim().Replace("-", string.Empty).Replace("_", string.Empty).ToLowerInvariant();
     
-    private static string CreateSchemaFromExamples(List<Example> examples)
+    private static string CreateSchemaFromExamples(List<Example>? examples)
     {
         return "";
     }
@@ -373,7 +373,7 @@ public class Prompt
     public static List<Input> ExtractInputs(string info)
     {
         List<Input> inputs = new List<Input>();
-        string currentLabel = null;
+        string? currentLabel = null;
         List<string> contentBuilder = new List<string>();
 
         foreach (var line in info.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None))

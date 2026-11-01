@@ -44,6 +44,7 @@ internal class InferenceHttpClient : IDisposable
     /// <param name="payload">The payload to be sent to the AI inference service. It should contain the necessary parameters for the request.</param>
     /// <param name="cancellationToken">A cancellation token that can be used to cancel the request.</param>
     /// <returns>A task that represents the asynchronous operation. The task result contains a dictionary of the response parameters.</returns>
+    /// <param name="inactivityTimeoutSeconds">Overrides the maximum interval without provider data, in seconds.</param>
     public async Task<Dictionary<string, string>> ExecuteRequest(
         string endpoint,
         Dictionary<string, object> payload,
@@ -86,13 +87,15 @@ internal class InferenceHttpClient : IDisposable
     /// Implements a retry mechanism with exponential back-off in case of failures.
     /// </summary>
     /// <param name="endpoint">The API endpoint to which the request is sent.</param>
-    /// <param name="content">The HTTP request content to be sent in the POST request.</param>
     /// <param name="cancellationToken">A token that can be used to cancel the operation.</param>
     /// <returns>A dictionary object containing the parsed key-value pairs from the API response.</returns>
     /// <remarks>
     /// If the request fails due to reasons such as a non-success status code, the method retries with an exponential back-off
     /// delay until the maximum retry limit is reached. An exception is thrown if all retry attempts fail.
     /// </remarks>
+    /// <param name="body">The serialized JSON request body.</param>
+    /// <param name="inactivityTimeoutSeconds">Overrides the maximum interval without provider data, in seconds.</param>
+    /// <param name="modelName">The model identifier used for routing and reporting.</param>
     private async Task<Dictionary<string, string>> MakeRequestAsync(
         string endpoint,
         string body,
@@ -229,6 +232,7 @@ internal class InferenceHttpClient : IDisposable
     /// </summary>
     /// <param name="response">The HTTP response returned by the server.</param>
     /// <returns>A dictionary containing the extracted information from the response.</returns>
+    /// <param name="cancellationToken">Cancels the operation.</param>
     private async Task<Dictionary<string, string>> ProcessHttpResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         Dictionary<string, JsonElement>? data = await response.Content.ReadFromJsonAsync<Dictionary<string, JsonElement>>(cancellationToken: cancellationToken);

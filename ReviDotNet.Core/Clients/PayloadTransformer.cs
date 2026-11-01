@@ -101,7 +101,7 @@ public class PayloadTransformer
         {
             try
             {
-                var schemaToken = Newtonsoft.Json.Linq.JToken.Parse(jsonSchema.ToString());
+                var schemaToken = Newtonsoft.Json.Linq.JToken.Parse(jsonSchema?.ToString() ?? throw new ArgumentException("guided_json must contain a JSON schema.", nameof(payload)));
                 var schemaObject = ConvertJTokenToPlain(schemaToken) as Dictionary<string, object>;
                 if (schemaObject != null)
                 {
@@ -383,6 +383,12 @@ public class PayloadTransformer
     /// <param name="stopSequences">The stopSequences parameter value.</param>
     /// <param name="guidanceType">The guidanceType parameter value.</param>
     /// <param name="guidanceString">The guidanceString parameter value.</param>
+    /// <param name="minP">The optional minimum-probability sampling threshold.</param>
+    /// <param name="maxTokenType">Selects how the output token budget is interpreted.</param>
+    /// <param name="repetitionPenalty">The optional penalty for repeated tokens.</param>
+    /// <param name="useSearchGrounding">Whether provider-native search grounding is requested.</param>
+    /// <param name="thinking">The optional provider reasoning configuration.</param>
+    /// <param name="geminiSafetyThreshold">The optional Gemini safety threshold.</param>
     public void AddOptionalParameters(
         Dictionary<string, object> parameters,
         float? temperature,

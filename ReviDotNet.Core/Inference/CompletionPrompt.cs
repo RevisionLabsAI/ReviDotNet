@@ -136,6 +136,7 @@ public static class CompletionPrompt
 	/// <param name="instructionSection">The output instruction string after processing inputs.</param>
 	/// <param name="inputSection">The output input string after processing inputs.</param>
 	/// <param name="inputs">The list of inputs used for replacing placeholders in the prompt. (optional)</param>
+	/// <param name="validate">Whether required prompt inputs are validated.</param>
 	private static void ProcessInputs(
 		Prompt prompt,
 		ModelProfile model,

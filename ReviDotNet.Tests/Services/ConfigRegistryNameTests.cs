@@ -133,7 +133,8 @@ public sealed class ConfigRegistryNameTests
             ModelProfile model = models.Get("gpt-5.6-sol")!;
             model.Should().NotBeNull();
             model.Enabled.Should().BeTrue("its provider resolved, so the model stays enabled");
-            model.Provider.Name.Should().Be("openai");
+            model.Provider.Should().NotBeNull();
+            model.Provider!.Name.Should().Be("openai");
         });
     }
 }

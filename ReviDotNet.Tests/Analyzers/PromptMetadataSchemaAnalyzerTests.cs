@@ -14,7 +14,7 @@ using Xunit;
 namespace ReviDotNet.Tests.Analyzers
 {
     /// <summary>
-    /// Tests for <see cref="PromptMetadataSchemaAnalyzer"/> (REVI006).
+    /// Tests for <see cref="PromptMetadataSchemaAnalyzer"/> (REVI030/REVI031).
     /// </summary>
     public sealed class PromptMetadataSchemaAnalyzerTests
     {
@@ -112,7 +112,7 @@ instr
 ")
             };
 
-            DiagnosticResult expected = DiagnosticResult.CompilerWarning(PromptMetadataSchemaAnalyzer.DiagnosticId)
+            DiagnosticResult expected = DiagnosticResult.CompilerWarning(PromptMetadataSchemaAnalyzer.AdvisoryId)
                 .WithSpan("RConfigs/Prompts/Sample3.pmt", 5, 1, 5, 1)
                 .WithArguments("3.5", "tuning.temperature", "[0, 2]");
 
@@ -138,7 +138,7 @@ instr
 ")
             };
 
-            DiagnosticResult expected = DiagnosticResult.CompilerWarning(PromptMetadataSchemaAnalyzer.DiagnosticId)
+            DiagnosticResult expected = DiagnosticResult.CompilerWarning(PromptMetadataSchemaAnalyzer.AdvisoryId)
                 .WithSpan("RConfigs/Prompts/Sample4.pmt", 5, 1, 5, 1)
                 .WithArguments("-5", "settings.timeout", ">= 0");
 
@@ -164,7 +164,7 @@ instr
 ")
             };
 
-            DiagnosticResult expected = DiagnosticResult.CompilerWarning(PromptMetadataSchemaAnalyzer.DiagnosticId)
+            DiagnosticResult expected = DiagnosticResult.CompilerWarning(PromptMetadataSchemaAnalyzer.AdvisoryId)
                 .WithSpan("RConfigs/Prompts/Sample5.pmt", 5, 1, 5, 1)
                 .WithArguments("unknown-key", "settings");
 
@@ -213,7 +213,7 @@ sys
 ")
             };
 
-            DiagnosticResult expected = new DiagnosticResult(PromptMetadataSchemaAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+            DiagnosticResult expected = new DiagnosticResult(PromptMetadataSchemaAnalyzer.AdvisoryId, DiagnosticSeverity.Warning)
                 .WithSpan("RConfigs/Prompts/Sample.pmt", 4, 1, 4, 1)
                 .WithArguments("default");
 

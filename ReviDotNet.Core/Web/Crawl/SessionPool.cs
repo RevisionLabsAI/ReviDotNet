@@ -7,7 +7,7 @@
 namespace Revi;
 
 /// <summary>
-/// A pool of scored <see cref="Session"/> identities, modelled on Crawlee's <c>SessionPool</c>. It
+/// A pool of scored <see cref="ScrapeSession"/> identities, modelled on Crawlee's <c>SessionPool</c>. It
 /// grows lazily up to a cap, hands out a <em>random</em> usable session (random, not round-robin, to
 /// avoid a predictable rotation a defender can fingerprint), and retires sessions that get blocked or
 /// age out. This is the design that most differentiates a serious scraper from a naive one.

@@ -37,6 +37,9 @@ namespace ReviDotNet.Analyzers
         /// </summary>
         public const string DiagnosticId = "REVI040";
 
+        /// <summary>The advisory diagnostic, independently configurable from errors.</summary>
+        public const string AdvisoryId = "REVI042";
+
         private const string Category = "Configuration";
 
         private static readonly DiagnosticDescriptor ErrorRule = new DiagnosticDescriptor(
@@ -46,25 +49,28 @@ namespace ReviDotNet.Analyzers
             Category,
             DiagnosticSeverity.Error,
             isEnabledByDefault: true,
-            description: "Model .rcfg files must follow documented schema. Required keys must be present and valid; enums and numeric ranges must be respected.");
+            description: "Model .rcfg files must follow documented schema. Required keys must be present and valid; enums and numeric ranges must be respected.",
+            customTags: [WellKnownDiagnosticTags.CompilationEnd]);
 
         private static readonly DiagnosticDescriptor WarningRule = new DiagnosticDescriptor(
-            DiagnosticId,
+            AdvisoryId,
             "Model profile advisory",
             "Suspicious value '{0}' for '{1}'{2}",
             Category,
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true,
-            description: "Model .rcfg contains values that are unusual or out of recommended bounds.");
+            description: "Model .rcfg contains values that are unusual or out of recommended bounds.",
+            customTags: [WellKnownDiagnosticTags.CompilationEnd]);
 
         private static readonly DiagnosticDescriptor MissingInputTemplateRule = new DiagnosticDescriptor(
-            DiagnosticId,
+            AdvisoryId,
             "Missing input template",
             "[[input]] uses a 'listed'/'both' input type but is missing the {0} template; Listed inputs will throw at inference time",
             Category,
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true,
-            description: "When default-system-input-type or default-instruction-input-type is 'listed' or 'both', the model must define single-item and multi-item templates, otherwise Infer.ListInputs throws at inference time.");
+            description: "When default-system-input-type or default-instruction-input-type is 'listed' or 'both', the model must define single-item and multi-item templates, otherwise Infer.ListInputs throws at inference time.",
+            customTags: [WellKnownDiagnosticTags.CompilationEnd]);
 
         /// <inheritdoc />
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(ErrorRule, WarningRule, MissingInputTemplateRule);

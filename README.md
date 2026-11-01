@@ -217,6 +217,26 @@ The `ReviDotNet.Analyzers` package validates prompt and agent usage at compile t
 - `REVI007`: duplicate effective agent names
 - `REVI008`: non-constant agent name in `Agent.Run` / `Agent.ToString` / `Agent.FindAgent`
 
+Prompt metadata errors use `REVI030`; metadata advisories use `REVI031`. These previously shared
+`REVI006` with missing-agent errors. Existing `REVI006` configuration now applies only to missing
+agents; configure `REVI030` and `REVI031` separately to retain a prior metadata severity override.
+
+Advisories are also independent from their corresponding errors:
+
+| Check | Error ID (unchanged) | Advisory ID |
+| --- | --- | --- |
+| Prompt inputs | REVI003 | REVI012 (unused inputs) |
+| Model profile schema | REVI040 | REVI042 |
+| Provider profile schema | REVI041 | REVI043 |
+
+If an EditorConfig or suppression previously targeted both severities through the error ID, add the
+advisory ID to preserve that policy. Default diagnostic severities and checks remain enabled. The
+analyzer project records current identities in its analyzer release-tracking files.
+
+Console confirmation also treats closed input as a decline, even when the displayed recommendation
+is Yes. A submitted blank line uses the displayed recommendation; an explicit answer still wins.
+Required free-text input throws `EndOfStreamException` when input closes rather than retrying forever.
+
 To enable prompt validation, include your `.pmt` files as `AdditionalFiles` in the projects that compile the calling code:
 
 ```xml

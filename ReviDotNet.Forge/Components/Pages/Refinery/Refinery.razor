@@ -81,12 +81,12 @@ else
                             <MudSelectItem T="string" Value="@("replay")">replay</MudSelectItem>
                             <MudSelectItem T="string" Value="@("live")">live</MudSelectItem>
                         </MudSelect>
-                        <MudNumericField T="int" Label="Samples" Dense="true" Min="1" Max="10" Style="width: 90px;" @bind-Value="_startSamples" />
-                        <MudNumericField T="int" Label="Rounds" Dense="true" Min="1" Max="20" Style="width: 90px;" @bind-Value="_startRounds" />
-                        <MudNumericField T="int" Label="Parallel" Dense="true" Min="1" Max="16" Style="width: 90px;" @bind-Value="_startParallel" />
-                        <MudNumericField T="long?" Label="Agent budget" Dense="true" Style="width: 140px;" Clearable="true" @bind-Value="_startBudget" />
-                        <MudNumericField T="long?" Label="Meta budget" Dense="true" Style="width: 140px;" Clearable="true" @bind-Value="_startMetaBudget" />
-                        <MudNumericField T="decimal?" Label="Cost cap ($)" Min="0.01m" Style="width: 120px;" Clearable="true" @bind-Value="_startMaxCost"
+                        <MudNumericField Margin="Margin.Dense" T="int" Label="Samples" Min="1" Max="10" Style="width: 90px;" @bind-Value="_startSamples" />
+                        <MudNumericField Margin="Margin.Dense" T="int" Label="Rounds" Min="1" Max="20" Style="width: 90px;" @bind-Value="_startRounds" />
+                        <MudNumericField Margin="Margin.Dense" T="int" Label="Parallel" Min="1" Max="16" Style="width: 90px;" @bind-Value="_startParallel" />
+                        <MudNumericField Margin="Margin.Dense" T="long?" Label="Agent budget" Style="width: 140px;" Clearable="true" @bind-Value="_startBudget" />
+                        <MudNumericField Margin="Margin.Dense" T="long?" Label="Meta budget" Style="width: 140px;" Clearable="true" @bind-Value="_startMetaBudget" />
+                        <MudNumericField Margin="Margin.Dense" T="decimal?" Label="Cost cap ($)" Min="0.01m" Style="width: 120px;" Clearable="true" @bind-Value="_startMaxCost"
                                          HelperText="Agent + judge, checked before each run" />
                         <MudSwitch T="bool" Label="Screen candidates" Color="Color.Primary" @bind-Value="_startScreen" />
                     </MudStack>
