@@ -146,6 +146,21 @@ public class ToolChatTests
     }
 
     [Fact]
+    public void ReadResponse_ToleratesNullStopDetails()
+    {
+        var body = JObject.Parse("{\"id\":\"m\",\"model\":\"m\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"}],\"stop_reason\":\"end_turn\",\"stop_details\":null,\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}");
+        ToolChatResponse response = ClaudePayloads.ReadResponse(body);
+        response.RefusalCategory.Should().BeNull();
+        response.Text.Should().Be("hi");
+
+        var parser = new ClaudeStreamParser();
+        parser.Feed(null, "{\"type\":\"message_start\",\"message\":{\"id\":\"m\",\"usage\":{\"input_tokens\":1}}}");
+        parser.Feed(null, "{\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_details\":null},\"usage\":{\"output_tokens\":2}}");
+        parser.Feed(null, "{\"type\":\"message_stop\"}");
+        parser.Completed!.RefusalCategory.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Client_StreamsSseAndSendsHeaders()
     {
         var handler = new ScriptedHandler(_ => Sse(ToolUseStream("tu_1", "get_weather", "{\"city\":\"Oslo\"}")));

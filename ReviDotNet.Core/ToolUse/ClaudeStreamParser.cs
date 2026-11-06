@@ -153,7 +153,7 @@ public sealed class ClaudeStreamParser
                 if (json["delta"] is JObject delta)
                 {
                     if ((string?)delta["stop_reason"] is { } reason) _stopReason = reason;
-                    _refusalCategory = (string?)delta["stop_details"]?["category"] ?? _refusalCategory;
+                    _refusalCategory = ClaudePayloads.RefusalCategoryOf(delta["stop_details"]) ?? _refusalCategory;
                 }
                 if (json["usage"] is JObject usage)
                 {

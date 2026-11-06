@@ -163,12 +163,15 @@ public static class ClaudePayloads
         {
             Message = ChatMessage.Assistant(blocks),
             StopReason = (string?)body["stop_reason"] ?? string.Empty,
-            RefusalCategory = (string?)body["stop_details"]?["category"],
+            RefusalCategory = RefusalCategoryOf(body["stop_details"]),
             Usage = ReadUsage(body["usage"] as JObject),
             Model = (string?)body["model"],
             Id = (string?)body["id"]
         };
     }
+
+    /// <summary>The refusal category of a <c>stop_details</c> value, which is <c>null</c> on every non-refusal.</summary>
+    public static string? RefusalCategoryOf(JToken? stopDetails) => stopDetails is JObject details ? (string?)details["category"] : null;
 
     /// <summary>Reads a usage object; missing fields count as zero.</summary>
     public static ChatUsage ReadUsage(JObject? usage)
