@@ -143,11 +143,17 @@ public sealed class ToolChatSession
     /// <summary>Whether a turn is in progress.</summary>
     public bool IsBusy => _busy;
 
-    /// <summary>Restores a history (from <see cref="ChatMessage.ToJson"/>) into an empty session.</summary>
+    /// <summary>
+    /// Restores a history (from <see cref="ChatMessage.ToJson"/>) into an empty session. A history that
+    /// ends in unanswered tool calls (the process stopped while the user was deciding) gets declined
+    /// results appended, so the next request is valid and the model knows what happened.
+    /// </summary>
     public void Restore(IEnumerable<ChatMessage> messages)
     {
         if (_messages.Count > 0) throw new InvalidOperationException("The session already has messages.");
         _messages.AddRange(messages);
+        if (_messages.Count > 0 && _messages[^1] is { Role: "assistant", HasToolUses: true } last)
+            _messages.Add(ChatMessage.ToolResults(last.ToolUses.Select(u => new ToolResult(u.Id, "Not run: the app was closed before the user confirmed this.", IsError: true))));
     }
 
     /// <summary>Sends a user message and runs the turn to completion or to a confirmation pause.</summary>
