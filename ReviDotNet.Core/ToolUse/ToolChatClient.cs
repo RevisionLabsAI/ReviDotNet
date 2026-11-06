@@ -72,8 +72,12 @@ public sealed class ToolChatClientOptions
     /// <summary>The longest wait for response headers, and between streamed events. Default 60 s.</summary>
     public TimeSpan InactivityTimeout { get; init; } = TimeSpan.FromSeconds(60);
 
-    /// <summary>Whether to write request and response dumps through <see cref="Util.DumpLog(string?, string)"/>.</summary>
-    public bool DumpLogs { get; init; } = true;
+    /// <summary>
+    /// Whether to write request and response dumps through <see cref="Util.DumpLog(string?, string)"/>.
+    /// Off by default: a conversation carries the user's mail and messages, which should not land in
+    /// dump files unless someone is debugging.
+    /// </summary>
+    public bool DumpLogs { get; init; }
 }
 
 /// <summary>
