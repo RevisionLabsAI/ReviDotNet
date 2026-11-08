@@ -33,10 +33,10 @@ code receives — the same rule `DomainProviderErrorClassifier` follows for regi
 
 | Kind | Retry? | Blames provider? | Needs a person? | Signals |
 |---|---|---|---|---|
-| `Billing` | No | Yes | **Yes** | OpenAI-shaped 429 + `insufficient_quota`, `credit_balance_exhausted`, `organization_spend_limit_exceeded`, `project_spend_limit_exceeded`, `organization_usage_limit_exceeded`; Anthropic 402 `billing_error`; any status whose message names credits remaining/exhausted, insufficient quota, a spend or spending limit, billing details or a payment method (the bare word "billing" is not enough) |
+| `Billing` | No | Yes | **Yes** | OpenAI-shaped 429 + `insufficient_quota`, `credit_balance_exhausted`, `organization_spend_limit_exceeded`, `project_spend_limit_exceeded`, `organization_usage_limit_exceeded`; Anthropic 402 `billing_error`; Gemini 402 `RESOURCE_EXHAUSTED` ("Your prepayment credits are depleted"), or any Gemini `RESOURCE_EXHAUSTED` whose message names depleted/exhausted/remaining credit; any status whose message names credits remaining/exhausted/depleted, insufficient quota, a spend or spending limit, billing details or a payment method (the bare word "billing" is not enough) |
 | `Authentication` | No | Yes | **Yes** | 401; `invalid_api_key`, `authentication_error`, `invalid_organization` |
 | `Permission` | No | Yes | **Yes** | 403; Anthropic `permission_error`; Gemini `PERMISSION_DENIED` |
-| `RateLimited` | Yes | Yes | No | 429 with no billing code; Anthropic `rate_limit_error`; Gemini `RESOURCE_EXHAUSTED` |
+| `RateLimited` | Yes | Yes | No | 429 with no billing code; Anthropic `rate_limit_error`; Gemini 429 `RESOURCE_EXHAUSTED` (its quota window — "You exceeded your current quota, please check your plan and billing details" — so the general billing phrases are deliberately not applied to Gemini) |
 | `Transient` | Yes | Yes | No | 408, 409, 498, 5xx; Anthropic `overloaded_error` (529) and `api_error`; network faults and timeouts |
 | `RequestInvalid` | No | **No** | No | 400, 413, 422 and any other 4xx not listed above (405, 410, 415...); `json_validate_failed`, `context_length_exceeded`, `invalid_prompt`, `unsupported_parameter`; Anthropic `invalid_request_error`, `request_too_large` |
 | `ModelUnavailable` | No | **No** | No | 404; `model_not_found`, `model_decommissioned`; Anthropic `not_found_error` |
