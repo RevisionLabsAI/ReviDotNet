@@ -21,11 +21,22 @@ namespace Revi;
 /// previously on the static <c>Infer</c> class, using injected registry services instead of
 /// static manager calls.
 /// </summary>
+/// <param name="prompts">The prompt registry.</param>
+/// <param name="models">The model registry.</param>
+/// <param name="providers">The provider registry.</param>
+/// <param name="logger">The logger.</param>
+/// <param name="providerAvailability">
+/// Optional host-supplied provider health. When registered, automatic model selection skips a model
+/// whose provider is out of service, and a non-streaming call whose provider fails in a way that
+/// reflects its health is retried once on the next available provider. Without it, selection is
+/// unchanged. See <see cref="IInferenceProviderAvailability"/>.
+/// </param>
 public sealed class InferService(
     IPromptManager prompts,
     IModelManager models,
     IProviderManager providers,
-    IReviLogger<InferService> logger) : IInferService
+    IReviLogger<InferService> logger,
+    IInferenceProviderAvailability? providerAvailability = null) : IInferService
 {
     // ===================
     //  Inference Calling
@@ -49,54 +60,43 @@ public sealed class InferService(
             return await ForgeManager.Client.GenerateAsync(prompt, inputs, token, modelName);
 
         CompletionResult? result = null;
-        string promptString;
-        List<Message> messages;
 
         ModelProfile foundModel = FindModel(prompt, modelProfile, modelName);
 
         if (await FilterCheck(prompt, inputs, token))
             throw new SecurityException("FilterCheck failed!");
 
-        // Model-level [[override-settings]] completion-type overrides the prompt's value when set.
-        CompletionType type = foundModel.CompletionType ?? Util.ResolveCompletionType(prompt.CompletionType);
+        // Only an automatically routed call may move to another model; a caller that named a model
+        // asked for that model, and substituting it would change quality and cost behind their back.
+        bool autoSelected = modelProfile is null && string.IsNullOrEmpty(modelName);
 
         DateTime startTime = DateTime.UtcNow;
         bool inferenceSuccess = false;
         try
         {
-            switch (type)
+            InferenceAttempt attempt = await RunCompletionAttempt(prompt, foundModel, inputs, outputType, token);
+
+            // One failover, to the next available provider, when the provider itself failed — no
+            // credits, a rejected key, a rate limit that outlasted its retries. Before this, a Gemini
+            // account with no credit failed every search submission for two days while every other
+            // provider was healthy. The failed provider is excluded outright (not just reported to the
+            // host's health tracker) so the retry cannot land back on it.
+            if (attempt.Result is null && autoSelected && !token.IsCancellationRequested
+                && ShouldFailOver(attempt.ProviderFailure))
             {
-                case CompletionType.ChatOnly:
-                    messages = CompletionChat.BuildMessages(prompt, foundModel, inputs);
-                    result = await CallInference(messages, prompt, foundModel, outputType, token);
-                    break;
-
-                case CompletionType.PromptOnly:
-                    promptString = CompletionPrompt.BuildString(prompt, foundModel, inputs);
-                    result = await CallInference(promptString, prompt, foundModel, outputType, token);
-                    break;
-
-                case CompletionType.PromptChatOne:
-                case CompletionType.PromptChatMulti:
+                string failedProvider = AutomaticModelSelector.ProviderOf(foundModel);
+                ModelProfile? alternative = SelectAutomaticModel(prompt, excludedProviders: [failedProvider]);
+                if (alternative is not null)
                 {
-                    if (foundModel.EffectiveSupportsPromptCompletion)
-                    {
-                        promptString = CompletionPrompt.BuildString(prompt, foundModel, inputs);
-                        result = await CallInference(promptString, prompt, foundModel, outputType, token);
-                    }
-                    else
-                    {
-                        // PromptChatOne packs examples into one user message; PromptChatMulti uses separate messages.
-                        messages = CompletionChat.BuildMessages(prompt, foundModel, inputs, singleMessageExamples: type == CompletionType.PromptChatOne);
-                        result = await CallInference(messages, prompt, foundModel, outputType, token);
-                    }
-                    break;
+                    Util.Log($"InferService: prompt '{prompt.Name}' failed on provider '{failedProvider}' " +
+                             $"({attempt.ProviderFailure!.Kind}); retrying once on '{alternative.Name}' " +
+                             $"(provider '{AutomaticModelSelector.ProviderOf(alternative)}').");
+                    foundModel = alternative;
+                    attempt = await RunCompletionAttempt(prompt, foundModel, inputs, outputType, token);
                 }
-
-                default:
-                    throw new Exception($"Unexpected completion type: '{prompt.CompletionType}'");
             }
 
+            result = attempt.Result;
             inferenceSuccess = result is not null;
         }
         finally
@@ -856,7 +856,58 @@ public sealed class InferService(
 
     #region Private Implementation
 
-    private async Task<CompletionResult?> CallInference(
+    /// <summary>
+    /// The outcome of one non-streaming inference attempt: the result, or null with the provider
+    /// failure that ended it when the call failed at the provider.
+    /// </summary>
+    /// <param name="Result">The completion, or null when the call produced none.</param>
+    /// <param name="ProviderFailure">The classified provider failure, when that is why there is no result.</param>
+    private readonly record struct InferenceAttempt(CompletionResult? Result, InferenceProviderException? ProviderFailure);
+
+    /// <summary>
+    /// Builds the request for <paramref name="model"/> in the completion form it takes and runs one
+    /// inference call on it.
+    /// </summary>
+    /// <param name="prompt">The prompt.</param>
+    /// <param name="model">The model to run on.</param>
+    /// <param name="inputs">The prompt inputs.</param>
+    /// <param name="outputType">The structured output type, if any.</param>
+    /// <param name="token">Cancellation.</param>
+    /// <returns>The attempt's outcome.</returns>
+    private async Task<InferenceAttempt> RunCompletionAttempt(
+        Prompt prompt,
+        ModelProfile model,
+        List<Input>? inputs,
+        Type? outputType,
+        CancellationToken token)
+    {
+        // Model-level [[override-settings]] completion-type overrides the prompt's value when set.
+        CompletionType type = model.CompletionType ?? Util.ResolveCompletionType(prompt.CompletionType);
+
+        switch (type)
+        {
+            case CompletionType.ChatOnly:
+                return await CallInference(CompletionChat.BuildMessages(prompt, model, inputs), prompt, model, outputType, token);
+
+            case CompletionType.PromptOnly:
+                return await CallInference(CompletionPrompt.BuildString(prompt, model, inputs), prompt, model, outputType, token);
+
+            case CompletionType.PromptChatOne:
+            case CompletionType.PromptChatMulti:
+                if (model.EffectiveSupportsPromptCompletion)
+                    return await CallInference(CompletionPrompt.BuildString(prompt, model, inputs), prompt, model, outputType, token);
+
+                // PromptChatOne packs examples into one user message; PromptChatMulti uses separate messages.
+                return await CallInference(
+                    CompletionChat.BuildMessages(prompt, model, inputs, singleMessageExamples: type == CompletionType.PromptChatOne),
+                    prompt, model, outputType, token);
+
+            default:
+                throw new Exception($"Unexpected completion type: '{prompt.CompletionType}'");
+        }
+    }
+
+    private async Task<InferenceAttempt> CallInference(
         object promptObject,
         Prompt prompt,
         ModelProfile model,
@@ -866,6 +917,7 @@ public sealed class InferService(
         Util.Log($"InferService.CallInference(prompt: '{prompt.Name}', model: '{model.Name}');");
 
         CompletionResult? response = null;
+        InferenceProviderException? providerFailure = null;
         try
         {
             int totalLength;
@@ -954,12 +1006,13 @@ public sealed class InferService(
             // Log the full exception (type + stack), not just the message: a bare "Object reference
             // not set…" from a provider call is undiagnosable without knowing where it was thrown.
             Util.Log($"InferService.CallInference Exception: \"{e.Message}\"\n{e}");
+            providerFailure = FindProviderFailure(e);
         }
 
         string dump = $"CallInference:\n\nMessages:\n{prompt}\n\nOutput:\n";
         await Util.DumpLog(dump, "inference");
 
-        return response;
+        return new InferenceAttempt(response, providerFailure);
     }
 
     private async IAsyncEnumerable<string> CallStreamingInference(
@@ -1112,36 +1165,65 @@ public sealed class InferService(
             throw new Exception($"Specified modelString but an enabled model named '{modelName}' could not be found.");
         }
 
-        if (prompt.PreferredModels != null && prompt.PreferredModels.Any())
-        {
-            foreach (string preferredModelName in prompt.PreferredModels)
-            {
-                ModelProfile? preferred = models.Get(preferredModelName);
-                if (preferred is not null && preferred.Enabled)
-                    return preferred;
-
-                // A preferred model that isn't registered (or is disabled) silently changes which model
-                // actually runs — and with it both output quality and cost. Log every skip so a
-                // substitution is a visible, deliberate fact instead of a surprise in the usage report.
-                Util.Log($"FindModel: preferred model '{preferredModelName}' for prompt '{prompt.Name}' " +
-                         $"is {(preferred is null ? "not registered" : "disabled")}; trying next preference/tier fallback.");
-            }
-        }
-
-        ModelProfile? tieredModel = models.Find(prompt.MinTier, prompt.IsCompletion(), prompt.BlockedModels);
-        if (tieredModel is not null && tieredModel.Enabled)
-        {
-            if (prompt.PreferredModels is { Count: > 0 })
-                Util.Log($"FindModel: prompt '{prompt.Name}' fell back to tier-{prompt.MinTier} model '{tieredModel.Name}' " +
-                         $"(none of its preferred models resolved).");
-            return tieredModel;
-        }
-
-        ModelProfile? fallbackModel = models.Find(ModelTier.C, false, prompt.BlockedModels);
-        if (fallbackModel is not null && fallbackModel.Enabled)
-            return fallbackModel;
+        ModelProfile? selected = SelectAutomaticModel(prompt, excludedProviders: null);
+        if (selected is not null)
+            return selected;
 
         throw new AggregateException($"Could not find model for prompt '{prompt.Name}'");
+    }
+
+    /// <summary>
+    /// Selects a model for a prompt that names none: preferred models, then its tier, then tier C,
+    /// skipping providers the host reports out of service. See <see cref="AutomaticModelSelector"/>.
+    /// </summary>
+    /// <param name="prompt">The prompt.</param>
+    /// <param name="excludedProviders">Providers to leave out entirely, e.g. the one that just failed this call.</param>
+    /// <returns>The model, or null when no candidate qualifies.</returns>
+    private ModelProfile? SelectAutomaticModel(Prompt prompt, IReadOnlyCollection<string>? excludedProviders)
+    {
+        bool isCompletion = prompt.IsCompletion();
+        return AutomaticModelSelector.Select(
+            prompt.Name,
+            prompt.PreferredModels,
+            models.Get,
+            blocked => models.Find(prompt.MinTier, isCompletion, blocked),
+            blocked => models.Find(ModelTier.C, false, blocked),
+            prompt.BlockedModels,
+            providerAvailability is null ? null : providerAvailability.IsUsable,
+            excludedProviders,
+            message => Util.Log(message));
+    }
+
+    /// <summary>
+    /// Whether a failed call should be retried on another provider: the failure reflects the
+    /// provider's health (no credits, a rejected key, a permission problem, a rate limit or transient
+    /// fault that outlasted its retries) rather than our request. A malformed request or a missing
+    /// model would fail the same way anywhere, so those are not retried elsewhere.
+    /// </summary>
+    /// <param name="failure">The provider failure the call ended with, if any.</param>
+    /// <returns><see langword="true"/> when another provider is worth trying.</returns>
+    internal static bool ShouldFailOver(InferenceProviderException? failure)
+        => failure is not null && failure.Failure.ReflectsProviderHealth;
+
+    /// <summary>
+    /// Finds the classified provider failure inside an exception from a provider call, which may
+    /// arrive wrapped (an <see cref="AggregateException"/> or an inner exception).
+    /// </summary>
+    /// <param name="exception">The exception the call threw.</param>
+    /// <returns>The provider failure, or null when the call did not fail at the provider.</returns>
+    internal static InferenceProviderException? FindProviderFailure(Exception? exception)
+    {
+        for (int depth = 0; exception is not null && depth < 8; depth++)
+        {
+            if (exception is InferenceProviderException providerFailure)
+                return providerFailure;
+
+            exception = exception is AggregateException { InnerExceptions.Count: > 0 } aggregate
+                ? aggregate.InnerExceptions[0]
+                : exception.InnerException;
+        }
+
+        return null;
     }
 
     private async Task<bool> FilterCheck(Prompt prompt, List<Input>? inputs, CancellationToken token = default)

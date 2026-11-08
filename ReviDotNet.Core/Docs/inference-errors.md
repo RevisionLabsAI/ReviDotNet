@@ -68,6 +68,29 @@ subscribes and feeds `IInferenceProviderHealthTracker`; see `/admin/inference-pr
 A failure that cannot be retried is thrown as `InferenceProviderException`, which carries the
 `InferenceFailure` so a caller can branch on the kind without parsing a message.
 
+## Routing around an unhealthy provider
+
+The host can close the loop by registering an `IInferenceProviderAvailability` (BetterNamer registers
+its health tracker). `InferService` then does two things for a prompt that names no model:
+
+1. **Selection skips an out-of-service provider.** Candidates are walked in the usual order —
+   preferred models, the prompt's tier, the tier-C fallback — and the first whose provider
+   `IsUsable` approves is chosen. Availability is asked one candidate at a time, so an
+   implementation may hand out a single recovery trial from it. If every candidate is down, the
+   first is used anyway: a provider that may have recovered beats refusing the call.
+2. **A non-streaming call fails over once.** When the call ends in an `InferenceProviderException`
+   whose kind reflects provider health (billing, authentication, permission, or a rate limit or
+   transient fault that outlasted its retries), it is retried once on the next candidate with the
+   failed provider excluded. `RequestInvalid` and `ModelUnavailable` are not retried elsewhere — they
+   would fail the same way on any provider.
+
+A model named explicitly by the caller (`modelProfile` or `modelName`) is never substituted, and with
+no `IInferenceProviderAvailability` registered, selection is unchanged. A streaming call does not fail
+over mid-request; it benefits from (1) once the host has recorded the outage.
+
+Why: on 2026-11-06 a Gemini prepaid account ran out, and every prompt kept resolving to Gemini for two
+days while Claude, OpenAI and Groq were healthy.
+
 ## Cancellation
 
 A cancelled stream **throws** `OperationCanceledException` out of the enumeration (since
