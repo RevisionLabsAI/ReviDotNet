@@ -138,6 +138,64 @@ public sealed class InferenceErrorClassifierTests
     }
 
     /// <summary>
+    /// A depleted Gemini prepaid account answers 402 RESOURCE_EXHAUSTED. Body copied verbatim from
+    /// production on 2026-11-08, where it was misread as a rate limit: retried for ~150 s per call
+    /// with no alert, until search submission failed.
+    /// </summary>
+    [Fact]
+    public void Gemini_depleted_prepayment_is_billing_not_a_rate_limit()
+    {
+        const string body = """
+            {
+              "error": {
+                "code": 402,
+                "message": "Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ",
+                "status": "RESOURCE_EXHAUSTED"
+              }
+            }
+            """;
+
+        InferenceFailure failure = InferenceErrorClassifier.Classify(HttpStatusCode.PaymentRequired, body);
+
+        failure.Kind.Should().Be(InferenceFailureKind.Billing);
+        failure.IsRetryable.Should().BeFalse();
+        failure.RequiresIntervention.Should().BeTrue();
+        failure.ReflectsProviderHealth.Should().BeTrue();
+        failure.ProviderCode.Should().Be("RESOURCE_EXHAUSTED");
+    }
+
+    /// <summary>
+    /// The same depletion message is billing even if Gemini ever carries it on a status other than
+    /// 402 — the message, not only the status, says the credit is gone.
+    /// </summary>
+    [Fact]
+    public void Gemini_depleted_credit_message_is_billing_on_any_status()
+    {
+        InferenceFailure failure = InferenceErrorClassifier.Classify(
+            HttpStatusCode.TooManyRequests,
+            """{"error":{"code":429,"message":"Your prepayment credits are depleted.","status":"RESOURCE_EXHAUSTED"}}""");
+
+        failure.Kind.Should().Be(InferenceFailureKind.Billing);
+    }
+
+    /// <summary>
+    /// Gemini's ordinary per-minute quota 429 mentions "plan and billing details". It must stay a
+    /// retryable rate limit — reading it as billing would take Gemini out of service until a
+    /// person intervened, over a limit that clears on its own within a minute.
+    /// </summary>
+    [Fact]
+    public void Gemini_quota_window_429_stays_a_rate_limit_despite_billing_wording()
+    {
+        InferenceFailure failure = InferenceErrorClassifier.Classify(
+            HttpStatusCode.TooManyRequests,
+            """{"error":{"code":429,"message":"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits.","status":"RESOURCE_EXHAUSTED"}}""");
+
+        failure.Kind.Should().Be(InferenceFailureKind.RateLimited);
+        failure.IsRetryable.Should().BeTrue();
+        failure.RequiresIntervention.Should().BeFalse();
+    }
+
+    /// <summary>
     /// Any other 4xx is deterministic and fails fast as our request (405, 410, 415); only a status
     /// outside 4xx/5xx is unknown. Retrying a 405 five times is the same waste as retrying a 400.
     /// </summary>
@@ -174,6 +232,7 @@ public sealed class InferenceErrorClassifierTests
     [Theory]
     [InlineData(429, "You exceeded your current quota, please check your plan and billing details.", InferenceFailureKind.Billing)]
     [InlineData(400, "Your organization has reached its spend limit for this month.", InferenceFailureKind.Billing)]
+    [InlineData(429, "Your prepaid credits are depleted.", InferenceFailureKind.Billing)]
     [InlineData(400, "The billing address on the request is malformed.", InferenceFailureKind.RequestInvalid)]
     public void Prose_is_read_for_billing_but_only_on_phrases_that_mean_it(int status, string message, InferenceFailureKind expected)
     {

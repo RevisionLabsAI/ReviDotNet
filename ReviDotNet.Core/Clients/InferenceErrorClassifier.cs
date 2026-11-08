@@ -215,9 +215,19 @@ public static class InferenceErrorClassifier
             return new InferenceFailure(InferenceFailureKind.Permission, (int)statusCode, status, message);
         }
 
+        // RESOURCE_EXHAUSTED covers two very different things. On 429 it is a quota window — a rate
+        // limit that clears itself. On 402 it is a prepaid account with no credit left, which never
+        // clears without a person: observed on production from 2026-11-06, when every Gemini call
+        // answered 402 "Your prepayment credits are depleted" and was retried for ~150 s as a rate
+        // limit, with no alert, until search submission failed. The general billing heuristic is
+        // deliberately NOT applied here: Gemini words its ordinary per-minute 429 as "You exceeded
+        // your current quota, please check your plan and billing details", which it would misread.
         if (string.Equals(status, GeminiResourceExhausted, StringComparison.OrdinalIgnoreCase))
         {
-            return new InferenceFailure(InferenceFailureKind.RateLimited, (int)statusCode, status, message);
+            InferenceFailureKind geminiKind = (int)statusCode == 402 || LooksLikeCreditDepletion(message)
+                ? InferenceFailureKind.Billing
+                : InferenceFailureKind.RateLimited;
+            return new InferenceFailure(geminiKind, (int)statusCode, status, message);
         }
 
         // Anthropic names the kind in error.type. Matching it here rather than leaning on the
@@ -316,7 +326,8 @@ public static class InferenceErrorClassifier
         string text = message.ToLowerInvariant();
         // Phrases, not the bare word "billing": a 400 whose message merely mentions a billing
         // address must not take a provider out of service.
-        return text.Contains("credit") && (text.Contains("remaining") || text.Contains("balance") || text.Contains("low") || text.Contains("exhausted"))
+        return LooksLikeCreditDepletion(message)
+            || text.Contains("credit") && text.Contains("low")
             || text.Contains("insufficient quota")
             || text.Contains("insufficient_quota")
             || text.Contains("exceeded your current quota")
@@ -327,6 +338,27 @@ public static class InferenceErrorClassifier
             || text.Contains("plan and billing")
             || text.Contains("payment method")
             || text.Contains("account is not active");
+    }
+
+    /// <summary>
+    /// Whether an error message says the account's credit itself is gone — the narrow subset of
+    /// <see cref="LooksLikeBilling"/> that is safe to apply to a Gemini <c>RESOURCE_EXHAUSTED</c>,
+    /// whose ordinary rate-limit wording ("exceeded your current quota... billing details") would
+    /// trip the broader phrases. Matches OpenAI's "no credits remaining", Anthropic's "credit
+    /// balance is too low"-style balance wording and Gemini's "prepayment credits are depleted".
+    /// </summary>
+    /// <param name="message">The provider's error message; may be null.</param>
+    /// <returns>True when the message names exhausted, depleted or remaining credit.</returns>
+    private static bool LooksLikeCreditDepletion(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return false;
+        }
+
+        string text = message.ToLowerInvariant();
+        return text.Contains("credit")
+            && (text.Contains("remaining") || text.Contains("balance") || text.Contains("exhausted") || text.Contains("depleted"));
     }
 
     /// <summary>
