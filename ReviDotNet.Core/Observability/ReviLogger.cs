@@ -16,6 +16,7 @@ using System.Collections.Concurrent;
 using System.IO;
 using Microsoft.DeepDev;
 using Microsoft.Extensions.Configuration;
+using MongoDB.Bson;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using Revi.Configuration;
@@ -1101,9 +1102,14 @@ public class ReviLogger : IReviLogger
 					}
 					else
 					{
+						// An ObjectId, never a GUID: RlogEvent.Id is mapped [BsonRepresentation(ObjectId)],
+						// so a GUID here cannot be serialized, and a Mongo sink that inserts in batches
+						// loses the whole batch around it — every event in that ~1 s window, silently.
+						// This path runs on every inference call, which made it the largest single source
+						// of missing log events (found 2026-11-08: no dump event had ever been stored).
 						rlogEvent = new RlogEvent
 						{
-							Id = Guid.NewGuid().ToString(),
+							Id = ObjectId.GenerateNewId().ToString(),
 							Level = LogLevel.Info,
 							Message = textToDump,
 							Tags = $"dump session_{SessionTime:yyyy-MMM-dd_HH-mm-ss}",
