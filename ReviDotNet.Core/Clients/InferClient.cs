@@ -197,6 +197,29 @@ public class InferClient : IDisposable
     /// <returns>The endpoint path to resolve against the client's base address.</returns>
     private string OpenAiEndpoint(string path) =>
         string.IsNullOrEmpty(_config.ApiVersionPath) ? path : _config.ApiVersionPath + "/" + path;
+
+    /// <summary>
+    /// Opens a native tool-use chat client on this provider's connection. Only the Claude protocol
+    /// supports it today; other protocols throw <see cref="NotSupportedException"/>.
+    /// </summary>
+    /// <returns>A client sharing this provider's base address, key and provider name.</returns>
+    public Revi.ToolUse.ToolChatClient CreateToolChat()
+    {
+        if (_config.Protocol != Protocol.Claude)
+            throw new NotSupportedException($"Native tool use is implemented for the Claude protocol only; this client uses {_config.Protocol}.");
+        if (!_config.UseApiKey)
+            throw new InvalidOperationException("The provider has no API key.");
+        return new Revi.ToolUse.ToolChatClient(
+            Revi.ToolUse.ClaudeAuth.ApiKey(_config.ApiKey),
+            new Revi.ToolUse.ToolChatClientOptions
+            {
+                BaseAddress = _httpClient.BaseAddress ?? new Uri(_config.ApiUrl.TrimEnd('/') + "/"),
+                ProviderName = string.IsNullOrEmpty(_config.ProviderName) ? "anthropic" : _config.ProviderName,
+                RetryAttemptLimit = _config.RetryAttemptLimit,
+                RetryInitialDelay = TimeSpan.FromSeconds(Math.Max(1, _config.RetryInitialDelaySeconds)),
+                InactivityTimeout = TimeSpan.FromSeconds(Math.Max(1, _config.InactivityTimeoutSeconds))
+            });
+    }
     
     
     // ==========

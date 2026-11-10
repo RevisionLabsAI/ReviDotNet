@@ -13,7 +13,8 @@ public enum Protocol
     Gemini,
     Perplexity,
     LLamaAPI, // Not implemented
-    Claude, // Not implemented
+    /// <summary>Anthropic Messages API. Text, streaming, thinking and structured output through <see cref="InferClient"/>; native tool use through <see cref="Revi.ToolUse.ToolChatClient"/>.</summary>
+    Claude,
 
     /// <summary>OpenRouter's OpenAI-compatible API with provider-routing extensions.</summary>
     OpenRouter,
