@@ -15,7 +15,7 @@ namespace Revi;
 ///   search                                    # non-indented: state declaration
 ///     -> analyze [when: ANALYSIS_READY]       # indented: transition with signal condition
 ///     -> search  [when: CONTINUE]             # self-loop
-///     -> [end]   [when: ABORT]                # terminate
+///     -> [abort] [when: ABORT]                # terminate as Aborted (the work was not done)
 ///   analyze
 ///     -> report  [when: DONE]
 ///     -> [end]                                # unconditional (no [when:] = always)
@@ -26,7 +26,7 @@ public static class LoopDslParser
     // State name pattern: leading word char, followed by word chars or hyphens.
     // Allows conventional names like "resolve-conflict" and "pick-relevant".
     private static readonly Regex TransitionRegex = new(
-        @"^\s*->\s*(?<target>\[end\]|self|\w[\w-]*)\s*(?:\[when:\s*(?<signal>[A-Z0-9_]+)\])?",
+        @"^\s*->\s*(?<target>\[end\]|\[abort\]|self|\w[\w-]*)\s*(?:\[when:\s*(?<signal>[A-Z0-9_]+)\])?",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     /// <summary>

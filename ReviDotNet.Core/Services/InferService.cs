@@ -1357,9 +1357,9 @@ public sealed class InferService(
     {
         // Thinking amount is task-specific: a prompt override wins, otherwise use the model's staged
         // default. The model conversion table maps Revi's common vocabulary to the provider's value
-        // (Gemini 3 thinking levels, Gemini 2.5 budgets, Claude effort, and so on).
-        string? amount = !string.IsNullOrWhiteSpace(prompt.Thinking) ? prompt.Thinking : model.Thinking;
-        return model.ResolveThinking(amount);
+        // (Gemini 3 thinking levels, Gemini 2.5 budgets, Claude effort, and so on). Agent steps resolve
+        // through the same helper so a model behaves the same under a prompt and under an agent.
+        return ThinkingSettings.Resolve(prompt.Thinking, model);
     }
 
     /// <summary>

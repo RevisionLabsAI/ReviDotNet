@@ -12,7 +12,9 @@ namespace Revi;
 public class LoopTransition
 {
     /// <summary>
-    /// The target state name. Use "[end]" to terminate the agent, or "self" to re-enter the current state.
+    /// The target state name. Use "[end]" to finish the run successfully, "[abort]" to end it as
+    /// <see cref="AgentExitReason.Aborted"/> (the agent could not do the work), or "self" to re-enter
+    /// the current state.
     /// </summary>
     public string TargetState { get; set; } = "";
 
