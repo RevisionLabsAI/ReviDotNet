@@ -160,8 +160,11 @@ internal class InferenceHttpClient : IDisposable
                     continue; // retry
                 }
 
-                // Success -> process body without inactivity watchdog (slow bodies are allowed)
-                        Dictionary<string, string> result = await ProcessHttpResponseAsync(response, cancellationToken);
+                // Success -> read the body under the same inactivity watchdog as the headers: a slow body is
+                // allowed, but a body that stops arriving for longer than the inactivity window is a stalled
+                // connection, not a slow answer, and is retried like a missing-headers timeout.
+                await BufferBodyWithInactivityAsync(response, inactivity, uri, attempt, cancellationToken);
+                Dictionary<string, string> result = await ProcessHttpResponseAsync(response, cancellationToken);
                 response.Dispose();
                 InferenceProviderMonitor.ReportSuccess(_config.ProviderName, modelName, streaming: false);
                 return result;
@@ -228,11 +231,62 @@ internal class InferenceHttpClient : IDisposable
     }
 
     /// <summary>
+    /// Reads a successful response's body into memory, failing when no bytes arrive for longer than
+    /// <paramref name="inactivity"/>, and replaces the response content with the buffered copy so the
+    /// parser reads it without touching the network again.
+    /// </summary>
+    /// <param name="response">The response whose headers have arrived.</param>
+    /// <param name="inactivity">The longest permitted gap between chunks of the body.</param>
+    /// <param name="uri">The redacted request address, for the error message.</param>
+    /// <param name="attempt">The zero-based attempt number, for the error message.</param>
+    /// <param name="cancellationToken">The caller's token; its cancellation is rethrown as cancellation.</param>
+    /// <exception cref="TimeoutException">The body stalled for longer than the inactivity window.</exception>
+    private async Task BufferBodyWithInactivityAsync(
+        HttpResponseMessage response,
+        TimeSpan inactivity,
+        string uri,
+        int attempt,
+        CancellationToken cancellationToken)
+    {
+        System.Net.Http.Headers.HttpContentHeaders headers = response.Content.Headers;
+        using MemoryStream buffer = new();
+        await using (Stream body = await response.Content.ReadAsStreamAsync(cancellationToken))
+        {
+            byte[] chunk = new byte[16 * 1024];
+            while (true)
+            {
+                using CancellationTokenSource readCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                readCts.CancelAfter(inactivity);
+                int read;
+                try
+                {
+                    read = await body.ReadAsync(chunk.AsMemory(), readCts.Token);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    throw new TimeoutException(
+                        $"[{attempt + 1}/{_config.RetryAttemptLimit}] The response body from '{uri}' stopped arriving for {inactivity.TotalSeconds}s.");
+                }
+
+                if (read == 0) break;
+                buffer.Write(chunk, 0, read);
+            }
+        }
+
+        ByteArrayContent buffered = new(buffer.ToArray());
+        foreach (KeyValuePair<string, IEnumerable<string>> header in headers)
+            buffered.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        HttpContent original = response.Content;
+        response.Content = buffered;
+        original.Dispose();
+    }
+
+    /// <summary>
     /// Processes the HTTP response and extracts the required information.
     /// </summary>
     /// <param name="response">The HTTP response returned by the server.</param>
-    /// <returns>A dictionary containing the extracted information from the response.</returns>
     /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>A dictionary containing the extracted information from the response.</returns>
     private async Task<Dictionary<string, string>> ProcessHttpResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         Dictionary<string, JsonElement>? data = await response.Content.ReadFromJsonAsync<Dictionary<string, JsonElement>>(cancellationToken: cancellationToken);

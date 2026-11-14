@@ -27,5 +27,11 @@ public enum AgentExitReason
     /// by the next LLM call. The runner exits gracefully with the partial output it
     /// has accumulated rather than burning through the budget cap.
     /// </summary>
-    BudgetExceeded
+    BudgetExceeded,
+
+    /// <summary>
+    /// The agent took a transition to <c>[abort]</c>: it reported that it could not do the work. The run
+    /// ended deliberately, but it did not succeed, so a caller must not treat its output as a result.
+    /// </summary>
+    Aborted
 }

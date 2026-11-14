@@ -33,7 +33,7 @@ public class AgentRunnerToolDispatchTests
     {
         var probe = new ConcurrencyProbeTool();
         using var harness = new AgentTestHarness(
-            new[] { new FakeAgentTurn("DONE", ProbeCalls(5), "probing") },
+            new[] { new FakeAgentTurn("DONE", ProbeCalls(5), "probing"), new FakeAgentTurn("DONE", [], "probing") },
             _ => AgentBuilder.FromText(AgentText("max-parallel-tools = 2"))!);
         harness.RegisterTool(probe);
 
@@ -45,13 +45,13 @@ public class AgentRunnerToolDispatchTests
     }
 
     [Fact]
-    public async Task Tools_RunInParallel_WhenUnbounded()
+    public async Task Tools_RunInParallel_UpToTheDefault_WhenMaxParallelToolsIsUnset()
     {
         // Contrast with the capped test: with no cap the same five calls overlap freely,
         // proving the gate (not accidental serialization) is what limits the capped case.
         var probe = new ConcurrencyProbeTool();
         using var harness = new AgentTestHarness(
-            new[] { new FakeAgentTurn("DONE", ProbeCalls(5), "probing") },
+            new[] { new FakeAgentTurn("DONE", ProbeCalls(5), "probing"), new FakeAgentTurn("DONE", [], "probing") },
             _ => AgentBuilder.FromText(AgentText("tool-call-limit = 50"))!);
         harness.RegisterTool(probe);
 
