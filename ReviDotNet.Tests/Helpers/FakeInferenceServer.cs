@@ -83,6 +83,16 @@ public static class FakeInferenceServer
                 await Task.Delay(TimeSpan.FromMinutes(5), context.RequestAborted);
                 return;
             }
+            if (body.Contains("__STALL_BODY__"))
+            {
+                // Headers and the first bytes of the body, then nothing: a stalled connection.
+                context.Response.ContentType = "application/json";
+                await context.Response.StartAsync();
+                await context.Response.WriteAsync("{\"choices\": [");
+                await context.Response.Body.FlushAsync();
+                await Task.Delay(TimeSpan.FromMinutes(5), context.RequestAborted);
+                return;
+            }
             if (body.Contains("__SLOW_BODY__"))
             {
                 context.Response.ContentType = "application/json";

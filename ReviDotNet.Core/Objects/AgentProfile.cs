@@ -80,6 +80,35 @@ public class AgentProfile
     public int? MaxTotalSteps { get; set; }
 
     /// <summary>
+    /// Optional wall-clock limit, in seconds, for the whole run. It bounds work in flight as well as
+    /// between steps: a model call or tool call still running when it passes is cancelled and the run ends
+    /// as a <see cref="AgentExitReason.GuardrailViolation"/>. State-level <c>timeout</c> applies
+    /// independently.
+    /// </summary>
+    [RConfigProperty("settings_run-timeout")]
+    public int? RunTimeoutSeconds { get; set; }
+
+    /// <summary>
+    /// The inputs that are material to work on rather than instructions — a scraped page, a document, the
+    /// text of a report. A <c>{placeholder}</c> for one of these is not filled into system text; the
+    /// system text names it instead, and its value is delivered once, in the first user message, between
+    /// the run's untrusted-data markers. That keeps external text out of the system role and stops it
+    /// being sent twice.
+    /// </summary>
+    [RConfigProperty("settings_data-inputs")]
+    public List<string>? DataInputs { get; set; }
+
+    /// <summary>
+    /// Optional ceiling, in estimated tokens, on the input sent with each model call. When the conversation
+    /// grows past it (or past 80% of the model's context window when unset), the oldest tool results are
+    /// shortened to an excerpt plus the URLs and identifiers they carried. A call whose input still does not
+    /// fit the model's context window is not sent; the run ends as a
+    /// <see cref="AgentExitReason.GuardrailViolation"/>.
+    /// </summary>
+    [RConfigProperty("settings_context-budget")]
+    public int? ContextBudgetTokens { get; set; }
+
+    /// <summary>
     /// How the agent may be driven from the workshop: <c>fixed</c> (autonomous run), <c>chat</c>
     /// (interactive), or <c>both</c>. Null when unspecified — see <see cref="EffectiveInteractionMode"/>,
     /// which defaults to <see cref="Revi.InteractionMode.Fixed"/> for backward compatibility.
@@ -176,6 +205,7 @@ public class AgentProfile
 
         bool IsSpecial(string target) =>
             target.Equals("[end]", StringComparison.OrdinalIgnoreCase) ||
+            target.Equals("[abort]", StringComparison.OrdinalIgnoreCase) ||
             target.Equals("self", StringComparison.OrdinalIgnoreCase);
 
         foreach (var node in LoopGraph)

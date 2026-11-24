@@ -84,7 +84,7 @@ namespace ReviDotNet.Analyzers
             new Regex(@"^\s*entry\s*=\s*(?<val>.+?)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         // Mirrors LoopDslParser.TransitionRegex.
         private static readonly Regex TransitionRegex = new Regex(
-            @"^\s*->\s*(?<target>\[end\]|self|\w[\w-]*)\s*(?:\[when:\s*(?<signal>[A-Z0-9_]+)\])?",
+            @"^\s*->\s*(?<target>\[end\]|\[abort\]|self|\w[\w-]*)\s*(?:\[when:\s*(?<signal>[A-Z0-9_]+)\])?",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex ValidStateName =
             new Regex(@"^[A-Za-z][A-Za-z0-9-]*$", RegexOptions.Compiled);
@@ -238,6 +238,7 @@ namespace ReviDotNet.Analyzers
 
         private static bool IsSpecial(string target) =>
             target.Equals("[end]", StringComparison.OrdinalIgnoreCase) ||
+            target.Equals("[abort]", StringComparison.OrdinalIgnoreCase) ||
             target.Equals("self", StringComparison.OrdinalIgnoreCase);
 
         private static string StripComment(string line)

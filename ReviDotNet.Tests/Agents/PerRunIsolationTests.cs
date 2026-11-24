@@ -37,10 +37,10 @@ public class PerRunIsolationTests
         // Two scripted providers/models (one per agent) so each run has a working, independent
         // inference server. The harness also pins each model's MaxTokens etc.
         using var harnessA = new AgentTestHarness(
-            new[] { new FakeAgentTurn("DONE", new[] { ("tool-alpha", "{}") }, "calling alpha") },
+            new[] { new FakeAgentTurn("DONE", new[] { ("tool-alpha", "{}") }, "calling alpha"), new FakeAgentTurn("DONE", [], "calling alpha") },
             _ => AgentBuilder.FromText(AgentText("alpha", "tool-alpha"))!);
         using var harnessB = new AgentTestHarness(
-            new[] { new FakeAgentTurn("DONE", new[] { ("tool-beta", "{}") }, "calling beta") },
+            new[] { new FakeAgentTurn("DONE", new[] { ("tool-beta", "{}") }, "calling beta"), new FakeAgentTurn("DONE", [], "calling beta") },
             _ => AgentBuilder.FromText(AgentText("beta", "tool-beta"))!);
 
         // Recording tools — each lives ONLY in its own per-run tool manager.
@@ -91,10 +91,10 @@ public class PerRunIsolationTests
         // Minimal contract guarantee (independent of concurrent scripting): two runs with separate
         // IToolManagers resolve disjoint tool sets and complete without throwing.
         using var harnessA = new AgentTestHarness(
-            new[] { new FakeAgentTurn("DONE", new[] { ("tool-alpha", "{}") }, "calling alpha") },
+            new[] { new FakeAgentTurn("DONE", new[] { ("tool-alpha", "{}") }, "calling alpha"), new FakeAgentTurn("DONE", [], "calling alpha") },
             _ => AgentBuilder.FromText(AgentText("alpha", "tool-alpha"))!);
         using var harnessB = new AgentTestHarness(
-            new[] { new FakeAgentTurn("DONE", new[] { ("tool-beta", "{}") }, "calling beta") },
+            new[] { new FakeAgentTurn("DONE", new[] { ("tool-beta", "{}") }, "calling beta"), new FakeAgentTurn("DONE", [], "calling beta") },
             _ => AgentBuilder.FromText(AgentText("beta", "tool-beta"))!);
 
         var alphaTool = new RecordingTool("tool-alpha");

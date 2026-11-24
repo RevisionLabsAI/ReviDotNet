@@ -54,8 +54,8 @@ public static class RconfigHighlighter
 
     private static readonly (Regex Rx, Func<Match, string> Render)[] LoopRules =
     {
-        // -> target  (target: a state name, self, or [end])
-        (new Regex(@"(->)(\s*)(\[end\]|self\b|[A-Za-z][\w-]*)?", Opts), m =>
+        // -> target  (target: a state name, self, [end] or [abort])
+        (new Regex(@"(->)(\s*)(\[end\]|\[abort\]|self\b|[A-Za-z][\w-]*)?", Opts), m =>
             Span("revi-arrow", m.Groups[1].Value) + Enc(m.Groups[2].Value) +
             (m.Groups[3].Success ? Span("revi-state", m.Groups[3].Value) : "")),
         // [when: SIGNAL]
